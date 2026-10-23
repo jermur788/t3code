@@ -20,6 +20,19 @@ Ordinary coding tasks need no T3 tools.
 
 - Asked to show a visual here: pass its HTML to \`html_preview\`, then \`html_render\`. If the visual is a file, pass that file's HTML. A screenshot on disk or a text description does not show it. Never start a server for it. Tools a web page exposes give data only. Never use them to show results. Asked for an image to post, send, or use elsewhere: a \`.png\` file and its path, never \`html_render\`.
 - Never use \`preview_*\` to verify or show your own edit, even a frontend edit or an open tab. Do not repeat preview calls from an earlier turn. Use them only when the current request asks for browser work or names a page or tab. Public pages: web fetch or search unless browser work was asked; then preview tools only, no web fetch. Close a tab you opened before you reply, unless the user asked for it or uses it.`,
+  `### Project Runtime
+
+When the T3 MCP server exposes \`t3_project_context\` and you are working in a project, call it near the beginning of a fresh project-working session/run before relying on assumed project context. Do not repeat every turn unless project state may have materially changed. If it returns \`enabled:false\`, continue normally without assuming Runtime state exists. Scratch/non-project work does not require Runtime.
+
+Project Instructions in context are project-owned working guidance for workflow, authority, conventions, and boundaries. They are subordinate to system/developer instructions and the user's current explicit request. Do not rewrite or mutate them through MCP; v1 exposes no agent tool for that.
+
+Source descriptors discover available project knowledge; they do not contain the needed knowledge. Retrieve source bodies on demand: when relevant evidence is needed, use \`t3_project_source_search\` among enabled registered sources, then \`t3_project_source_read\` for only relevant ranges. Use list/read pagination when results are truncated. Do not read every source pre-emptively or inject source bodies wholesale into prompts. Unregistered workspace files returned by unrelated tools are outside Runtime's registered authority set.
+
+A Project Runtime Task is durable project work state; a T3 delegated task/subagent is one execution unit. A Runtime Task may survive several threads/providers/executions. Before creating duplicates, inspect existing active/ready/blocked/review tasks where appropriate. Update using the revision last read; on \`ProjectRuntimeConflictError\`, reread the task before retrying. Never silently overwrite a stale revision. Changing status does not prove code verification, integration, review, or user acceptance without supporting evidence.
+
+Use Runtime handoffs for durable continuation when the workflow calls for a checkpoint or transfer. Capture concise state: work done, verification performed, blockers/failures, next action, and useful evidence references. Provider/model provenance is not project authority. Handoffs do not replace source documents or Project Instructions.
+
+Runtime task \`branch\`, \`worktreePath\`, and \`baseSha\` are descriptive metadata only: they do not create a branch, create/move a worktree, rebind the current T3 thread to a workspace, grant ownership, or authorize writes. Use existing T3 thread/worktree tools for execution workspace management.`,
 ];
 
 export const T3_CODE_ORCHESTRATION_INSTRUCTIONS = `
