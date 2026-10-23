@@ -167,7 +167,7 @@ export type ProjectRuntimeInstructions = typeof ProjectRuntimeInstructions.Type;
 
 export const ProjectRuntimeInstructionsSaveInput = Schema.Struct({
   instructions: InstructionsText,
-  expectedRevision: Schema.optionalKey(PositiveInt),
+  expectedRevision: Schema.optionalKey(NonNegativeInt),
 });
 export type ProjectRuntimeInstructionsSaveInput = typeof ProjectRuntimeInstructionsSaveInput.Type;
 
@@ -529,7 +529,7 @@ export class ProjectRuntimeConflictError extends Schema.TaggedError<ProjectRunti
     projectId: ProjectId,
     entity: ProjectRuntimeEntity,
     entityId: Schema.optionalKey(ProjectRuntimeId),
-    expectedRevision: PositiveInt,
+    expectedRevision: NonNegativeInt,
     currentRevision: PositiveInt,
   },
 ) {

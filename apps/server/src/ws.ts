@@ -1,3 +1,6 @@
+import * as ProjectRuntimeService from "./projectRuntime/ProjectRuntimeService.ts";
+import * as ProjectRuntimeSourceAccess from "./projectRuntime/ProjectRuntimeSourceAccess.ts";
+import * as ProjectRuntimeRpc from "./projectRuntime/ProjectRuntimeRpc.ts";
 import { OrchestrationDispatchCommandError } from "@t3tools/contracts";
 import * as Context from "effect/Context";
 import * as Crypto from "effect/Crypto";
@@ -1843,7 +1846,9 @@ export const layerWsRpc = (
         return result;
       });
 
+      const runtimeHandlers = yield* ProjectRuntimeRpc.makeHandlers(currentSessionId);
       const handlers = ServerWsRpcGroup.of({
+        ...runtimeHandlers,
         [ORCHESTRATION_V2_WS_METHODS.dispatchCommand]: (command) =>
           Effect.annotateCurrentSpan({
             "orchestration_v2.command_id": command.commandId,
@@ -3182,6 +3187,8 @@ export const WS_RPC_SERVER_OPTIONS = {
 
 export const layer = Layer.unwrap(
   Effect.gen(function* () {
+    const projectRuntime = yield* ProjectRuntimeService.ProjectRuntimeService;
+    const runtimeSources = yield* ProjectRuntimeSourceAccess.ProjectRuntimeSourceAccess;
     const previewAutomationBroker = yield* PreviewAutomationBroker.PreviewAutomationBroker;
     const serverBrowser = yield* ServerBrowser.ServerBrowser;
     const serverSelfUpdate = yield* ServerSelfUpdate.ServerSelfUpdate;
@@ -3261,6 +3268,15 @@ export const layer = Layer.unwrap(
               serverBrowser,
             ).pipe(
               Layer.provideMerge(RpcSerialization.layerJson),
+              Layer.provide(
+                Layer.succeed(ProjectRuntimeService.ProjectRuntimeService, projectRuntime),
+              ),
+              Layer.provide(
+                Layer.succeed(
+                  ProjectRuntimeSourceAccess.ProjectRuntimeSourceAccess,
+                  runtimeSources,
+                ),
+              ),
               // Request fibers run in the handlers' context, so this reporter sees
               // their defects, not the rest of the server's.
               Layer.provide(DefectReporter.layer),
