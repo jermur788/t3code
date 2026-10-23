@@ -67,3 +67,13 @@ describe("project removal confirmation", () => {
     );
   });
 });
+
+import { concreteRuntimeProject } from "./ProjectSettingsPanel.logic";
+it("requires one concrete environment/project instead of choosing a grouped representative", () => {
+  const a = { environmentId: EnvironmentId.make("local"), id: ProjectId.make("a") };
+  const b = { environmentId: EnvironmentId.make("remote"), id: ProjectId.make("b") };
+  expect(concreteRuntimeProject([])).toBeNull();
+  expect(concreteRuntimeProject([a, b])).toBeNull();
+  expect(concreteRuntimeProject([a])).toBe(a);
+  expect(concreteRuntimeProject([b])).toBe(b);
+});

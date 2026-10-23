@@ -25,7 +25,8 @@ click a project to jump to it, or **Reset all** to make those projects follow th
 again.
 
 Providers and diagnostics are per machine: they show one environment at a time, the primary
-one until you pick another. Every other setting fans out to the selection.
+one until you pick another. Project Runtime also requires one concrete environment and checkout.
+Other shared settings fan out to the selection.
 
 With a project selected, a provider's switch in **Settings → Providers** turns it on or off for
 that project only, in either direction: a provider off on the machine can be used in one project,
@@ -231,3 +232,17 @@ On mobile, use **Settings → Source control** to change selected environment de
 T3 Code only pulls when it can fast-forward and the checkout has no changed files, untracked files,
 or local commits. It skips checkouts on another branch or without an upstream. If a checkout has
 local work, resolve it yourself before automatic pulls can resume.
+
+## Project Runtime
+
+On web and desktop, select a project in Settings and open **Project → Project Runtime**.
+If the project groups multiple checkouts, select one environment and checkout first. Runtime
+belongs to that checkout and is not synchronized across environments. Disabling it preserves
+its data for when you re-enable it.
+
+Save Project Instructions explicitly. Register workspace-relative text sources with their roles
+and authority ranks; health checks only probe accessibility. Removing a source from the registry
+keeps its file. Runtime tasks record durable work and show immutable continuation handoffs. Task
+branch, worktree path, and base SHA fields are descriptive only and do not change your workspace
+or authorize writes. If a record changes while you edit it, your draft remains visible and you
+must explicitly reload the current record before saving again.
