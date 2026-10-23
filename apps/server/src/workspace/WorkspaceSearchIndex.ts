@@ -485,9 +485,14 @@ export const make = Effect.fn("WorkspaceSearchIndex.make")(function* (
     const rawPageSize = input.wholeWord
       ? Math.max(input.limit, CONTENT_SEARCH_MAX_MATCHES_PER_FILE)
       : input.limit;
+    const maxMatchesPerFile = Math.min(CONTENT_SEARCH_MAX_MATCHES_PER_FILE, rawPageSize);
     const matches: Array<ProjectSearchContentsResult["matches"][number]> = [];
     let nextCursor: GrepCursor | null = null;
     let regexFallbackError: string | undefined;
+    // The native grep stops a file at maxMatchesPerFile and reports no cursor for the rest of it,
+    // so a file that reaches the ceiling may hold more matches than were returned. That is
+    // reported conservatively: a file with exactly that many matches is flagged too.
+    let reachedFileCeiling = false;
 
     do {
       const remainingTimeBudgetMs = Math.max(1, Math.ceil(deadline - performance.now()));
@@ -495,14 +500,18 @@ export const make = Effect.fn("WorkspaceSearchIndex.make")(function* (
         finder.grep(searchQuery, {
           mode: regexMode ? "regex" : "plain",
           smartCase: !input.caseSensitive && !regexMode,
-          maxMatchesPerFile: Math.min(CONTENT_SEARCH_MAX_MATCHES_PER_FILE, rawPageSize),
+          maxMatchesPerFile,
           pageSize: rawPageSize,
           cursor: nextCursor,
           timeBudgetMs: remainingTimeBudgetMs,
         }),
       );
 
+      const rawCounts = new Map<string, number>();
       for (const match of result.items) {
+        const rawCount = (rawCounts.get(match.relativePath) ?? 0) + 1;
+        rawCounts.set(match.relativePath, rawCount);
+        if (rawCount >= maxMatchesPerFile) reachedFileCeiling = true;
         const matchRanges = mapContentMatchRanges(match.lineContent, match.matchRanges).filter(
           (range) => !input.wholeWord || isWholeWordRange(match.lineContent, range),
         );
@@ -520,7 +529,7 @@ export const make = Effect.fn("WorkspaceSearchIndex.make")(function* (
 
     return {
       matches: matches.slice(0, input.limit),
-      truncated: matches.length > input.limit || nextCursor !== null,
+      truncated: matches.length > input.limit || nextCursor !== null || reachedFileCeiling,
       ...(regexFallbackError !== undefined ? { regexFallbackError } : {}),
     };
   });

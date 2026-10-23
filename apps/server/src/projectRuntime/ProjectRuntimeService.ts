@@ -174,7 +174,7 @@ const now = DateTime.now.pipe(Effect.map(DateTime.formatIso));
 // These bounds are character/count bounds in the contracts. Retrieval's
 // readMaxBytes/searchMaxBytes/contextMaxBytes require UTF-8 byte measurement
 // in the later source-access/context layer; maxLength cannot enforce bytes.
-const validatePath = Effect.fn("ProjectRuntimeService.validatePath")(function* (
+export const validatePath = Effect.fn("ProjectRuntimeService.validatePath")(function* (
   projectId: ProjectId,
   relativePath: string,
 ) {
