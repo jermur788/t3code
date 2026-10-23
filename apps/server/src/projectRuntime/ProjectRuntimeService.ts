@@ -1,7 +1,9 @@
 import {
+  PROJECT_RUNTIME_BOUNDS,
   ProjectId,
   ProjectRuntimeActor,
   ProjectRuntimeConflictError,
+  type ProjectRuntimeContext,
   ProjectRuntimeDisabledError,
   ProjectRuntimeHandoff,
   ProjectRuntimeHandoffAppendInput,
@@ -39,6 +41,7 @@ import { type SqlError } from "effect/sql/SqlError";
 
 import { PersistenceSqlError } from "../persistence/Errors.ts";
 import { ProjectNotFoundError } from "../project/ProjectService.ts";
+import { disabledContext, packContext } from "./ProjectRuntimeContext.ts";
 
 const WriteContext = Schema.Struct({ actor: ProjectRuntimeActor });
 type WriteContext = typeof WriteContext.Type;
@@ -137,6 +140,11 @@ export class ProjectRuntimeService extends Context.Service<
       projectId: ProjectId,
       input: ProjectRuntimeHandoffListInput,
     ) => Result<ProjectRuntimeHandoffListResult>;
+    /**
+     * Bootstrap context from durable state in one transaction. A disabled Runtime reads as an
+     * empty context rather than failing, so an agent can learn it is not enabled.
+     */
+    readonly readContext: (projectId: ProjectId) => Result<ProjectRuntimeContext>;
   }
 >()("t3/projectRuntime/ProjectRuntimeService") {}
 
@@ -591,6 +599,65 @@ const make = Effect.gen(function* () {
     sqlErrors,
   );
 
+  const readContext: ProjectRuntimeService["Service"]["readContext"] = Effect.fn(
+    "ProjectRuntimeService.readContext",
+  )(
+    function* (projectId) {
+      const current = yield* status(projectId);
+      if (!current.enabled) return disabledContext(projectId, current);
+      const instructionRows = yield* sql<{
+        readonly instructions_json: string | null;
+      }>`SELECT instructions_json FROM project_runtime WHERE project_id = ${projectId}`;
+      const instructions =
+        instructionRows[0]?.instructions_json == null
+          ? null
+          : yield* decodeInstructions(instructionRows[0].instructions_json);
+      // One row past each cap tells the packer that more exist.
+      const sourceRows = yield* sql<{
+        readonly payload_json: string;
+      }>`SELECT payload_json FROM project_runtime_sources WHERE project_id = ${projectId}
+      AND json_extract(payload_json, '$.enabled') = 1
+      ORDER BY created_at, source_id LIMIT ${PROJECT_RUNTIME_BOUNDS.contextMaxSources + 1}`;
+      const taskRows = yield* sql<{
+        readonly payload_json: string;
+      }>`SELECT payload_json FROM project_runtime_tasks WHERE project_id = ${projectId}
+      AND status IN ('active', 'blocked', 'review')
+      ORDER BY CASE status WHEN 'active' THEN 0 WHEN 'blocked' THEN 1 ELSE 2 END, created_at, task_id
+      LIMIT ${PROJECT_RUNTIME_BOUNDS.contextMaxTasks + 1}`;
+      const sources = yield* Effect.forEach(sourceRows, (row) => decodeSource(row.payload_json));
+      const tasks = yield* Effect.forEach(taskRows, (row) => decodeTask(row.payload_json));
+      // Newest handoff per task, from the (project, task, created_at, handoff_id) index; the
+      // order is the reverse of listHandoffs, so "latest" is the last entry it would return.
+      const withHandoffs = yield* Effect.forEach(
+        tasks.slice(0, PROJECT_RUNTIME_BOUNDS.contextMaxTasks),
+        (task) =>
+          sql<{
+            readonly payload_json: string;
+          }>`SELECT payload_json FROM project_runtime_handoffs WHERE project_id = ${projectId}
+          AND task_id = ${task.taskId} ORDER BY created_at DESC, handoff_id DESC LIMIT 1`.pipe(
+            Effect.flatMap((rows) =>
+              rows[0] === undefined ? Effect.succeed(null) : decodeHandoff(rows[0].payload_json),
+            ),
+            Effect.map((latestHandoff) => ({ task, latestHandoff })),
+          ),
+      );
+      return packContext({
+        projectId,
+        status: current,
+        instructions,
+        sources,
+        tasks: [
+          ...withHandoffs,
+          ...tasks
+            .slice(PROJECT_RUNTIME_BOUNDS.contextMaxTasks)
+            .map((task) => ({ task, latestHandoff: null })),
+        ],
+      });
+    },
+    sql.withTransaction,
+    sqlErrors,
+  );
+
   return ProjectRuntimeService.of({
     getStatus,
     setEnabled,
@@ -608,6 +675,7 @@ const make = Effect.gen(function* () {
     appendHandoff,
     readHandoff,
     listHandoffs,
+    readContext,
   });
 });
 

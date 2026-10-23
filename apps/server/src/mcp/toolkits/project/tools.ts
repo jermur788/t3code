@@ -30,6 +30,19 @@ import * as ThreadManagementService from "../../../orchestration-v2/ThreadManage
 import * as SourceControlRepositoryService from "../../../sourceControl/SourceControlRepositoryService.ts";
 import * as GitVcsDriver from "../../../vcs/GitVcsDriver.ts";
 import * as McpInvocationContext from "../../McpInvocationContext.ts";
+import {
+  ProjectContextTool,
+  ProjectHandoffAppendTool,
+  ProjectHandoffListTool,
+  ProjectHandoffReadTool,
+  ProjectSourceListTool,
+  ProjectSourceReadTool,
+  ProjectSourceSearchTool,
+  ProjectTaskCreateTool,
+  ProjectTaskListTool,
+  ProjectTaskReadTool,
+  ProjectTaskUpdateTool,
+} from "./runtimeTools.ts";
 
 const shared = {
   success: Project,
@@ -159,4 +172,15 @@ export const ProjectToolkit = Toolkit.make(
   ProjectUpdateTool,
   ProjectDeleteTool,
   ProjectCloneTool,
+  ProjectContextTool,
+  ProjectSourceListTool,
+  ProjectSourceSearchTool,
+  ProjectSourceReadTool,
+  ProjectTaskListTool,
+  ProjectTaskReadTool,
+  ProjectTaskCreateTool,
+  ProjectTaskUpdateTool,
+  ProjectHandoffAppendTool,
+  ProjectHandoffListTool,
+  ProjectHandoffReadTool,
 );

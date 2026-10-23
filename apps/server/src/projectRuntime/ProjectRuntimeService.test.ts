@@ -15,6 +15,7 @@ import * as Layer from "effect/Layer";
 import * as Result from "effect/Result";
 import * as Schema from "effect/Schema";
 import * as SqlClient from "effect/sql/SqlClient";
+import * as TestClock from "effect/testing/TestClock";
 
 import * as SqlitePersistence from "../persistence/Sqlite.ts";
 import * as ProjectRuntimeService from "./ProjectRuntimeService.ts";
@@ -641,4 +642,95 @@ it.effect("reopens the database with the same Runtime state and domain records",
       );
     }),
   ).pipe(Effect.provide(NodeServices.layer)),
+);
+
+it.effect("reads an empty disabled context that keeps the revision", () =>
+  Effect.gen(function* () {
+    const service = yield* setup;
+    yield* service.saveInstructions(projectA, { instructions: "Hidden while disabled" }, actor);
+    yield* service.createTask(projectA, { ...taskInput, status: "active" }, actor);
+    const disabled = yield* service.setEnabled(projectA, { enabled: false });
+    assert.deepEqual(yield* service.readContext(projectA), {
+      projectId: projectA,
+      status: disabled,
+      instructions: null,
+      sources: [],
+      tasks: [],
+      truncated: { sources: false, tasks: false, handoffs: false },
+    });
+    assert.isAbove(disabled.revision, 1);
+    assert.equal(
+      (yield* service.readContext(ProjectId.make("unknown")).pipe(Effect.flip))._tag,
+      "ProjectNotFoundError",
+    );
+  }).pipe(Effect.provide(layerTest)),
+);
+
+it.effect("reads context from enabled sources and open tasks with each latest handoff", () =>
+  Effect.gen(function* () {
+    const service = yield* setup;
+    const instructions = yield* service.saveInstructions(
+      projectA,
+      { instructions: "Follow the spec" },
+      actor,
+    );
+    const enabled = yield* service.createSource(projectA, sourceInput, actor);
+    yield* service.createSource(projectA, { ...sourceInput, enabled: false }, actor);
+    yield* service.createSource(projectB, sourceInput, actor);
+    const create = (title: string, status: "planned" | "active" | "blocked" | "review" | "done") =>
+      service.createTask(projectA, { ...taskInput, title, status }, actor);
+    // Registered in the reverse of the packing order, one second apart.
+    const review = yield* create("review", "review");
+    yield* TestClock.adjust(1000);
+    yield* create("planned", "planned");
+    yield* create("done", "done");
+    const blocked = yield* create("blocked", "blocked");
+    yield* TestClock.adjust(1000);
+    const active = yield* create("active", "active");
+    yield* TestClock.adjust(1000);
+    const first = yield* service.appendHandoff(
+      projectA,
+      { taskId: active.taskId, checkpoint: "one", summary: "First" },
+      actor,
+    );
+    yield* TestClock.adjust(1000);
+    const latest = yield* service.appendHandoff(
+      projectA,
+      { taskId: active.taskId, checkpoint: "two", summary: "Second" },
+      actor,
+    );
+    yield* service.appendHandoff(
+      projectB,
+      {
+        taskId: (yield* service.createTask(projectB, taskInput, actor)).taskId,
+        checkpoint: "other",
+        summary: "Other project",
+      },
+      actor,
+    );
+
+    const context = yield* service.readContext(projectA);
+    assert.deepEqual(context.instructions, instructions);
+    assert.deepEqual(
+      context.sources.map((source) => source.sourceId),
+      [enabled.sourceId],
+    );
+    assert.deepEqual(
+      context.tasks.map((task) => task.taskId),
+      [active.taskId, blocked.taskId, review.taskId],
+    );
+    assert.equal(context.tasks[0]?.latestHandoff?.handoffId, latest.handoffId);
+    assert.notEqual(context.tasks[0]?.latestHandoff?.handoffId, first.handoffId);
+    assert.deepEqual(context.tasks[0]?.latestHandoff, {
+      handoffId: latest.handoffId,
+      taskId: active.taskId,
+      checkpoint: "two",
+      summary: "Second",
+      taskRevision: latest.taskRevision,
+      createdAt: latest.createdAt,
+    });
+    assert.isNull(context.tasks[1]?.latestHandoff);
+    assert.deepEqual(context.truncated, { sources: false, tasks: false, handoffs: false });
+    assert.notInclude(JSON.stringify(context), "Other project");
+  }).pipe(Effect.provide(layerTest)),
 );
