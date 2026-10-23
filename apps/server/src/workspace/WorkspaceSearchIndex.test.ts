@@ -139,3 +139,91 @@ it.effect("continues whole-word searches after a filtered grep page", () =>
     }),
   ),
 );
+
+it.effect("reports truncation when a file reaches the native per-file match ceiling", () =>
+  Effect.scoped(
+    Effect.gen(function* () {
+      const grepItem = (relativePath: string, lineNumber: number, lineContent: string) => ({
+        relativePath,
+        fileName: relativePath,
+        gitStatus: "unmodified" as const,
+        size: lineContent.length,
+        modified: 0,
+        isBinary: false,
+        totalFrecencyScore: 0,
+        accessFrecencyScore: 0,
+        modificationFrecencyScore: 0,
+        lineNumber,
+        col: 0,
+        byteOffset: 0,
+        lineContent,
+        matchRanges: [[0, 6]] as Array<[number, number]>,
+      });
+      const grepOf = (items: ReturnType<typeof grepItem>[]) =>
+        vi.fn((): { ok: true; value: GrepResult } => ({
+          ok: true,
+          value: {
+            items,
+            totalMatched: items.length,
+            totalFilesSearched: 1,
+            totalFiles: 1,
+            filteredFileCount: 1,
+            nextCursor: null,
+          },
+        }));
+      const searchWith = (grep: ReturnType<typeof grepOf>, wholeWord: boolean) => {
+        const finder = {
+          destroy: vi.fn(),
+          waitForIndexReady: vi.fn(async () => ({ ok: true as const, value: true })),
+          grep,
+        } as unknown as FileFinder;
+        vi.spyOn(FileFinder, "create").mockReturnValueOnce({ ok: true, value: finder });
+        return WorkspaceSearchIndex.make("/workspace/project", "content").pipe(
+          Effect.flatMap((searchIndex) =>
+            searchIndex.searchContents({
+              query: "needle",
+              limit: 100,
+              caseSensitive: true,
+              wholeWord,
+              useRegex: false,
+            }),
+          ),
+        );
+      };
+      const hundred = (content: (index: number) => string) =>
+        Array.from({ length: 100 }, (_, index) =>
+          grepItem("src/big.ts", index + 1, content(index)),
+        );
+
+      // A file at the ceiling may hold more matches that no cursor leads to.
+      const atCeiling = yield* searchWith(grepOf(hundred(() => "needle")), false);
+      expect(atCeiling.matches).toHaveLength(100);
+      expect(atCeiling.truncated).toBe(true);
+
+      // Whole-word filtering can leave nothing visible while later raw matches were never read.
+      const filtered = yield* searchWith(
+        grepOf(hundred((index) => (index === 99 ? "needle" : "needleSuffix"))),
+        true,
+      );
+      expect(filtered.matches).toHaveLength(1);
+      expect(filtered.truncated).toBe(true);
+
+      const belowCeiling = yield* searchWith(grepOf(hundred(() => "needle").slice(0, 99)), false);
+      expect(belowCeiling.matches).toHaveLength(99);
+      expect(belowCeiling.truncated).toBe(false);
+
+      // Spread over files, none reaches the ceiling.
+      const spread = yield* searchWith(
+        grepOf([
+          ...hundred(() => "needle").slice(0, 50),
+          ...hundred(() => "needle")
+            .slice(0, 50)
+            .map((item) => ({ ...item, relativePath: "src/other.ts" })),
+        ]),
+        false,
+      );
+      expect(spread.matches).toHaveLength(100);
+      expect(spread.truncated).toBe(false);
+    }),
+  ),
+);
