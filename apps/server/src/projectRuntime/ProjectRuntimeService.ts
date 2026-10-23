@@ -1,0 +1,614 @@
+import {
+  ProjectId,
+  ProjectRuntimeActor,
+  ProjectRuntimeConflictError,
+  ProjectRuntimeDisabledError,
+  ProjectRuntimeHandoff,
+  ProjectRuntimeHandoffAppendInput,
+  ProjectRuntimeHandoffId,
+  ProjectRuntimeHandoffListInput,
+  type ProjectRuntimeHandoffListResult,
+  ProjectRuntimeInstructions,
+  ProjectRuntimeInstructionsSaveInput,
+  ProjectRuntimeNotFoundError,
+  ProjectRuntimeSetEnabledInput,
+  ProjectRuntimeSource,
+  ProjectRuntimeSourceCreateInput,
+  ProjectRuntimeSourceId,
+  ProjectRuntimeSourceListInput,
+  ProjectRuntimeSourcePathError,
+  ProjectRuntimeSourceRemoveInput,
+  ProjectRuntimeSourceUpdateInput,
+  type ProjectRuntimeStatus,
+  ProjectRuntimeTask,
+  ProjectRuntimeTaskCreateInput,
+  ProjectRuntimeTaskId,
+  ProjectRuntimeTaskListInput,
+  type ProjectRuntimeTaskListResult,
+  ProjectRuntimeTaskUpdateInput,
+  type ProjectRuntimeError,
+} from "@t3tools/contracts";
+import * as Context from "effect/Context";
+import * as DateTime from "effect/DateTime";
+import * as Crypto from "effect/Crypto";
+import * as Effect from "effect/Effect";
+import * as Layer from "effect/Layer";
+import * as Schema from "effect/Schema";
+import * as SqlClient from "effect/sql/SqlClient";
+import { type SqlError } from "effect/sql/SqlError";
+
+import { PersistenceSqlError } from "../persistence/Errors.ts";
+import { ProjectNotFoundError } from "../project/ProjectService.ts";
+
+const WriteContext = Schema.Struct({ actor: ProjectRuntimeActor });
+type WriteContext = typeof WriteContext.Type;
+const HandoffContext = Schema.Struct({
+  ...WriteContext.fields,
+  threadId: ProjectRuntimeHandoff.fields.threadId,
+  providerInstanceId: ProjectRuntimeHandoff.fields.providerInstanceId,
+  model: ProjectRuntimeHandoff.fields.model,
+});
+type HandoffContext = typeof HandoffContext.Type;
+class ProjectRuntimeIdGenerationError extends Schema.TaggedError<ProjectRuntimeIdGenerationError>()(
+  "ProjectRuntimeIdGenerationError",
+  { cause: Schema.Defect() },
+) {
+  override get message(): string {
+    return "Failed to generate a Project Runtime record ID.";
+  }
+}
+type RuntimeError =
+  | ProjectRuntimeError
+  | ProjectNotFoundError
+  | PersistenceSqlError
+  | Schema.SchemaError
+  | ProjectRuntimeIdGenerationError;
+type Result<A> = Effect.Effect<A, RuntimeError>;
+
+export class ProjectRuntimeService extends Context.Service<
+  ProjectRuntimeService,
+  {
+    readonly getStatus: (projectId: ProjectId) => Result<ProjectRuntimeStatus>;
+    readonly setEnabled: (
+      projectId: ProjectId,
+      input: ProjectRuntimeSetEnabledInput,
+    ) => Result<ProjectRuntimeStatus>;
+    readonly readInstructions: (projectId: ProjectId) => Result<ProjectRuntimeInstructions | null>;
+    /** User/UI mutations; future agent transports must not expose these methods. */
+    readonly saveInstructions: (
+      projectId: ProjectId,
+      input: ProjectRuntimeInstructionsSaveInput,
+      context: WriteContext,
+    ) => Result<ProjectRuntimeInstructions>;
+    readonly createSource: (
+      projectId: ProjectId,
+      input: ProjectRuntimeSourceCreateInput,
+      context: WriteContext,
+    ) => Result<ProjectRuntimeSource>;
+    readonly readSource: (
+      projectId: ProjectId,
+      sourceId: ProjectRuntimeSourceId,
+    ) => Result<ProjectRuntimeSource>;
+    /** Registry metadata only. Filesystem health belongs to the source-access layer. */
+    readonly listSources: (
+      projectId: ProjectId,
+      input: ProjectRuntimeSourceListInput,
+    ) => Result<{
+      readonly sources: ReadonlyArray<ProjectRuntimeSource>;
+      readonly nextCursor: number | null;
+    }>;
+    readonly updateSource: (
+      projectId: ProjectId,
+      input: ProjectRuntimeSourceUpdateInput,
+      context: WriteContext,
+    ) => Result<ProjectRuntimeSource>;
+    readonly removeSource: (
+      projectId: ProjectId,
+      input: ProjectRuntimeSourceRemoveInput,
+    ) => Result<void>;
+    readonly createTask: (
+      projectId: ProjectId,
+      input: ProjectRuntimeTaskCreateInput,
+      context: WriteContext,
+    ) => Result<ProjectRuntimeTask>;
+    readonly readTask: (
+      projectId: ProjectId,
+      taskId: ProjectRuntimeTaskId,
+    ) => Result<ProjectRuntimeTask>;
+    readonly listTasks: (
+      projectId: ProjectId,
+      input: ProjectRuntimeTaskListInput,
+    ) => Result<ProjectRuntimeTaskListResult>;
+    readonly updateTask: (
+      projectId: ProjectId,
+      input: ProjectRuntimeTaskUpdateInput,
+      context: WriteContext,
+    ) => Result<ProjectRuntimeTask>;
+    readonly appendHandoff: (
+      projectId: ProjectId,
+      input: ProjectRuntimeHandoffAppendInput,
+      context: HandoffContext,
+    ) => Result<ProjectRuntimeHandoff>;
+    readonly readHandoff: (
+      projectId: ProjectId,
+      handoffId: ProjectRuntimeHandoffId,
+    ) => Result<ProjectRuntimeHandoff>;
+    readonly listHandoffs: (
+      projectId: ProjectId,
+      input: ProjectRuntimeHandoffListInput,
+    ) => Result<ProjectRuntimeHandoffListResult>;
+  }
+>()("t3/projectRuntime/ProjectRuntimeService") {}
+
+const InstructionsJson = Schema.fromJsonString(ProjectRuntimeInstructions);
+const SourceJson = Schema.fromJsonString(ProjectRuntimeSource);
+const TaskJson = Schema.fromJsonString(ProjectRuntimeTask);
+const HandoffJson = Schema.fromJsonString(ProjectRuntimeHandoff);
+const decodeProjectId = Schema.decodeUnknownEffect(ProjectId);
+const decodeSetEnabledInput = Schema.decodeUnknownEffect(ProjectRuntimeSetEnabledInput);
+const decodeInstructions = Schema.decodeUnknownEffect(InstructionsJson);
+const decodeInstructionsSaveInput = Schema.decodeUnknownEffect(ProjectRuntimeInstructionsSaveInput);
+const decodeWriteContext = Schema.decodeUnknownEffect(WriteContext);
+const decodeSourceCreateInput = Schema.decodeUnknownEffect(ProjectRuntimeSourceCreateInput);
+const decodeSourceId = Schema.decodeUnknownEffect(ProjectRuntimeSourceId);
+const decodeSourceUpdateInput = Schema.decodeUnknownEffect(ProjectRuntimeSourceUpdateInput);
+const decodeSourceRemoveInput = Schema.decodeUnknownEffect(ProjectRuntimeSourceRemoveInput);
+const decodeSourceListInput = Schema.decodeUnknownEffect(ProjectRuntimeSourceListInput);
+const decodeSource = Schema.decodeUnknownEffect(SourceJson);
+const decodeTaskCreateInput = Schema.decodeUnknownEffect(ProjectRuntimeTaskCreateInput);
+const decodeTaskId = Schema.decodeUnknownEffect(ProjectRuntimeTaskId);
+const decodeTaskUpdateInput = Schema.decodeUnknownEffect(ProjectRuntimeTaskUpdateInput);
+const decodeTaskListInput = Schema.decodeUnknownEffect(ProjectRuntimeTaskListInput);
+const decodeTask = Schema.decodeUnknownEffect(TaskJson);
+const decodeHandoffAppendInput = Schema.decodeUnknownEffect(ProjectRuntimeHandoffAppendInput);
+const decodeHandoffContext = Schema.decodeUnknownEffect(HandoffContext);
+const decodeHandoffId = Schema.decodeUnknownEffect(ProjectRuntimeHandoffId);
+const decodeHandoffListInput = Schema.decodeUnknownEffect(ProjectRuntimeHandoffListInput);
+const decodeHandoff = Schema.decodeUnknownEffect(HandoffJson);
+const encodeInstructions = Schema.encodeEffect(InstructionsJson);
+const encodeSource = Schema.encodeEffect(SourceJson);
+const encodeTask = Schema.encodeEffect(TaskJson);
+const encodeHandoff = Schema.encodeEffect(HandoffJson);
+const now = DateTime.now.pipe(Effect.map(DateTime.formatIso));
+
+// These bounds are character/count bounds in the contracts. Retrieval's
+// readMaxBytes/searchMaxBytes/contextMaxBytes require UTF-8 byte measurement
+// in the later source-access/context layer; maxLength cannot enforce bytes.
+const validatePath = Effect.fn("ProjectRuntimeService.validatePath")(function* (
+  projectId: ProjectId,
+  relativePath: string,
+) {
+  const absolute = /^[\\/]|^[a-z]:/i.test(relativePath);
+  let depth = 0;
+  for (const part of relativePath.split(/[\\/]/)) {
+    if (part === "..") depth--;
+    else if (part !== "" && part !== ".") depth++;
+    if (depth < 0) break;
+  }
+  if (absolute || depth < 0) {
+    return yield* new ProjectRuntimeSourcePathError({
+      projectId,
+      relativePath,
+      reason: absolute ? "absolute" : "outside_workspace",
+    });
+  }
+});
+
+function patchRecord<A extends object>(record: A, patch: object) {
+  const result = { ...record };
+  for (const [key, value] of Object.entries(patch)) {
+    if (value === null) Reflect.deleteProperty(result, key);
+    else if (value !== undefined) Reflect.set(result, key, value);
+  }
+  return result;
+}
+
+const make = Effect.gen(function* () {
+  const sql = yield* SqlClient.SqlClient;
+  const crypto = yield* Crypto.Crypto;
+  const newId = crypto
+    .randomUUIDv4()
+    .pipe(Effect.mapError((cause) => new ProjectRuntimeIdGenerationError({ cause })));
+  const sqlErrors = <A, R>(effect: Effect.Effect<A, RuntimeError | SqlError, R>) =>
+    effect.pipe(
+      Effect.catchTags({
+        SqlError: (cause) =>
+          Effect.fail(new PersistenceSqlError({ operation: "projectRuntime", cause })),
+      }),
+    );
+
+  const status = Effect.fn("ProjectRuntimeService.status")(function* (projectId: ProjectId) {
+    yield* decodeProjectId(projectId);
+    const projects =
+      yield* sql`SELECT project_id FROM projection_projects WHERE project_id = ${projectId} AND deleted_at IS NULL`;
+    if (projects.length === 0) return yield* new ProjectNotFoundError({ projectId });
+    const rows = yield* sql<{
+      readonly enabled: number;
+      readonly revision: number;
+    }>`SELECT enabled, revision FROM project_runtime WHERE project_id = ${projectId}`;
+    return {
+      enabled: rows[0]?.enabled === 1,
+      revision: rows[0]?.revision ?? 0,
+      version: 1 as const,
+    };
+  });
+  const requireEnabled = Effect.fn("ProjectRuntimeService.requireEnabled")(function* (
+    projectId: ProjectId,
+  ) {
+    const current = yield* status(projectId);
+    if (!current.enabled) return yield* new ProjectRuntimeDisabledError({ projectId });
+    return current;
+  });
+  const bump = Effect.fn("ProjectRuntimeService.bump")(function* (projectId: ProjectId) {
+    yield* sql`UPDATE project_runtime SET revision = revision + 1, updated_at = ${yield* now} WHERE project_id = ${projectId}`;
+  });
+
+  // The selected schema is also the storage representation: structured fields,
+  // including bounded evidenceRefs, use the repository's JSON codec convention.
+  const find = Effect.fn("ProjectRuntimeService.find")(function* <A>(
+    projectId: ProjectId,
+    entity: "source" | "task" | "handoff",
+    entityId: string,
+    decode: (json: string) => Effect.Effect<A, Schema.SchemaError>,
+  ) {
+    const rows = yield* sql<{
+      readonly payload_json: string;
+    }>`SELECT payload_json FROM ${sql(`project_runtime_${entity === "source" ? "sources" : entity === "task" ? "tasks" : "handoffs"}`)} WHERE project_id = ${projectId} AND ${sql(`${entity}_id`)} = ${entityId}`;
+    if (rows[0] === undefined)
+      return yield* new ProjectRuntimeNotFoundError({ projectId, entity, entityId });
+    return yield* decode(rows[0].payload_json);
+  });
+  const checkRevision = Effect.fn("ProjectRuntimeService.checkRevision")(function* (
+    projectId: ProjectId,
+    entity: "instructions" | "source" | "task",
+    currentRevision: number,
+    expectedRevision: number | undefined,
+    entityId?: string,
+  ) {
+    if (expectedRevision !== undefined && expectedRevision !== currentRevision) {
+      return yield* new ProjectRuntimeConflictError({
+        projectId,
+        entity,
+        ...(entityId === undefined ? {} : { entityId }),
+        expectedRevision,
+        currentRevision,
+      });
+    }
+  });
+
+  const getStatus: ProjectRuntimeService["Service"]["getStatus"] = Effect.fn(
+    "ProjectRuntimeService.getStatus",
+  )(status, sql.withTransaction, sqlErrors);
+  const setEnabled: ProjectRuntimeService["Service"]["setEnabled"] = Effect.fn(
+    "ProjectRuntimeService.setEnabled",
+  )(
+    function* (projectId, input) {
+      const { enabled } = yield* decodeSetEnabledInput(input);
+      yield* status(projectId);
+      const timestamp = yield* now;
+      yield* sql`INSERT INTO project_runtime (project_id, enabled, revision, created_at, updated_at)
+      VALUES (${projectId}, ${enabled ? 1 : 0}, 1, ${timestamp}, ${timestamp})
+      ON CONFLICT (project_id) DO UPDATE SET enabled = excluded.enabled, revision = project_runtime.revision + 1, updated_at = excluded.updated_at`;
+      return yield* status(projectId);
+    },
+    sql.withTransaction,
+    sqlErrors,
+  );
+
+  const readInstructions: ProjectRuntimeService["Service"]["readInstructions"] = Effect.fn(
+    "ProjectRuntimeService.readInstructions",
+  )(
+    function* (projectId) {
+      yield* requireEnabled(projectId);
+      const rows = yield* sql<{
+        readonly instructions_json: string | null;
+      }>`SELECT instructions_json FROM project_runtime WHERE project_id = ${projectId}`;
+      return rows[0]?.instructions_json == null
+        ? null
+        : yield* decodeInstructions(rows[0].instructions_json);
+    },
+    sql.withTransaction,
+    sqlErrors,
+  );
+  const saveInstructions: ProjectRuntimeService["Service"]["saveInstructions"] = Effect.fn(
+    "ProjectRuntimeService.saveInstructions",
+  )(
+    function* (projectId, input, context) {
+      const data = yield* decodeInstructionsSaveInput(input);
+      const { actor } = yield* decodeWriteContext(context);
+      const existing = yield* readInstructions(projectId);
+      if (data.expectedRevision !== undefined && existing === null)
+        return yield* new ProjectRuntimeNotFoundError({ projectId, entity: "instructions" });
+      yield* checkRevision(
+        projectId,
+        "instructions",
+        existing?.revision ?? 0,
+        data.expectedRevision,
+      );
+      const record = {
+        projectId,
+        instructions: data.instructions,
+        revision: (existing?.revision ?? 0) + 1,
+        updatedAt: yield* now,
+        updatedBy: actor,
+      };
+      const payload = yield* encodeInstructions(record);
+      const changed =
+        yield* sql`UPDATE project_runtime SET instructions_json = ${payload}, instructions_revision = instructions_revision + 1,
+      revision = revision + 1, updated_at = ${record.updatedAt}
+      WHERE project_id = ${projectId} AND instructions_revision = ${existing?.revision ?? 0} RETURNING project_id`;
+      if (changed.length !== 1)
+        return yield* new PersistenceSqlError({ operation: "saveProjectRuntimeInstructions" });
+      return record;
+    },
+    sql.withTransaction,
+    sqlErrors,
+  );
+
+  const createSource: ProjectRuntimeService["Service"]["createSource"] = Effect.fn(
+    "ProjectRuntimeService.createSource",
+  )(
+    function* (projectId, input, context) {
+      const data = yield* decodeSourceCreateInput(input);
+      const { actor } = yield* decodeWriteContext(context);
+      yield* requireEnabled(projectId);
+      yield* validatePath(projectId, data.relativePath);
+      const timestamp = yield* now;
+      const record = {
+        ...data,
+        projectId,
+        sourceId: ProjectRuntimeSourceId.make(yield* newId),
+        enabled: data.enabled ?? true,
+        revision: 1,
+        createdAt: timestamp,
+        updatedAt: timestamp,
+        createdBy: actor,
+        updatedBy: actor,
+      };
+      const payload = yield* encodeSource(record);
+      yield* sql`INSERT INTO project_runtime_sources (source_id, project_id, revision, created_at, payload_json) VALUES (${record.sourceId}, ${projectId}, 1, ${timestamp}, ${payload})`;
+      yield* bump(projectId);
+      return record;
+    },
+    sql.withTransaction,
+    sqlErrors,
+  );
+  const readSource: ProjectRuntimeService["Service"]["readSource"] = Effect.fn(
+    "ProjectRuntimeService.readSource",
+  )(
+    function* (projectId, sourceId) {
+      yield* decodeSourceId(sourceId);
+      yield* requireEnabled(projectId);
+      return yield* find(projectId, "source", sourceId, decodeSource);
+    },
+    sql.withTransaction,
+    sqlErrors,
+  );
+  const updateSource: ProjectRuntimeService["Service"]["updateSource"] = Effect.fn(
+    "ProjectRuntimeService.updateSource",
+  )(
+    function* (projectId, input, context) {
+      const { sourceId, expectedRevision, ...patch } = yield* decodeSourceUpdateInput(input);
+      const { actor } = yield* decodeWriteContext(context);
+      const existing = yield* readSource(projectId, sourceId);
+      yield* checkRevision(projectId, "source", existing.revision, expectedRevision, sourceId);
+      if (patch.relativePath !== undefined) yield* validatePath(projectId, patch.relativePath);
+      const record = {
+        ...patchRecord(existing, patch),
+        revision: existing.revision + 1,
+        updatedAt: yield* now,
+        updatedBy: actor,
+      };
+      const payload = yield* encodeSource(record);
+      const changed =
+        yield* sql`UPDATE project_runtime_sources SET revision = revision + 1, payload_json = ${payload} WHERE project_id = ${projectId} AND source_id = ${sourceId} AND revision = ${existing.revision} RETURNING source_id`;
+      if (changed.length !== 1)
+        return yield* new PersistenceSqlError({ operation: "updateProjectRuntimeSource" });
+      yield* bump(projectId);
+      return record;
+    },
+    sql.withTransaction,
+    sqlErrors,
+  );
+  const removeSource: ProjectRuntimeService["Service"]["removeSource"] = Effect.fn(
+    "ProjectRuntimeService.removeSource",
+  )(
+    function* (projectId, input) {
+      const { sourceId, expectedRevision } = yield* decodeSourceRemoveInput(input);
+      const existing = yield* readSource(projectId, sourceId);
+      yield* checkRevision(projectId, "source", existing.revision, expectedRevision, sourceId);
+      yield* sql`DELETE FROM project_runtime_sources WHERE project_id = ${projectId} AND source_id = ${sourceId} AND revision = ${existing.revision}`;
+      yield* bump(projectId);
+    },
+    sql.withTransaction,
+    sqlErrors,
+  );
+  const listSources: ProjectRuntimeService["Service"]["listSources"] = Effect.fn(
+    "ProjectRuntimeService.listSources",
+  )(
+    function* (projectId, input) {
+      const { cursor = 0, limit = 100 } = yield* decodeSourceListInput(input);
+      yield* requireEnabled(projectId);
+      const rows = yield* sql<{
+        readonly payload_json: string;
+      }>`SELECT payload_json FROM project_runtime_sources WHERE project_id = ${projectId} ORDER BY created_at, source_id LIMIT ${limit + 1} OFFSET ${cursor}`;
+      const sources = yield* Effect.forEach(rows.slice(0, limit), (row) =>
+        decodeSource(row.payload_json),
+      );
+      return { sources, nextCursor: rows.length > limit ? cursor + limit : null };
+    },
+    sql.withTransaction,
+    sqlErrors,
+  );
+
+  const createTask: ProjectRuntimeService["Service"]["createTask"] = Effect.fn(
+    "ProjectRuntimeService.createTask",
+  )(
+    function* (projectId, input, context) {
+      const data = yield* decodeTaskCreateInput(input);
+      const { actor } = yield* decodeWriteContext(context);
+      yield* requireEnabled(projectId);
+      const timestamp = yield* now;
+      const record = {
+        ...data,
+        projectId,
+        taskId: ProjectRuntimeTaskId.make(yield* newId),
+        status: data.status ?? "planned",
+        revision: 1,
+        createdAt: timestamp,
+        updatedAt: timestamp,
+        createdBy: actor,
+        updatedBy: actor,
+      };
+      const payload = yield* encodeTask(record);
+      yield* sql`INSERT INTO project_runtime_tasks (task_id, project_id, status, revision, created_at, payload_json) VALUES (${record.taskId}, ${projectId}, ${record.status}, 1, ${timestamp}, ${payload})`;
+      yield* bump(projectId);
+      return record;
+    },
+    sql.withTransaction,
+    sqlErrors,
+  );
+  const readTask: ProjectRuntimeService["Service"]["readTask"] = Effect.fn(
+    "ProjectRuntimeService.readTask",
+  )(
+    function* (projectId, taskId) {
+      yield* decodeTaskId(taskId);
+      yield* requireEnabled(projectId);
+      return yield* find(projectId, "task", taskId, decodeTask);
+    },
+    sql.withTransaction,
+    sqlErrors,
+  );
+  const updateTask: ProjectRuntimeService["Service"]["updateTask"] = Effect.fn(
+    "ProjectRuntimeService.updateTask",
+  )(
+    function* (projectId, input, context) {
+      const { taskId, expectedRevision, ...patch } = yield* decodeTaskUpdateInput(input);
+      const { actor } = yield* decodeWriteContext(context);
+      const existing = yield* readTask(projectId, taskId);
+      yield* checkRevision(projectId, "task", existing.revision, expectedRevision, taskId);
+      const record = {
+        ...patchRecord(existing, patch),
+        revision: existing.revision + 1,
+        updatedAt: yield* now,
+        updatedBy: actor,
+      };
+      const payload = yield* encodeTask(record);
+      // BEGIN IMMEDIATE holds the writer lock across read, CAS and aggregate bump.
+      // Keep the conditional write as well: no caller can silently overwrite a revision.
+      const changed =
+        yield* sql`UPDATE project_runtime_tasks SET revision = revision + 1, status = ${record.status}, payload_json = ${payload}
+      WHERE project_id = ${projectId} AND task_id = ${taskId} AND revision = ${expectedRevision} RETURNING task_id`;
+      if (changed.length !== 1) {
+        const current = yield* find(projectId, "task", taskId, decodeTask);
+        return yield* new ProjectRuntimeConflictError({
+          projectId,
+          entity: "task",
+          entityId: taskId,
+          expectedRevision,
+          currentRevision: current.revision,
+        });
+      }
+      yield* bump(projectId);
+      return record;
+    },
+    sql.withTransaction,
+    sqlErrors,
+  );
+  const listTasks: ProjectRuntimeService["Service"]["listTasks"] = Effect.fn(
+    "ProjectRuntimeService.listTasks",
+  )(
+    function* (projectId, input) {
+      const { cursor = 0, limit = 100, status: taskStatus } = yield* decodeTaskListInput(input);
+      yield* requireEnabled(projectId);
+      const rows = yield* sql<{
+        readonly payload_json: string;
+      }>`SELECT payload_json FROM project_runtime_tasks WHERE project_id = ${projectId}
+      ${taskStatus === undefined ? sql`` : sql`AND status = ${taskStatus}`} ORDER BY created_at, task_id LIMIT ${limit + 1} OFFSET ${cursor}`;
+      const tasks = yield* Effect.forEach(rows.slice(0, limit), (row) =>
+        decodeTask(row.payload_json),
+      );
+      return { tasks, nextCursor: rows.length > limit ? cursor + limit : null };
+    },
+    sql.withTransaction,
+    sqlErrors,
+  );
+
+  const appendHandoff: ProjectRuntimeService["Service"]["appendHandoff"] = Effect.fn(
+    "ProjectRuntimeService.appendHandoff",
+  )(
+    function* (projectId, input, context) {
+      const data = yield* decodeHandoffAppendInput(input);
+      const { actor, ...provenance } = yield* decodeHandoffContext(context);
+      const runtime = yield* requireEnabled(projectId);
+      const task = yield* readTask(projectId, data.taskId);
+      const record = {
+        ...data,
+        ...provenance,
+        projectId,
+        handoffId: ProjectRuntimeHandoffId.make(yield* newId),
+        runtimeRevision: runtime.revision,
+        taskRevision: task.revision,
+        createdAt: yield* now,
+        createdBy: actor,
+      };
+      const payload = yield* encodeHandoff(record);
+      yield* sql`INSERT INTO project_runtime_handoffs (handoff_id, project_id, task_id, created_at, payload_json) VALUES (${record.handoffId}, ${projectId}, ${record.taskId}, ${record.createdAt}, ${payload})`;
+      yield* bump(projectId);
+      return record;
+    },
+    sql.withTransaction,
+    sqlErrors,
+  );
+  const readHandoff: ProjectRuntimeService["Service"]["readHandoff"] = Effect.fn(
+    "ProjectRuntimeService.readHandoff",
+  )(
+    function* (projectId, handoffId) {
+      yield* decodeHandoffId(handoffId);
+      yield* requireEnabled(projectId);
+      return yield* find(projectId, "handoff", handoffId, decodeHandoff);
+    },
+    sql.withTransaction,
+    sqlErrors,
+  );
+  const listHandoffs: ProjectRuntimeService["Service"]["listHandoffs"] = Effect.fn(
+    "ProjectRuntimeService.listHandoffs",
+  )(
+    function* (projectId, input) {
+      const { cursor = 0, limit = 100, taskId } = yield* decodeHandoffListInput(input);
+      yield* requireEnabled(projectId);
+      if (taskId !== undefined) yield* readTask(projectId, taskId);
+      const rows = yield* sql<{
+        readonly payload_json: string;
+      }>`SELECT payload_json FROM project_runtime_handoffs WHERE project_id = ${projectId}
+      ${taskId === undefined ? sql`` : sql`AND task_id = ${taskId}`} ORDER BY created_at, handoff_id LIMIT ${limit + 1} OFFSET ${cursor}`;
+      const handoffs = yield* Effect.forEach(rows.slice(0, limit), (row) =>
+        decodeHandoff(row.payload_json),
+      );
+      return { handoffs, nextCursor: rows.length > limit ? cursor + limit : null };
+    },
+    sql.withTransaction,
+    sqlErrors,
+  );
+
+  return ProjectRuntimeService.of({
+    getStatus,
+    setEnabled,
+    readInstructions,
+    saveInstructions,
+    createSource,
+    readSource,
+    listSources,
+    updateSource,
+    removeSource,
+    createTask,
+    readTask,
+    listTasks,
+    updateTask,
+    appendHandoff,
+    readHandoff,
+    listHandoffs,
+  });
+});
+
+export const layer = Layer.effect(ProjectRuntimeService, make);
