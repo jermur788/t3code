@@ -325,7 +325,7 @@ const make = Effect.gen(function* () {
       const data = yield* decodeInstructionsSaveInput(input);
       const { actor } = yield* decodeWriteContext(context);
       const existing = yield* readInstructions(projectId);
-      if (data.expectedRevision !== undefined && existing === null)
+      if (data.expectedRevision !== undefined && data.expectedRevision !== 0 && existing === null)
         return yield* new ProjectRuntimeNotFoundError({ projectId, entity: "instructions" });
       yield* checkRevision(
         projectId,

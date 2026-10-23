@@ -1,3 +1,5 @@
+import * as ProjectRuntimeService from "./projectRuntime/ProjectRuntimeService.ts";
+import * as ProjectRuntimeSourceAccess from "./projectRuntime/ProjectRuntimeSourceAccess.ts";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, it } from "@effect/vitest";
 import {
@@ -487,6 +489,8 @@ it.effect(
       const finishDiscovery = yield* Deferred.make<void>();
       const responses = yield* Queue.unbounded<ServerConfigStreamEvent>();
       const configRpcServices = Layer.mergeAll(
+        Layer.mock(ProjectRuntimeService.ProjectRuntimeService)({}),
+        Layer.mock(ProjectRuntimeSourceAccess.ProjectRuntimeSourceAccess)({}),
         layerUnusedConfigRpcServices,
         Layer.mock(ExternalLauncher.ExternalLauncher)({
           resolveAvailableEditors: () =>

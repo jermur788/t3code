@@ -728,11 +728,11 @@ const layerMakeRoutes = Layer.mergeAll(
     Ws.layer,
   ),
   McpHttpServer.layer.pipe(
-    Layer.provide(layerProjectRuntime),
     Layer.provide(ProviderAdapterRegistry.layerFromProviderInstanceRegistry),
     Layer.provide(McpOAuth.layerMcpClientAuthenticator),
   ),
 ).pipe(
+  Layer.provide(layerProjectRuntime),
   Layer.provide(
     PullRequestReviewGuideService.layer.pipe(Layer.provide(PullRequestReviewGuides.layer)),
   ),

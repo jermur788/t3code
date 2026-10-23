@@ -1,4 +1,9 @@
-import { ORCHESTRATION_V2_WS_METHODS, WS_METHODS, type WsRpcGroup } from "@t3tools/contracts";
+import {
+  PROJECT_RUNTIME_RPC_METHODS,
+  ORCHESTRATION_V2_WS_METHODS,
+  WS_METHODS,
+  type WsRpcGroup,
+} from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as References from "effect/References";
@@ -11,6 +16,21 @@ type WsRpcMethod = RpcGroup.Rpcs<typeof WsRpcGroup>["_tag"];
 
 // Trace queries and dashboards depend on these labels, including deviations from method prefixes.
 const RPC_AGGREGATES = {
+  [PROJECT_RUNTIME_RPC_METHODS.status]: "projectRuntime",
+  [PROJECT_RUNTIME_RPC_METHODS.setEnabled]: "projectRuntime",
+  [PROJECT_RUNTIME_RPC_METHODS.readInstructions]: "projectRuntime",
+  [PROJECT_RUNTIME_RPC_METHODS.saveInstructions]: "projectRuntime",
+  [PROJECT_RUNTIME_RPC_METHODS.listSources]: "projectRuntime",
+  [PROJECT_RUNTIME_RPC_METHODS.createSource]: "projectRuntime",
+  [PROJECT_RUNTIME_RPC_METHODS.updateSource]: "projectRuntime",
+  [PROJECT_RUNTIME_RPC_METHODS.removeSource]: "projectRuntime",
+  [PROJECT_RUNTIME_RPC_METHODS.listTasks]: "projectRuntime",
+  [PROJECT_RUNTIME_RPC_METHODS.readTask]: "projectRuntime",
+  [PROJECT_RUNTIME_RPC_METHODS.createTask]: "projectRuntime",
+  [PROJECT_RUNTIME_RPC_METHODS.updateTask]: "projectRuntime",
+  [PROJECT_RUNTIME_RPC_METHODS.listHandoffs]: "projectRuntime",
+  [PROJECT_RUNTIME_RPC_METHODS.readHandoff]: "projectRuntime",
+
   [ORCHESTRATION_V2_WS_METHODS.dispatchCommand]: "orchestrationV2",
   [ORCHESTRATION_V2_WS_METHODS.getWorkflowScript]: "orchestration",
   [ORCHESTRATION_V2_WS_METHODS.stopWorkflow]: "orchestration",

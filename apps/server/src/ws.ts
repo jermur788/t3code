@@ -1,3 +1,6 @@
+import * as ProjectRuntimeService from "./projectRuntime/ProjectRuntimeService.ts";
+import * as ProjectRuntimeSourceAccess from "./projectRuntime/ProjectRuntimeSourceAccess.ts";
+import * as ProjectRuntimeRpc from "./projectRuntime/ProjectRuntimeRpc.ts";
 import { OrchestrationDispatchCommandError } from "@t3tools/contracts";
 import * as Context from "effect/Context";
 import * as Crypto from "effect/Crypto";
@@ -1893,7 +1896,9 @@ export const layerWsRpc = (
         return result;
       });
 
+      const runtimeHandlers = yield* ProjectRuntimeRpc.makeHandlers(currentSessionId);
       const handlers = ServerWsRpcGroup.of({
+        ...runtimeHandlers,
         [ORCHESTRATION_V2_WS_METHODS.dispatchCommand]: (command) =>
           Effect.annotateCurrentSpan({
             "orchestration_v2.command_id": command.commandId,
@@ -3264,6 +3269,8 @@ export const WS_RPC_SERVER_OPTIONS = {
 
 export const layer = Layer.unwrap(
   Effect.gen(function* () {
+    const projectRuntime = yield* ProjectRuntimeService.ProjectRuntimeService;
+    const runtimeSources = yield* ProjectRuntimeSourceAccess.ProjectRuntimeSourceAccess;
     const previewAutomationBroker = yield* PreviewAutomationBroker.PreviewAutomationBroker;
     const serverBrowser = yield* ServerBrowser.ServerBrowser;
     const serverSelfUpdate = yield* ServerSelfUpdate.ServerSelfUpdate;
@@ -3342,6 +3349,15 @@ export const layer = Layer.unwrap(
               serverBrowser,
             ).pipe(
               Layer.provideMerge(RpcSerialization.layerJson),
+              Layer.provide(
+                Layer.succeed(ProjectRuntimeService.ProjectRuntimeService, projectRuntime),
+              ),
+              Layer.provide(
+                Layer.succeed(
+                  ProjectRuntimeSourceAccess.ProjectRuntimeSourceAccess,
+                  runtimeSources,
+                ),
+              ),
               // Handler-context reporters see only request defects, not server-wide defects.
               Layer.provide(DefectReporter.layer),
               Layer.provide(Layer.succeed(SqlClient.SqlClient, sql)),
