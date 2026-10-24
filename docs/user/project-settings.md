@@ -235,14 +235,6 @@ local work, resolve it yourself before automatic pulls can resume.
 
 ## Project Runtime
 
-On web and desktop, select a project in Settings and open **Project → Project Runtime**.
-If the project groups multiple checkouts, select one environment and checkout first. Runtime
-belongs to that checkout and is not synchronized across environments. Disabling it preserves
-its data for when you re-enable it.
-
-Save Project Instructions explicitly. Register workspace-relative text sources with their roles
-and authority ranks; health checks only probe accessibility. Removing a source from the registry
-keeps its file. Runtime tasks record durable work and show immutable continuation handoffs. Task
-branch, worktree path, and base SHA fields are descriptive only and do not change your workspace
-or authorize writes. If a record changes while you edit it, your draft remains visible and you
-must explicitly reload the current record before saving again.
+Project Runtime keeps project-owned instructions, registered sources, tasks, and
+handoffs with one checkout. It requires one concrete environment and checkout. See
+[Project Runtime](./project-runtime.md) for setup and day-to-day use.
