@@ -45,6 +45,12 @@ interface ProfileUsage {
   readonly error: string | null;
 }
 
+interface ProfileDraft {
+  readonly baseline: DevelopmentProfile;
+  readonly name: string;
+  readonly instructions: string;
+}
+
 function DevelopmentProfilesPanel({
   environmentId,
   environmentLabel,
@@ -110,6 +116,12 @@ function DevelopmentProfilesPanel({
       active = false;
     };
   }, [api.ready, loadUsage, selectedId]);
+
+  const refreshSelectedUsage = useStableCallback(async () => {
+    if (selectedId === null) return;
+    setUsage(null);
+    await loadUsage(selectedId, () => true);
+  });
 
   const refresh = async () => {
     setRefreshing(true);
@@ -244,6 +256,7 @@ function DevelopmentProfilesPanel({
                   profile={selectedProfile}
                   usage={selectedUsage}
                   onChanged={replaceProfile}
+                  onRefreshUsage={refreshSelectedUsage}
                   onDeleted={(profileId) => {
                     const remaining =
                       profiles?.filter((profile) => profile.profileId !== profileId) ?? null;
@@ -333,6 +346,7 @@ function DevelopmentProfileEditor({
   profile,
   usage,
   onChanged,
+  onRefreshUsage,
   onDeleted,
 }: {
   api: DevelopmentProfilesApi;
@@ -340,16 +354,41 @@ function DevelopmentProfileEditor({
   profile: DevelopmentProfile;
   usage: ProfileUsage | null;
   onChanged: (profile: DevelopmentProfile) => void;
+  onRefreshUsage: () => Promise<void>;
   onDeleted: (profileId: DevelopmentProfileId) => void;
 }) {
-  const [saved, setSaved] = useState(profile);
-  const [name, setName] = useState(profile.name);
-  const [instructions, setInstructions] = useState(profile.instructions);
+  const [draft, setDraft] = useState<ProfileDraft | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [conflict, setConflict] = useState(false);
 
-  const dirty = name.trim() !== saved.name || instructions !== saved.instructions;
+  const displayed = draft ?? {
+    baseline: profile,
+    name: profile.name,
+    instructions: profile.instructions,
+  };
+  const baseline = displayed.baseline;
+  const dirty =
+    draft !== null &&
+    (draft.name.trim() !== draft.baseline.name ||
+      draft.instructions !== draft.baseline.instructions);
+
+  const editDraft = (change: Partial<Pick<ProfileDraft, "name" | "instructions">>) => {
+    setDraft((current) => {
+      const base = current ?? {
+        baseline: profile,
+        name: profile.name,
+        instructions: profile.instructions,
+      };
+      const next = { ...base, ...change };
+      return !conflict &&
+        next.name === next.baseline.name &&
+        next.instructions === next.baseline.instructions
+        ? null
+        : next;
+    });
+  };
+
   const assigned = usage?.projects ?? null;
   const usageLoading = usage === null;
   const usageError = usage?.error ?? null;
@@ -359,10 +398,10 @@ function DevelopmentProfileEditor({
   const save = async () => {
     setBusy(true);
     const updated = await api.update({
-      profileId: saved.profileId,
-      name: name.trim(),
-      instructions,
-      expectedRevision: saved.revision,
+      profileId: baseline.profileId,
+      name: displayed.name.trim(),
+      instructions: displayed.instructions,
+      expectedRevision: baseline.revision,
     });
     setBusy(false);
     if (!updated.ok) {
@@ -370,9 +409,7 @@ function DevelopmentProfileEditor({
       setConflict(updated.conflict);
       return;
     }
-    setSaved(updated.value);
-    setName(updated.value.name);
-    setInstructions(updated.value.instructions);
+    setDraft(null);
     setError(null);
     setConflict(false);
     onChanged(updated.value);
@@ -380,15 +417,13 @@ function DevelopmentProfileEditor({
 
   const reloadLatest = async () => {
     setBusy(true);
-    const latest = await api.read(saved.profileId);
+    const latest = await api.read(baseline.profileId);
     setBusy(false);
     if (!latest.ok) {
       setError(latest.message);
       return;
     }
-    setSaved(latest.value);
-    setName(latest.value.name);
-    setInstructions(latest.value.instructions);
+    setDraft(null);
     setError(null);
     setConflict(false);
     onChanged(latest.value);
@@ -397,26 +432,34 @@ function DevelopmentProfileEditor({
   const remove = async () => {
     setBusy(true);
     const deleted = await api.remove({
-      profileId: saved.profileId,
-      expectedRevision: saved.revision,
+      profileId: baseline.profileId,
+      expectedRevision: baseline.revision,
     });
-    setBusy(false);
     if (!deleted.ok) {
       setError(deleted.message);
       setConflict(deleted.conflict);
+      if (deleted.inUse) await onRefreshUsage();
+      setBusy(false);
       return;
     }
-    onDeleted(saved.profileId);
+    setBusy(false);
+    onDeleted(baseline.profileId);
+  };
+
+  const refreshAssignments = async () => {
+    setBusy(true);
+    await onRefreshUsage();
+    setBusy(false);
   };
 
   return (
     <div className="space-y-3 rounded-lg border border-border p-3">
       <div className="flex flex-wrap items-start justify-between gap-2">
         <div>
-          <h3 className="text-sm font-medium">{saved.name}</h3>
+          <h3 className="text-sm font-medium">{baseline.name}</h3>
           <p className="text-xs text-muted-foreground">
-            Revision {saved.revision} · Updated {new Date(saved.updatedAt).toLocaleString()} ·{" "}
-            {saved.updatedBy}
+            Revision {baseline.revision} · Updated {new Date(baseline.updatedAt).toLocaleString()} ·{" "}
+            {baseline.updatedBy}
           </p>
         </div>
         <p className="text-xs text-muted-foreground">
@@ -433,9 +476,9 @@ function DevelopmentProfileEditor({
         <span className="font-medium">Name</span>
         <Input
           aria-label="Profile name"
-          value={name}
+          value={displayed.name}
           maxLength={DEVELOPMENT_PROFILE_BOUNDS.nameMaxLength}
-          onChange={(event) => setName(event.target.value)}
+          onChange={(event) => editDraft({ name: event.target.value })}
           disabled={!canEdit || busy}
         />
       </label>
@@ -443,14 +486,14 @@ function DevelopmentProfileEditor({
         <span className="font-medium">Instructions</span>
         <Textarea
           aria-label="Profile instructions"
-          value={instructions}
+          value={displayed.instructions}
           maxLength={DEVELOPMENT_PROFILE_BOUNDS.instructionsMaxLength}
-          onChange={(event) => setInstructions(event.target.value)}
+          onChange={(event) => editDraft({ instructions: event.target.value })}
           disabled={!canEdit || busy}
         />
       </label>
       <p className="text-xs text-muted-foreground">
-        {instructions.length.toLocaleString()} /{" "}
+        {displayed.instructions.length.toLocaleString()} /{" "}
         {DEVELOPMENT_PROFILE_BOUNDS.instructionsMaxLength.toLocaleString()} characters · Saved only
         when you choose Save profile
       </p>
@@ -460,9 +503,19 @@ function DevelopmentProfileEditor({
         </Alert>
       ) : null}
       {usageError !== null ? (
-        <Alert variant="error">
-          <AlertDescription>{usageError}</AlertDescription>
-        </Alert>
+        <div className="space-y-2">
+          <Alert variant="error">
+            <AlertDescription>{usageError}</AlertDescription>
+          </Alert>
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={busy}
+            onClick={() => void refreshAssignments()}
+          >
+            Retry assignments
+          </Button>
+        </div>
       ) : null}
       <div className="flex flex-wrap gap-2">
         <Button

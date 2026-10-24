@@ -77,6 +77,7 @@ function setup(initialAssignment: Assignment | null = null) {
       updatedBy: "user:maintainer",
     },
     resolveFailures: 0,
+    listGate: null as Promise<void> | null,
   };
 
   const effective = () => {
@@ -103,7 +104,10 @@ function setup(initialAssignment: Assignment | null = null) {
     ready: true,
     canEdit: true,
     canAssign: true,
-    list: vi.fn(async () => ok([releaseProfile, reviewProfile])),
+    list: vi.fn(async () => {
+      if (state.listGate !== null) await state.listGate;
+      return ok([releaseProfile, reviewProfile]);
+    }),
     read: vi.fn(),
     create: vi.fn(),
     update: vi.fn(),
@@ -212,6 +216,32 @@ it("assigns and unassigns one concrete project while inspecting separate instruc
   await expect
     .element(screen.getByText("Project-owned instructions", { exact: true }).first())
     .toBeVisible();
+});
+
+it("shows loading instead of unavailable while the initial assignment load is pending", async () => {
+  const { state } = setup();
+  let releaseList!: () => void;
+  state.listGate = new Promise<void>((resolve) => {
+    releaseList = resolve;
+  });
+  await using screen = await render(panel());
+  await expect
+    .element(screen.getByText("Loading Development Profiles…", { exact: true }))
+    .toBeVisible();
+  await expect
+    .element(screen.getByText("Loading effective instructions…", { exact: true }))
+    .toBeVisible();
+  await expect
+    .element(screen.getByText("Effective instructions are unavailable.", { exact: false }))
+    .not.toBeInTheDocument();
+
+  releaseList();
+  await expect
+    .element(screen.getByText("Project-owned instructions", { exact: true }).first())
+    .toBeVisible();
+  await expect
+    .element(screen.getByText("Effective instructions are unavailable.", { exact: false }))
+    .not.toBeInTheDocument();
 });
 
 it("does not read or assign profiles for grouped projects", async () => {

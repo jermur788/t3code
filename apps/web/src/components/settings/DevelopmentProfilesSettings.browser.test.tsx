@@ -86,6 +86,7 @@ function setup(seed: { profile: Profile; projects?: Project[] }[] = []) {
     projects,
     conflictOnUpdate: false,
     listFailures: 0,
+    listProjectsFailures: 0,
     nextId: seed.length + 1,
   };
 
@@ -182,9 +183,18 @@ function setup(seed: { profile: Profile; projects?: Project[] }[] = []) {
       delete state.projects[input.profileId];
       return ok(undefined);
     }),
-    listProjects: vi.fn(async (profileId: string) =>
-      ok((state.projects[profileId] ?? []).map((project) => ({ ...project }))),
-    ),
+    listProjects: vi.fn(async (profileId: string) => {
+      if (state.listProjectsFailures > 0) {
+        state.listProjectsFailures -= 1;
+        return {
+          ok: false as const,
+          message: "Assignments could not be loaded.",
+          conflict: false,
+          inUse: false,
+        };
+      }
+      return ok((state.projects[profileId] ?? []).map((project) => ({ ...project })));
+    }),
     getAssignment: vi.fn(),
     setAssignment: vi.fn(),
     resolve: vi.fn(),
@@ -295,6 +305,46 @@ it("keeps a conflicting draft until the user explicitly discards it for the late
   );
 });
 
+it.each([false, true])(
+  "refreshes a clean editor to the latest saved profile (reverted draft: %s)",
+  async (reverted) => {
+    const { state } = setup([{ profile: profile() }]);
+    await using screen = await render(panel());
+    const instructions = screen.getByRole("textbox", {
+      name: "Profile instructions",
+      exact: true,
+    });
+    await expect.element(instructions).toHaveValue("Run focused checks before release.");
+    if (reverted) {
+      await userEvent.type(instructions, " draft");
+      await userEvent.clear(instructions);
+      await userEvent.type(instructions, "Run focused checks before release.");
+    }
+
+    state.profiles = state.profiles.map((candidate) =>
+      candidate.profileId === "profile-1"
+        ? {
+            ...candidate,
+            name: "Renamed elsewhere",
+            instructions: "Edited elsewhere",
+            revision: candidate.revision + 1,
+            updatedBy: "user:other",
+          }
+        : candidate,
+    );
+    await userEvent.click(screen.getByRole("button", { name: "Refresh profiles", exact: true }));
+
+    await expect
+      .element(screen.getByRole("heading", { name: "Renamed elsewhere", exact: true }))
+      .toBeVisible();
+    await expect.element(screen.getByText("Revision 2 · Updated", { exact: false })).toBeVisible();
+    await expect.element(instructions).toHaveValue("Edited elsewhere");
+    await expect
+      .element(screen.getByRole("button", { name: "Save profile", exact: true }))
+      .toBeDisabled();
+  },
+);
+
 it("deletes only an unused profile, keeps assigned profiles protected, and checks usage lazily", async () => {
   const { api } = setup([
     {
@@ -342,7 +392,8 @@ it("shows the projects reported when a delete loses a race with a new assignment
   await expect.element(screen.getByText("Unused", { exact: true })).toBeVisible();
 
   state.projects["profile-1"] = [{ projectId: "project-9", name: "Storefront" }];
-  await userEvent.click(screen.getByRole("button", { name: "Delete profile", exact: true }));
+  const remove = screen.getByRole("button", { name: "Delete profile", exact: true });
+  await userEvent.click(remove);
   await expect
     .element(
       screen.getByText("This profile is assigned to Storefront", {
@@ -353,6 +404,33 @@ it("shows the projects reported when a delete loses a race with a new assignment
   await expect
     .element(screen.getByRole("heading", { name: "Release guidance", exact: true }))
     .toBeVisible();
+  await expect.element(screen.getByText("Assigned to Storefront", { exact: true })).toBeVisible();
+  await expect.element(screen.getByText("Unused", { exact: true })).not.toBeInTheDocument();
+  await expect.element(remove).toBeDisabled();
+});
+
+it("keeps delete disabled and offers a retry when the usage reload after an in-use delete fails", async () => {
+  const { state } = setup([{ profile: profile() }]);
+  await using screen = await render(panel());
+  await expect.element(screen.getByText("Unused", { exact: true })).toBeVisible();
+
+  state.projects["profile-1"] = [{ projectId: "project-9", name: "Storefront" }];
+  state.listProjectsFailures = 1;
+  const remove = screen.getByRole("button", { name: "Delete profile", exact: true });
+  await userEvent.click(remove);
+  await expect
+    .element(screen.getByText("Assignments could not be loaded.", { exact: true }))
+    .toBeVisible();
+  await expect.element(screen.getByText("Assignments unavailable", { exact: true })).toBeVisible();
+  await expect.element(screen.getByText("Unused", { exact: true })).not.toBeInTheDocument();
+  await expect.element(remove).toBeDisabled();
+
+  await userEvent.click(screen.getByRole("button", { name: "Retry assignments", exact: true }));
+  await expect.element(screen.getByText("Assigned to Storefront", { exact: true })).toBeVisible();
+  await expect
+    .element(screen.getByText("Assignments could not be loaded.", { exact: true }))
+    .not.toBeInTheDocument();
+  await expect.element(remove).toBeDisabled();
 });
 
 it("recovers from a load failure and refreshes usage without discarding a dirty draft", async () => {

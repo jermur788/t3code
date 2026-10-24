@@ -53,7 +53,7 @@ function ProjectDevelopmentProfileAssignment({ member }: { member: SidebarProjec
   const [effectiveError, setEffectiveError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [reloading, setReloading] = useState(false);
-  const [effectiveBusy, setEffectiveBusy] = useState(false);
+  const [effectiveBusy, setEffectiveBusy] = useState(true);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [conflict, setConflict] = useState(false);
 
@@ -67,16 +67,19 @@ function ProjectDevelopmentProfileAssignment({ member }: { member: SidebarProjec
   });
 
   const load = useStableCallback(async (isActive: () => boolean = () => true) => {
+    setEffectiveBusy(true);
     const listed = await api.list();
     if (!isActive()) return;
     if (!listed.ok) {
       setLoadError(listed.message);
+      setEffectiveBusy(false);
       return;
     }
     const assigned = await api.getAssignment(member.id);
     if (!isActive()) return;
     if (!assigned.ok) {
       setLoadError(assigned.message);
+      setEffectiveBusy(false);
       return;
     }
     setProfiles(listed.value);
@@ -246,7 +249,7 @@ function ProjectDevelopmentProfileAssignment({ member }: { member: SidebarProjec
         ) : null}
       </div>
 
-      {effectiveBusy && effective === null ? (
+      {api.ready && effectiveBusy && effective === null ? (
         <p className="text-sm text-muted-foreground">Loading effective instructions…</p>
       ) : null}
 
