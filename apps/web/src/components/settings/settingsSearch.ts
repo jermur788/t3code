@@ -20,6 +20,7 @@ export type SettingsPath =
   | "/settings/projects"
   | "/settings/general"
   | "/settings/diagnostics"
+  | "/settings/development-profiles"
   | "/settings/appearance"
   | "/settings/keybindings"
   | "/settings/snap-shot"
@@ -77,6 +78,7 @@ export interface SettingsSearchAvailability {
 
 export const SETTINGS_SECTION_LABELS: Readonly<Record<SettingsPath, string>> = {
   "/settings/diagnostics": "Diagnostics",
+  "/settings/development-profiles": "Development Profiles",
   "/settings/projects": "Project",
   "/settings/general": "General",
   "/settings/appearance": "Appearance",
@@ -1030,6 +1032,21 @@ export const SETTINGS_SEARCH_ITEMS = [
     ],
   },
   {
+    id: "development-profiles",
+    targetId: "development-profiles",
+    title: "Development Profiles",
+    to: "/settings/development-profiles",
+    searchTerms: ["instructions reusable profile guidance environment shared working agreement"],
+  },
+  {
+    id: "project-development-profile",
+    targetId: "development-profile",
+    title: "Development Profile",
+    to: "/settings/projects",
+    scope: "project",
+    searchTerms: ["assign inherit unassign instructions profile project none"],
+  },
+  {
     id: "archive",
     title: "Archived threads",
     to: "/settings/archived",
@@ -1043,6 +1060,7 @@ const SEARCH_ITEMS_BY_ID = new Map(SETTINGS_SEARCH_ITEMS.map((item) => [item.id,
 
 const SETTINGS_CATEGORY_SCOPES: Readonly<Record<SettingsPath, SettingsSearchScope | null>> = {
   "/settings/diagnostics": "environment",
+  "/settings/development-profiles": "environment",
   "/settings/projects": "project",
   "/settings/general": null,
   "/settings/appearance": null,

@@ -45,6 +45,7 @@ import {
   canPickExternalProjectFavicon,
   ProjectFaviconPickerDialog,
 } from "./ProjectFaviconPickerDialog";
+import { DevelopmentProfilesProjectSettings } from "./DevelopmentProfilesProjectSettings";
 import { ProjectActionsSettings } from "./ProjectActionsSettings";
 import { ProjectDefaultsSettings } from "./ProjectDefaultsSettings";
 import { projectGroupTitleNeedsUpdate } from "./ProjectSettingsPanel.logic";
@@ -550,6 +551,7 @@ function ProjectDetail({
           />
         </SettingsSection>
         <ProjectDefaultsSettings category="project" />
+        <DevelopmentProfilesProjectSettings members={group.memberProjects} />
         <ProjectRuntimeSettings members={group.memberProjects} />
 
         <ProjectActionsSettings />

@@ -1,3 +1,5 @@
+import * as DevelopmentProfileService from "./developmentProfiles/DevelopmentProfileService.ts";
+import * as DevelopmentProfileRpc from "./developmentProfiles/DevelopmentProfileRpc.ts";
 import * as ProjectRuntimeService from "./projectRuntime/ProjectRuntimeService.ts";
 import * as ProjectRuntimeSourceAccess from "./projectRuntime/ProjectRuntimeSourceAccess.ts";
 import * as ProjectRuntimeRpc from "./projectRuntime/ProjectRuntimeRpc.ts";
@@ -1897,8 +1899,10 @@ export const layerWsRpc = (
       });
 
       const runtimeHandlers = yield* ProjectRuntimeRpc.makeHandlers(currentSessionId);
+      const profileHandlers = yield* DevelopmentProfileRpc.makeHandlers(currentSessionId);
       const handlers = ServerWsRpcGroup.of({
         ...runtimeHandlers,
+        ...profileHandlers,
         [ORCHESTRATION_V2_WS_METHODS.dispatchCommand]: (command) =>
           Effect.annotateCurrentSpan({
             "orchestration_v2.command_id": command.commandId,
@@ -3269,6 +3273,7 @@ export const WS_RPC_SERVER_OPTIONS = {
 
 export const layer = Layer.unwrap(
   Effect.gen(function* () {
+    const developmentProfiles = yield* DevelopmentProfileService.DevelopmentProfileService;
     const projectRuntime = yield* ProjectRuntimeService.ProjectRuntimeService;
     const runtimeSources = yield* ProjectRuntimeSourceAccess.ProjectRuntimeSourceAccess;
     const previewAutomationBroker = yield* PreviewAutomationBroker.PreviewAutomationBroker;
@@ -3349,6 +3354,12 @@ export const layer = Layer.unwrap(
               serverBrowser,
             ).pipe(
               Layer.provideMerge(RpcSerialization.layerJson),
+              Layer.provide(
+                Layer.succeed(
+                  DevelopmentProfileService.DevelopmentProfileService,
+                  developmentProfiles,
+                ),
+              ),
               Layer.provide(
                 Layer.succeed(ProjectRuntimeService.ProjectRuntimeService, projectRuntime),
               ),

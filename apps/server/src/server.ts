@@ -1,3 +1,4 @@
+import * as DevelopmentProfileService from "./developmentProfiles/DevelopmentProfileService.ts";
 import * as ProviderEventLoggers from "@t3tools/provider-core/server/ProviderEventLoggers";
 import type { RelayManagedEndpointRuntimeConfig } from "@t3tools/contracts/relay";
 import * as Random from "effect/Random";
@@ -703,6 +704,7 @@ const layerCommandReadiness = HttpRouter.middleware(
 
 const layerProjectRuntime = ProjectRuntimeSourceAccess.layer.pipe(
   Layer.provideMerge(ProjectRuntimeService.layer),
+  Layer.provideMerge(DevelopmentProfileService.layer),
 );
 
 const layerMakeRoutes = Layer.mergeAll(

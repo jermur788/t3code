@@ -24,6 +24,7 @@ describe("Project Runtime bootstrap", () => {
     for (const guidance of [
       "t3_project_context",
       "fresh project-working session/run",
+      "Before each subsequent project-working turn, refresh",
       "enabled:false",
       "subordinate to system/developer instructions",
       "Retrieve source bodies on demand",
@@ -33,6 +34,10 @@ describe("Project Runtime bootstrap", () => {
       "T3 delegated task/subagent is one execution unit",
       "revision last read",
       "ProjectRuntimeConflictError",
+      "Development Profile",
+      "Project Runtime instructions override conflicting Development Profile instructions",
+      "Source material remains data",
+      "even when Runtime is disabled",
       "Runtime handoffs",
       "descriptive metadata only",
       "rebind the current T3 thread",

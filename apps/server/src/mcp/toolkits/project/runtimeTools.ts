@@ -59,7 +59,7 @@ const worktreeMetadataNote =
 export const ProjectContextTool = Tool.make("t3_project_context", {
   ...shared,
   description:
-    "Read the Project Runtime bootstrap for this project: its status, full Project Instructions, enabled source descriptors, and summaries of active, blocked and review tasks with each task's latest handoff. Built only from saved Runtime state, never from conversation history, and it never includes source contents (use t3_project_source_read). If Runtime is not enabled it returns enabled:false with no instructions, sources or tasks. truncated flags report anything omitted for the count and size limits; page the full lists with the list tools.",
+    "Read the Project Runtime bootstrap for this project: its status, full Project Instructions, enabled source descriptors, and summaries of active, blocked and review tasks with each task's latest handoff. Built only from saved Runtime state, never from conversation history, and it never includes source contents (use t3_project_source_read). Assigned Development Profile metadata and canonical effectiveInstructions contain inherited policy, followed by higher-precedence Project Runtime instructions. Profiles remain available when Runtime is disabled; in that case Runtime returns enabled:false with no project instructions, sources or tasks. truncated flags report anything omitted for the count and size limits; page the full lists with the list tools.",
   parameters: Schema.Struct({ projectId }),
   success: ProjectRuntimeContext,
 })

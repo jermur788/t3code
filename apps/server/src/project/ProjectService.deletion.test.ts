@@ -1,3 +1,4 @@
+import * as DevelopmentProfileService from "../developmentProfiles/DevelopmentProfileService.ts";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, it } from "@effect/vitest";
 import {
@@ -40,7 +41,7 @@ const layerEventPersistence = EventSink.layer.pipe(
   Layer.provideMerge(Layer.merge(EventStore.layer, ProjectionStore.layer)),
 );
 const layerServices = Layer.mergeAll(
-  ProjectRuntimeService.layer,
+  ProjectRuntimeService.layer.pipe(Layer.provideMerge(DevelopmentProfileService.layer)),
   LegacyV1ThreadImporter.layer.pipe(Layer.provideMerge(layerEventPersistence)),
   ProjectionMaintenance.layer.pipe(Layer.provide(layerEventPersistence)),
   ProjectStore.layer,
@@ -568,6 +569,21 @@ it.effect(
         const service = yield* ProjectService.make;
         yield* seedRuntime(projectId);
         const preserved = yield* seedRuntime(otherProjectId);
+        const profiles = yield* DevelopmentProfileService.DevelopmentProfileService;
+        const profile = yield* profiles.create(
+          { name: "Shared deletion policy", instructions: "Shared policy" },
+          { actor: "user:maintainer" },
+        );
+        yield* profiles.setAssignment({
+          projectId,
+          profileId: profile.profileId,
+          expectedRevision: 0,
+        });
+        const keptAssignment = yield* profiles.setAssignment({
+          projectId: otherProjectId,
+          profileId: profile.profileId,
+          expectedRevision: 0,
+        });
         yield* runtime.setEnabled(projectId, { enabled: false });
         yield* service.delete({ projectId, commandId: CommandId.make("runtime:delete") });
         for (const table of [
@@ -575,6 +591,7 @@ it.effect(
           "project_runtime_sources",
           "project_runtime_tasks",
           "project_runtime_handoffs",
+          "project_development_profiles",
         ]) {
           assert.deepEqual(
             yield* sql`SELECT 1 FROM ${sql(table)} WHERE project_id = ${projectId}`,
@@ -598,6 +615,11 @@ it.effect(
           "ProjectNotFoundError",
         );
         yield* service.delete({ projectId, commandId: CommandId.make("runtime:delete") });
+        assert.deepEqual(yield* profiles.read(profile.profileId), profile);
+        assert.deepEqual(yield* profiles.getAssignment(otherProjectId), keptAssignment);
+        assert.deepEqual(yield* profiles.listProjects(profile.profileId), [
+          { projectId: otherProjectId, name: "Deletion test" },
+        ]);
         assert.deepEqual(yield* sql`PRAGMA foreign_key_check`, []);
       }).pipe(Effect.provide(layerServices));
     }).pipe(Effect.provide(layerDatabase)),
@@ -656,6 +678,16 @@ it.effect("deleting a provenance thread preserves Project Runtime state", () =>
       const idAllocator = yield* IdAllocator.IdAllocatorV2;
       yield* eventSink.write({ events: [nativeThreadCreated(projectId, threadId)] });
       const records = yield* seedRuntime(projectId);
+      const profiles = yield* DevelopmentProfileService.DevelopmentProfileService;
+      const profile = yield* profiles.create(
+        { name: "Thread-independent policy", instructions: "Durable shared policy" },
+        { actor: "user:maintainer" },
+      );
+      const assignment = yield* profiles.setAssignment({
+        projectId,
+        profileId: profile.profileId,
+        expectedRevision: 0,
+      });
       const before = yield* runtime.getStatus(projectId);
       const instructions = yield* runtime.readInstructions(projectId);
       const command = {
@@ -687,6 +719,8 @@ it.effect("deleting a provenance thread preserves Project Runtime state", () =>
         effects: plan.effects,
       });
       assert.isNotNull((yield* projections.getThreadProjection(threadId)).thread.deletedAt);
+      assert.deepEqual(yield* profiles.read(profile.profileId), profile);
+      assert.deepEqual(yield* profiles.getAssignment(projectId), assignment);
       assert.deepEqual(yield* runtime.getStatus(projectId), before);
       assert.deepEqual(yield* runtime.readInstructions(projectId), instructions);
       assert.deepEqual(

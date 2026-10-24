@@ -1,4 +1,5 @@
 import * as Schema from "effect/Schema";
+import { DEVELOPMENT_PROFILE_BOUNDS } from "./developmentProfileBounds.ts";
 
 import {
   IsoDateTime,
@@ -469,6 +470,18 @@ export type ProjectRuntimeContextTruncation = typeof ProjectRuntimeContextTrunca
  * descriptors only, never source bodies or conversation history.
  */
 export const ProjectRuntimeContext = Schema.Struct({
+  developmentProfile: Schema.optionalKey(
+    Schema.Struct({
+      profileId: TrimmedNonEmptyString,
+      name: TrimmedNonEmptyString,
+      revision: PositiveInt,
+    }),
+  ),
+  effectiveInstructions: Schema.optionalKey(
+    Schema.String.check(
+      Schema.isMaxLength(DEVELOPMENT_PROFILE_BOUNDS.effectiveInstructionsMaxLength),
+    ),
+  ),
   projectId: ProjectId,
   status: ProjectRuntimeStatus,
   instructions: Schema.NullOr(ProjectRuntimeInstructions),

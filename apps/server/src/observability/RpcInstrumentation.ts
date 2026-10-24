@@ -1,5 +1,6 @@
 import {
   PROJECT_RUNTIME_RPC_METHODS,
+  DEVELOPMENT_PROFILE_RPC_METHODS,
   ORCHESTRATION_V2_WS_METHODS,
   WS_METHODS,
   type WsRpcGroup,
@@ -16,6 +17,16 @@ type WsRpcMethod = RpcGroup.Rpcs<typeof WsRpcGroup>["_tag"];
 
 // Trace queries and dashboards depend on these labels, including deviations from method prefixes.
 const RPC_AGGREGATES = {
+  [DEVELOPMENT_PROFILE_RPC_METHODS.list]: "developmentProfiles",
+  [DEVELOPMENT_PROFILE_RPC_METHODS.read]: "developmentProfiles",
+  [DEVELOPMENT_PROFILE_RPC_METHODS.create]: "developmentProfiles",
+  [DEVELOPMENT_PROFILE_RPC_METHODS.update]: "developmentProfiles",
+  [DEVELOPMENT_PROFILE_RPC_METHODS.delete]: "developmentProfiles",
+  [DEVELOPMENT_PROFILE_RPC_METHODS.listProjects]: "developmentProfiles",
+  [DEVELOPMENT_PROFILE_RPC_METHODS.getAssignment]: "developmentProfiles",
+  [DEVELOPMENT_PROFILE_RPC_METHODS.setAssignment]: "developmentProfiles",
+  [DEVELOPMENT_PROFILE_RPC_METHODS.resolve]: "developmentProfiles",
+
   [PROJECT_RUNTIME_RPC_METHODS.status]: "projectRuntime",
   [PROJECT_RUNTIME_RPC_METHODS.setEnabled]: "projectRuntime",
   [PROJECT_RUNTIME_RPC_METHODS.readInstructions]: "projectRuntime",

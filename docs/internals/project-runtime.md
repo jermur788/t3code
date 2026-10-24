@@ -78,7 +78,8 @@ Provenance is derived from the invocation, never from tool input: the thread, pr
 instance, model, and actor are recorded by the server. A provider or model change
 therefore changes handoff provenance, not project truth. Project Instructions are
 project-owned guidance subordinate to system/developer instructions and the user's
-current request.
+current request. They override conflicting inherited Development Profile policy;
+source authority remains separate from instruction precedence.
 
 Source bytes are the most restricted resource. A read takes a source ID, never a
 path; the registered relative path is revalidated on every call and resolved through
@@ -110,15 +111,20 @@ the source registry, enables or disables Runtime, or deletes anything; those rem
 user settings actions. Task update carries the destructive annotation; the revision
 check is the guard.
 
-`t3_project_context` is built from saved state in one transaction. It includes status,
-the full instructions, descriptors for enabled sources, and summaries of active,
-blocked, and review tasks with each task's latest handoff reference. Instructions sit
+`t3_project_context` is built from saved state in one transaction. The canonical
+Development Profile resolver supplies the profile and enabled Runtime instruction
+layers; it reads their persisted records without depending on Runtime service
+construction. Context includes assigned profile metadata and effective instructions
+alongside status, the full project instructions, descriptors for enabled sources, and summaries of active,
+blocked, and review tasks with each task's latest handoff reference. Project instructions and canonical effective instructions keep their own bounds
 outside the variable byte budget and are never truncated by packing; descriptors and
 task summaries are packed greedily within the count and byte caps, and a
 one-past-the-cap read tells the packer to report truncation. It never includes source
 bodies or chat history. A disabled Runtime returns `enabled: false` with empty
-collections so an agent can learn it is off; the other data operations return the
-disabled error.
+Runtime collections and no project instructions. An assigned Development Profile
+still applies and remains in context; disabling Runtime must not become a way to
+disable inherited policy. The other Runtime data operations return the disabled
+error.
 
 Domain errors are returned as the tagged error (`failureMode: "return"`) so a stale
 task write reaches the agent with its revision fields instead of being flattened to a
@@ -128,7 +134,9 @@ a delegated task is one execution unit. Status changes do not establish verifica
 or acceptance.
 
 The shared provider instructions contain one `Project Runtime` section, delivered
-through the existing system, first-run, and ACP paths. A guard test asserts it
+through the existing system, first-run, and ACP paths. It defines profile/project
+precedence and directs agents to the canonical context instead of reconstructing
+inheritance in provider adapters. A guard test asserts it
 appears once and stays provider-neutral. Claude's read-only T3 MCP allowlist is the
 one provider-specific seam; a future Runtime read tool must be added there and to its
 test. Write tools are not pre-approved.

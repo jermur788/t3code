@@ -1,3 +1,4 @@
+import * as DevelopmentProfileService from "../developmentProfiles/DevelopmentProfileService.ts";
 import {
   PROJECT_RUNTIME_BOUNDS,
   ProjectId,
@@ -213,6 +214,7 @@ function patchRecord<A extends object>(record: A, patch: object) {
 
 const make = Effect.gen(function* () {
   const sql = yield* SqlClient.SqlClient;
+  const developmentProfiles = yield* DevelopmentProfileService.DevelopmentProfileService;
   const crypto = yield* Crypto.Crypto;
   const newId = crypto
     .randomUUIDv4()
@@ -604,14 +606,28 @@ const make = Effect.gen(function* () {
   )(
     function* (projectId) {
       const current = yield* status(projectId);
-      if (!current.enabled) return disabledContext(projectId, current);
-      const instructionRows = yield* sql<{
-        readonly instructions_json: string | null;
-      }>`SELECT instructions_json FROM project_runtime WHERE project_id = ${projectId}`;
-      const instructions =
-        instructionRows[0]?.instructions_json == null
-          ? null
-          : yield* decodeInstructions(instructionRows[0].instructions_json);
+      const effective = yield* developmentProfiles
+        .resolveEffectiveProjectInstructions(projectId)
+        .pipe(
+          Effect.mapError(
+            (cause) =>
+              new PersistenceSqlError({ operation: "resolveEffectiveProjectInstructions", cause }),
+          ),
+        );
+      const inherited = effective.developmentProfile;
+      const profileContext =
+        inherited === null
+          ? {}
+          : {
+              developmentProfile: {
+                profileId: inherited.profileId,
+                name: inherited.name,
+                revision: inherited.revision,
+              },
+              effectiveInstructions: effective.formattedInstructions,
+            };
+      if (!current.enabled) return { ...disabledContext(projectId, current), ...profileContext };
+      const instructions = effective.projectInstructions;
       // One row past each cap tells the packer that more exist.
       const sourceRows = yield* sql<{
         readonly payload_json: string;
@@ -641,18 +657,21 @@ const make = Effect.gen(function* () {
             Effect.map((latestHandoff) => ({ task, latestHandoff })),
           ),
       );
-      return packContext({
-        projectId,
-        status: current,
-        instructions,
-        sources,
-        tasks: [
-          ...withHandoffs,
-          ...tasks
-            .slice(PROJECT_RUNTIME_BOUNDS.contextMaxTasks)
-            .map((task) => ({ task, latestHandoff: null })),
-        ],
-      });
+      return {
+        ...packContext({
+          projectId,
+          status: current,
+          instructions,
+          sources,
+          tasks: [
+            ...withHandoffs,
+            ...tasks
+              .slice(PROJECT_RUNTIME_BOUNDS.contextMaxTasks)
+              .map((task) => ({ task, latestHandoff: null })),
+          ],
+        }),
+        ...profileContext,
+      };
     },
     sql.withTransaction,
     sqlErrors,

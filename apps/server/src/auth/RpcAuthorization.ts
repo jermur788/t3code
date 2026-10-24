@@ -1,6 +1,7 @@
 import {
   CLIENT_GUARDED_RPC_SCOPES,
   PROJECT_RUNTIME_RPC_METHODS,
+  DEVELOPMENT_PROFILE_RPC_METHODS,
   type DeviceListInput,
   clientRpcRequiredScopes,
   authScopeRequiredResponse,
@@ -40,6 +41,12 @@ type WsRpcMethod = RpcGroup.Rpcs<typeof WsRpcGroup>["_tag"];
 
 export const RPC_REQUIRED_SCOPES = {
   ...CLIENT_GUARDED_RPC_SCOPES,
+  [DEVELOPMENT_PROFILE_RPC_METHODS.list]: AuthOrchestrationReadScope,
+  [DEVELOPMENT_PROFILE_RPC_METHODS.read]: AuthOrchestrationReadScope,
+  [DEVELOPMENT_PROFILE_RPC_METHODS.listProjects]: AuthOrchestrationReadScope,
+  [DEVELOPMENT_PROFILE_RPC_METHODS.getAssignment]: AuthOrchestrationReadScope,
+  [DEVELOPMENT_PROFILE_RPC_METHODS.resolve]: AuthOrchestrationReadScope,
+
   [PROJECT_RUNTIME_RPC_METHODS.status]: AuthOrchestrationReadScope,
   [PROJECT_RUNTIME_RPC_METHODS.readInstructions]: AuthOrchestrationReadScope,
   [PROJECT_RUNTIME_RPC_METHODS.listSources]: AuthOrchestrationReadScope,

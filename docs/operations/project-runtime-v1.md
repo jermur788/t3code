@@ -103,6 +103,18 @@ recorded id; the guard then refuses to start. A fresh merged database has neithe
 upgrades for existing installations. Do not discard or silently rewrite
 databases to make the guard pass.
 
+## Development Profiles migration dependency
+
+Development Profiles adds migration `069_DevelopmentProfiles` after this fork's
+`068_ProjectRuntime`. It uses the normal migration runner and creates separate
+profile and assignment tables; it does not renumber or reconcile either existing
+migration history. Upgrading a fork home applies 69 normally. Take an offline
+backup before upgrading.
+
+The separate-home constraint above still applies. Development Profiles does not
+qualify shared-home interoperability with upstream, and a fresh database is not
+proof of a safe upgrade from either installed history.
+
 ## Rebase hotspots
 
 - `apps/server/src/persistence/Migrations.ts` is the only textual conflict found by

@@ -1,3 +1,4 @@
+import * as DevelopmentProfileService from "../developmentProfiles/DevelopmentProfileService.ts";
 import { PersistenceSqlError } from "../persistence/Errors.ts";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, it } from "@effect/vitest";
@@ -33,7 +34,7 @@ const workspace = WorkspaceFileSystem.layer.pipe(
   Layer.provide(Layer.mock(KnownWorkspaces.KnownWorkspaces)({ assertContains: () => Effect.void })),
 );
 const layer = Sources.layer.pipe(
-  Layer.provideMerge(Runtime.layer),
+  Layer.provideMerge(Runtime.layer.pipe(Layer.provide(DevelopmentProfileService.layer))),
   Layer.provideMerge(ProjectStore.layer),
   Layer.provideMerge(workspace),
   Layer.provideMerge(Sqlite.layerMemory),

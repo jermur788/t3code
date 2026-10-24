@@ -44,6 +44,14 @@ another client saves first, your draft stays visible and the save is refused.
 Choose **Discard draft and reload instructions** to load the newer record before
 editing again.
 
+## Shared development policy
+
+[Development Profiles](development-profiles.md) let several projects inherit the
+same development instructions. Assign a profile explicitly in project settings.
+Project Instructions override conflicting profile guidance; registered sources
+keep their existing role as evidence. Removing a profile assignment does not
+change Project Instructions, sources, tasks, or handoffs.
+
 ## Registered sources
 
 A source is a workspace-relative text file registered with the project. Choose
@@ -70,7 +78,7 @@ result can be incomplete; narrow the query or read a known source directly when 
 matters.
 
 Sources are local workspace paths. Runtime does not add cloud sync, snapshots,
-memory inference, profiles, or automatic execution to them.
+memory inference or automatic execution to them.
 
 ## Runtime tasks
 

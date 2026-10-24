@@ -75,8 +75,8 @@ export const disabledContext = (
  * descriptors, task summaries, latest-handoff references), measured as the
  * UTF-8 bytes of their serialized JSON. Project Instructions are deliberately
  * outside it: they keep their own `instructionsMaxLength` bound and are never
- * truncated, so a response is bounded by that, this budget, and the fixed
- * status fields.
+ * truncated, so the packed Runtime fields are bounded by that, this budget,
+ * and the fixed status fields. Profile resolution adds separately bounded text.
  *
  * Packing is greedy in the given order: sources first, then tasks. A task
  * whose handoff reference does not fit is kept without it (`handoffs`); a task

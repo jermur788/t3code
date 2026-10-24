@@ -470,6 +470,10 @@
     "./state/project-runtime": {
       "types": "./src/state/projectRuntime.ts",
       "default": "./src/state/projectRuntime.ts"
+    },
+    "./state/development-profiles": {
+      "types": "./src/state/developmentProfiles.ts",
+      "default": "./src/state/developmentProfiles.ts"
     }
   },
   "scripts": {

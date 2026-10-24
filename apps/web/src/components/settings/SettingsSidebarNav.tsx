@@ -11,6 +11,7 @@ import {
   ArchiveIcon,
   FlaskConicalIcon,
   BlocksIcon,
+  BookOpenIcon,
   BotIcon,
   createLucideIcon,
   CalendarClockIcon,
@@ -77,6 +78,7 @@ const SETTINGS_SECTION_ICONS: Readonly<
 > = {
   "/settings/general": Settings2Icon,
   "/settings/diagnostics": Settings2Icon,
+  "/settings/development-profiles": BookOpenIcon,
   "/settings/appearance": PaletteIcon,
   "/settings/projects": PanelsTopLeftIcon,
   "/settings/keybindings": KeyboardIcon,

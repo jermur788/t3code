@@ -1,3 +1,4 @@
+import * as DevelopmentProfileService from "./developmentProfiles/DevelopmentProfileService.ts";
 import * as ProjectRuntimeService from "./projectRuntime/ProjectRuntimeService.ts";
 import * as ProjectRuntimeSourceAccess from "./projectRuntime/ProjectRuntimeSourceAccess.ts";
 import * as NodeServices from "@effect/platform-node/NodeServices";
@@ -490,6 +491,7 @@ it.effect(
       const responses = yield* Queue.unbounded<ServerConfigStreamEvent>();
       const configRpcServices = Layer.mergeAll(
         Layer.mock(ProjectRuntimeService.ProjectRuntimeService)({}),
+        Layer.mock(DevelopmentProfileService.DevelopmentProfileService)({}),
         Layer.mock(ProjectRuntimeSourceAccess.ProjectRuntimeSourceAccess)({}),
         layerUnusedConfigRpcServices,
         Layer.mock(ExternalLauncher.ExternalLauncher)({

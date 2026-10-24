@@ -1,3 +1,4 @@
+import * as DevelopmentProfileService from "../developmentProfiles/DevelopmentProfileService.ts";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, it } from "@effect/vitest";
 import {
@@ -61,7 +62,9 @@ const layerSourceAccess = <E, R>(
           }),
         ).pipe(Layer.provideMerge(files));
   return ProjectRuntimeSourceAccess.layer.pipe(
-    Layer.provideMerge(ProjectRuntimeService.layer),
+    Layer.provideMerge(
+      ProjectRuntimeService.layer.pipe(Layer.provide(DevelopmentProfileService.layer)),
+    ),
     Layer.provideMerge(ProjectStore.layer),
     Layer.provideMerge(observed),
     Layer.provideMerge(SqlitePersistence.layerMemory),

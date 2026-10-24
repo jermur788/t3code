@@ -14,8 +14,10 @@ it.effect(
       yield* runMigrations({ toMigrationInclusive: 67 });
       yield* sql`INSERT INTO projection_projects (project_id, title, workspace_root, scripts_json, created_at, updated_at)
       VALUES ('existing', 'Existing project', '/existing', '[]', '2026-10-23T00:00:00.000Z', '2026-10-23T00:00:00.000Z')`;
-      assert.deepEqual(yield* runMigrations(), [[68, "ProjectRuntime"]]);
-      assert.deepEqual(yield* runMigrations(), []);
+      assert.deepEqual(yield* runMigrations({ toMigrationInclusive: 68 }), [
+        [68, "ProjectRuntime"],
+      ]);
+      assert.deepEqual(yield* runMigrations({ toMigrationInclusive: 68 }), []);
       const projects = yield* sql<{
         readonly title: string;
       }>`SELECT title FROM projection_projects WHERE project_id = 'existing'`;

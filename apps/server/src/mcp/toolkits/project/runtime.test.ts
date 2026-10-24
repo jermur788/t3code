@@ -1,3 +1,4 @@
+import * as DevelopmentProfileService from "../../../developmentProfiles/DevelopmentProfileService.ts";
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, it } from "@effect/vitest";
@@ -89,6 +90,7 @@ const layerWorkspace = WorkspaceFileSystem.layer.pipe(
 
 const layerRuntime = ProjectRuntimeSourceAccess.layer.pipe(
   Layer.provideMerge(ProjectRuntimeService.layer),
+  Layer.provideMerge(DevelopmentProfileService.layer),
   Layer.provideMerge(ProjectStore.layer),
   Layer.provideMerge(layerWorkspace),
   Layer.provideMerge(SqlitePersistence.layerMemory),
@@ -1024,4 +1026,70 @@ it.effect("reports internal failures generically", () =>
       message: "The operation could not be completed.",
     });
   }).pipe(Effect.scoped, Effect.provide(layerTest)),
+);
+
+it.effect(
+  "exposes the same inherited policy to different provider scopes without mutation tools",
+  () =>
+    Effect.gen(function* () {
+      const { runtime } = yield* setup;
+      const profiles = yield* DevelopmentProfileService.DevelopmentProfileService;
+      const profile = yield* profiles.create(
+        {
+          name: "Shared development standard",
+          instructions: "Use workflow A. Shared policy marker.",
+        },
+        maintainer,
+      );
+      yield* profiles.setAssignment({
+        projectId: projectA,
+        profileId: profile.profileId,
+        expectedRevision: 0,
+      });
+      yield* profiles.setAssignment({
+        projectId: projectOff,
+        profileId: profile.profileId,
+        expectedRevision: 0,
+      });
+      yield* runtime.saveInstructions(
+        projectA,
+        { instructions: "Use workflow B for this repository.", expectedRevision: 0 },
+        maintainer,
+      );
+      const first = succeeded(
+        ProjectRuntimeContext,
+        yield* invoke(threadScope(threadA, codex), "t3_project_context"),
+      );
+      const second = succeeded(
+        ProjectRuntimeContext,
+        yield* invoke(threadScope(threadA, claude), "t3_project_context"),
+      );
+      assert.deepEqual(first, second);
+      assert.deepEqual(first.developmentProfile, {
+        profileId: profile.profileId,
+        name: profile.name,
+        revision: profile.revision,
+      });
+      assert.include(first.effectiveInstructions!, "Shared policy marker");
+      assert.include(first.effectiveInstructions!, "workflow B");
+      const disabled = succeeded(
+        ProjectRuntimeContext,
+        yield* invoke(threadScope(threadOff), "t3_project_context"),
+      );
+      assert.isFalse(disabled.status.enabled);
+      assert.include(disabled.effectiveInstructions!, "Shared policy marker");
+      assert.isNull(disabled.instructions);
+      const isolated = succeeded(
+        ProjectRuntimeContext,
+        yield* invoke(threadScope(threadB), "t3_project_context"),
+      );
+      assert.equal(isolated.developmentProfile, undefined);
+      const server = yield* McpServer.McpServer;
+      assert.deepEqual(
+        server.tools
+          .filter(({ tool }) => /development_?profile/i.test(tool.name))
+          .map(({ tool }) => tool.name),
+        [],
+      );
+    }).pipe(Effect.provide(layerTest)),
 );

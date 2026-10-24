@@ -1,3 +1,4 @@
+import * as DevelopmentProfileService from "../developmentProfiles/DevelopmentProfileService.ts";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, it } from "@effect/vitest";
 import {
@@ -53,6 +54,7 @@ const setup = Effect.gen(function* () {
   return service;
 });
 const layerTest = ProjectRuntimeService.layer.pipe(
+  Layer.provideMerge(DevelopmentProfileService.layer),
   Layer.provideMerge(SqlitePersistence.layerMemory),
   Layer.provide(NodeServices.layer),
 );
@@ -599,7 +601,10 @@ it.effect("reopens the database with the same Runtime state and domain records",
       const fs = yield* FileSystem.FileSystem;
       const dir = yield* fs.makeTempDirectoryScoped();
       const database = SqlitePersistence.layerFromPath(`${dir}/runtime.sqlite`);
-      const serviceLayer = ProjectRuntimeService.layer.pipe(Layer.provideMerge(database));
+      const serviceLayer = ProjectRuntimeService.layer.pipe(
+        Layer.provide(DevelopmentProfileService.layer),
+        Layer.provideMerge(database),
+      );
       const records = yield* Effect.scoped(
         Effect.gen(function* () {
           const service = yield* setup;
@@ -733,4 +738,71 @@ it.effect("reads context from enabled sources and open tasks with each latest ha
     assert.deepEqual(context.truncated, { sources: false, tasks: false, handoffs: false });
     assert.notInclude(JSON.stringify(context), "Other project");
   }).pipe(Effect.provide(layerTest)),
+);
+
+it.effect(
+  "delivers canonical inherited policy with project overrides, including when Runtime is disabled",
+  () =>
+    Effect.gen(function* () {
+      const runtime = yield* setup;
+      const profiles = yield* DevelopmentProfileService.DevelopmentProfileService;
+      const profile = yield* profiles.create(
+        { name: "Shared standard", instructions: "Use workflow A. Profile-only marker." },
+        actor,
+      );
+      yield* profiles.setAssignment({
+        projectId: projectA,
+        profileId: profile.profileId,
+        expectedRevision: 0,
+      });
+      yield* runtime.saveInstructions(
+        projectA,
+        {
+          instructions: "For this project use workflow B instead of workflow A.",
+          expectedRevision: 0,
+        },
+        actor,
+      );
+      const context = yield* runtime.readContext(projectA);
+      const effective = yield* profiles.resolveEffectiveProjectInstructions(projectA);
+      assert.deepEqual(context.developmentProfile, {
+        profileId: profile.profileId,
+        name: profile.name,
+        revision: profile.revision,
+      });
+      assert.equal(context.effectiveInstructions, effective.formattedInstructions);
+      assert.include(context.effectiveInstructions!, "Profile-only marker");
+      assert.include(context.effectiveInstructions!, "workflow B");
+      assert.equal((yield* runtime.readContext(projectB)).developmentProfile, undefined);
+      yield* runtime.setEnabled(projectA, { enabled: false });
+      const disabled = yield* runtime.readContext(projectA);
+      assert.isFalse(disabled.status.enabled);
+      assert.isNull(disabled.instructions);
+      assert.include(disabled.effectiveInstructions!, "Profile-only marker");
+      assert.notInclude(disabled.effectiveInstructions!, "workflow B");
+      const updated = yield* profiles.update(
+        {
+          profileId: profile.profileId,
+          name: profile.name,
+          instructions: "Updated shared policy",
+          expectedRevision: profile.revision,
+        },
+        actor,
+      );
+      const refreshed = yield* runtime.readContext(projectA);
+      assert.equal(refreshed.developmentProfile?.revision, updated.revision);
+      assert.include(refreshed.effectiveInstructions!, "Updated shared policy");
+      const assignment = yield* profiles.getAssignment(projectA);
+      yield* profiles.setAssignment({
+        projectId: projectA,
+        profileId: null,
+        expectedRevision: assignment!.revision,
+      });
+      assert.equal((yield* runtime.readContext(projectA)).effectiveInstructions, undefined);
+      yield* runtime.setEnabled(projectA, { enabled: true });
+      assert.equal(
+        (yield* runtime.readInstructions(projectA))?.instructions,
+        "For this project use workflow B instead of workflow A.",
+      );
+    }).pipe(Effect.provide(layerTest)),
 );
