@@ -539,7 +539,10 @@ describe("ClaudeAdapterV2 MCP query overrides", () => {
     assert.isTrue(Array.isArray(content));
     if (!Array.isArray(content)) return;
     assert.lengthOf(content, 2);
-    assert.include(content[0]?.text, "PRT-AUTO-7c91-SKILL");
+    assert.isTrue(content[0]?.type === "text");
+    if (content[0]?.type === "text") {
+      assert.include(content[0].text, "PRT-AUTO-7c91-SKILL");
+    }
     assert.deepEqual(content[1], { type: "text", text: "/review-pr 123" });
   });
 
