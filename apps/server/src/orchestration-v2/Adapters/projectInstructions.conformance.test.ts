@@ -1,4 +1,5 @@
-import { readFileSync } from "node:fs";
+// @effect-diagnostics nodeBuiltinImport:off
+import * as NodeFS from "node:fs";
 
 import {
   type DevelopmentProfile,
@@ -233,7 +234,7 @@ describe("adapter wiring", () => {
   ] as const;
 
   it.each(files)("%s reads the turn-scoped snapshot, not session policy", (_name, path, input) => {
-    const source = readFileSync(new URL(path, root), "utf8");
+    const source = NodeFS.readFileSync(new URL(path, root), "utf8");
     expect(source).toContain(`${input}.projectInstructions`);
     expect(source).not.toContain("runtimePolicy.projectInstructions");
   });
