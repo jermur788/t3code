@@ -22,9 +22,8 @@ Runtime hides its project instructions, sources, and tasks from agents; it does
 not remove the assigned profile. T3 supplies the current effective instructions
 automatically before each agent turn, including in fresh conversations and after
 changing providers. Changes apply to subsequent work without interrupting a turn
-already underway. If Claude still has background agents or commands running when
-guidance changes, T3 keeps that work alive and refuses the next message until it
-finishes or you press Stop. Clearing guidance affects later turns; start a new thread
+already underway. Clearing guidance affects later turns; an existing conversation may
+retain an earlier snapshot in its prompt or provider history, so start a new thread
 when you need a clean slate.
 
 Edits check the revision you started from. If another client saves first, your

@@ -1,23 +1,21 @@
-# Project Runtime V1 release and verification
+# Project Runtime release and verification
 
-Maintainer runbook for the first Project Runtime release. This release is a pinned
-fork candidate, not an integration of current upstream.
+Maintainer runbook for Project Runtime and Development Profiles. The pinned V1
+evidence below is historical. The current tree is the pre-publish integration
+candidate, rebased onto upstream and qualified by the pre-publish hardening gates.
 
 ## Baseline
 
-- Branch: `feature/project-runtime-v1`
-- Implementation baseline: `9bdcaa6399127908640c2cb53a344584c99743f6` (seven
+- Integration branch: `integration/pre-publish-hardening`
+- Original fork checkpoint: `60685b713f1432fd00ef9a72b617e21bb2ffdfba`
+- Fork implementation baseline: `9bdcaa6399127908640c2cb53a344584c99743f6` (seven
   commits from `bfbd607a0b` through `9bdcaa6399`)
-- Documentation candidate: the commit containing this page; the lead records its
-  SHA in the release handoff
-- Upstream base: `f9c1d023f1dad68360e19a8db89c9c485e2da410`
-- Current upstream observed during PRT-100: `aaf4a901c490da4f0943afe1d941f3a8d58dc1c8`
-- Current upstream observed during post-integration review (2026-10-25): `3d004999362848ae33b6f40e4bbd33b9d5c0ea59` (204 commits
-  since the fork base)
+- Current upstream base: `5b35402623d7d1d88eaa472807272a6c2e78012a` (2026-10-25)
+- Previous upstream base: `f9c1d023f1dad68360e19a8db89c9c485e2da410`
 
-No merge or rebase against current upstream was performed or qualified. Do not
-describe this build as current upstream, and do not publish a merged tree as the V1
-candidate without repeating the release gates.
+The current tree is a rebase onto upstream, not a pinned fork candidate. Do not
+describe it as upstream T3 Code: it still carries fork-owned Runtime, Profiles, and
+Project Home seams.
 
 ## Release checks
 
@@ -79,60 +77,42 @@ commits. A manifest records the candidate SHA and hashes its inputs; verify the
 hashes before trusting a verdict, and treat a summary as a pointer to the raw
 records rather than a replacement for them.
 
-## Migration history collision
+## Migration model and supported upgrades
 
-This fork adds `068_ProjectRuntime` and `069_DevelopmentProfiles`. Current upstream,
-observed at `3d004999362848ae33b6f40e4bbd33b9d5c0ea59`, uses the same ids for
-`068_ShellStopRequestIndex` and `069_ThreadMessageSearch`. Both declare the ids in
-`apps/server/src/persistence/Migrations.ts`, and the migration manifest guard
-refuses to start when a recorded id has a different name. The failure is a
-`MigrationError(BadState)`, not silent corruption.
+Fork-owned schema has its own ledger, `t3_fork_migrations`, and its own registry in
+`apps/server/src/persistence/ForkMigrations.ts`. Upstream's `effect_sql_migrations`
+stays upstream-pure. The fork migrations are `1_ProjectRuntime` and
+`2_DevelopmentProfiles` under `Migrations/Fork/`. They add objects and may reference
+upstream tables; they never alter or drop upstream objects.
 
-Consequences:
+On a full boot, the server reconciles only the exact historical fork ledger at
+`(68, ProjectRuntime)` and `(69, DevelopmentProfiles)`. It validates the existing
+objects against the shipped definitions, moves the recorded timestamps into the fork
+ledger, writes an audit row to `t3_fork_migration_reconciliations`, and removes only
+those two upstream rows. Then upstream's real 68/69 run, and the fork ledger is
+verified. A malformed, partial, or ambiguous history fails closed without writing.
 
-- Never share one T3 home or database between this fork and an upstream build.
-- Never swap the two binaries against the same database.
-- A textual merge that keeps both id entries is not a fix; it creates duplicate
-  identifiers and rows.
-- The fork's own `migrate-dev-db` seeding copies the live migration history and then
-  runs migrations, so seeding hard-fails once the source home has passed id 67.
+Supported transitions:
 
-Integrating upstream requires a deliberate, separately qualified upgrade path that
-understands both existing schema histories. Renumbering to the next free ids is
-necessary but not sufficient for an existing fork database: after the renumber, the
-migrator's high-water mark skips the upstream migrations that occupied 68 and 69,
-and the guard refuses the history. A fork-origin database therefore needs explicit
-history reconciliation in the same data-preserving style as
-`reconcileV2PreviewMigration`, including running the skipped upstream migrations.
-Deleting the fork rows alone is not a fix because the fork DDL is not idempotent.
-A second migrator table for fork-owned schema is a possible structural alternative,
-but it touches persistence core and needs maintainer sign-off. Do not discard or
-silently rewrite databases to make the guard pass.
+| Origin               | Result                                                                        |
+| -------------------- | ----------------------------------------------------------------------------- |
+| Fresh home           | Full upstream schema, then fork Runtime and Profiles                          |
+| Upstream-origin home | Adds fork schema; upstream history is unchanged                               |
+| Old fork home        | Preserves Runtime/Profile rows, applies upstream 68/69, moves ledger identity |
+| Integrated fork home | No-op, then normal future migrations                                          |
 
-A fresh merged database and an upstream-origin database at id 67 or below can adopt
-a renumbered fork history. An upstream-origin database that already includes current
-68/69, and any fork-origin database, cannot. The review's disposable rebase probe
-found 14 conflict hunks across 10 hand-resolved files plus the generated route tree;
-that probe was not compiled or qualified.
-
-## Development Profiles migration dependency
-
-Development Profiles adds migration `069_DevelopmentProfiles` after this fork's
-`068_ProjectRuntime`. It uses the normal migration runner and creates separate
-profile and assignment tables; it does not renumber or reconcile either existing
-migration history. Upgrading a fork home applies 69 normally. Take an offline
-backup before upgrading.
-
-The separate-home constraint above still applies. Development Profiles does not
-qualify shared-home interoperability with upstream, and a fresh database is not
-proof of a safe upgrade from either installed history.
+`migrate-dev-db` uses the same path and verifies both ledgers, including audit rows.
+Do not run an upstream build against an adopted home as part of a round trip; that
+transition is not qualified here. For active use, keep upstream and fork homes
+separate unless the pre-publish qualification explicitly covers the shared-home
+case. Take an offline backup before upgrading any home.
 
 ## Rebase hotspots
 
-- `apps/server/src/persistence/Migrations.ts` and the hard-coded manifest tail in
-  `reconcileV2PreviewMigration.test.ts` conflict whenever either side adds a
-  migration. The post-integration probe also found conflicts in
-  `WorkspaceFileSystem.ts`, `orchestrationInstructions.ts`, `ws.ts`,
+- `apps/server/src/persistence/Migrations.ts` still changes the run sequence and
+  imports `ForkMigrations`; upstream edits to the manifest or guard can conflict.
+  Fork migration ids no longer do. The post-integration probe also found conflicts
+  in `WorkspaceFileSystem.ts`, `orchestrationInstructions.ts`, `ws.ts`,
   `packages/contracts/src/rpc.ts`, `routeTree.gen.ts`, `ClaudeAdapterV2.ts`,
   `CodexAdapterV2.ts`, `runtimeLayer.ts`, and `provider-pi/src/server/adapter.ts`.
 - Central registries are likely to churn again: `server.ts`, `ws.ts`,
@@ -149,15 +129,14 @@ proof of a safe upgrade from either installed history.
   file database, so this is a convention gap rather than a demonstrated latency
   problem. Moving reads to the read-only connection is still an explicit post-V1
   item.
-- Instruction edits invalidate loaded-session policy keys. On Claude, an edit while
-  background agents or commands are still running refuses the next message until
-  that work finishes or the user presses Stop.
-- Clearing guidance affects later turns, but prompt-carrying providers keep earlier
-  snapshots in an existing conversation's history. Start a new thread for a clean
-  slate.
-- Per-adapter delivery conformance tests exist for Claude, Codex, and OpenCode2.
-  ACP, Cursor, Muse, Pi, and OpenCode v1 share the tested helper but do not have
-  adapter-level delivery tests.
+- Dynamic instructions are turn-scoped. Claude delivers the current snapshot in the
+  turn prompt, not the query identity, so ordinary instruction edits no longer force
+  a live-query replacement. Clearing guidance applies to later turns, but
+  prompt-carrying providers keep earlier snapshots in an existing conversation's
+  history; start a new thread for a clean slate.
+- One parametrized conformance suite covers Claude, Codex, OpenCode, ACP, Cursor,
+  Muse, and Pi delivery, including update, removal, precedence, isolation, and
+  transport formatting. Claude, Codex, and OpenCode2 also have adapter-level tests.
 - Registered-source search collects at most 500 workspace index candidates before
   filtering to registered paths. A truncated empty result is not proof of no match;
   narrow the query or read a known source directly. A source-scoped index is

@@ -24,7 +24,7 @@ provider, or worktree.
 | [MCP tools](../../apps/server/src/mcp/toolkits/project/runtimeTools.ts)                    | The 11 agent tools; handlers and provenance live in [runtimeHandlers.ts](../../apps/server/src/mcp/toolkits/project/runtimeHandlers.ts).                    |
 | [Provider bootstrap](../../packages/provider-core/src/server/orchestrationInstructions.ts) | The shared, provider-neutral `Project Runtime` instruction section.                                                                                         |
 | [Transport and UI](../../apps/server/src/projectRuntime/ProjectRuntimeRpc.ts)              | WebSocket handlers; the web client lives under [settings](../../apps/web/src/components/settings/ProjectRuntimeSettings.tsx).                               |
-| [Migration](../../apps/server/src/persistence/Migrations/068_ProjectRuntime.ts)            | Four tables, indexes, and the project soft-delete trigger.                                                                                                  |
+| [Fork migrations](../../apps/server/src/persistence/ForkMigrations.ts)                     | The isolated fork ledger, historical reconciliation, and the two Runtime/Profile migrations.                                                                |
 
 ## Persistence and deletion
 
@@ -141,13 +141,15 @@ precedence and directs agents to the canonical context instead of reconstructing
 inheritance in provider adapters. A guard test asserts it
 appears once and stays provider-neutral.
 
-Instruction delivery is a separate provider seam. Claude adds the snapshot to its
-append-system-prompt and includes it in the query reuse key, so changing guidance
-restarts the query and is refused while background agents or commands are still
-running. Codex adds numbered additional-context entries chunked below its 4,000-byte
-limit. ACP, Cursor, and Pi prepend the snapshot to prompt text; Muse and OpenCode use
-the shared system-prompt builder. All call the same shared helpers, so precedence and
-bounds stay provider-neutral.
+Instruction delivery is a separate provider seam. `RuntimePolicy` carries only
+session-scoped state: modes, cwd, and approval/sandbox overrides. The effective
+Project/Profile snapshot is resolved per turn in `ProviderTurnStartService` through
+`ProjectInstructions` and passed as `turnInput.projectInstructions`. Codex adds
+numbered additional-context entries chunked below its 4,000-byte limit. Claude,
+ACP, Cursor, and Pi put the snapshot in the turn prompt; Muse and OpenCode use the
+shared system-prompt builder. Claude's live-query reuse key excludes the snapshot, so
+ordinary instruction edits do not replace the query. All adapters call the same
+shared helpers, so precedence and bounds stay provider-neutral.
 
 Claude's read-only T3 MCP allowlist remains a provider-specific seam; a future
 Runtime read tool must be added there and to its test. Write tools are not
@@ -172,6 +174,6 @@ VCS imports and never rebinds a thread.
 Native mobile Runtime settings and dedicated Runtime CLI commands do not exist. Web
 and desktop share the settings UI; mobile and the CLI are not V1 Runtime surfaces.
 The other known limits are the writer-transaction reads and the 500-candidate search
-window above. The migration-name collision with current upstream is a release
-constraint, not a Runtime behavior; see
-[Project Runtime V1 release and verification](../operations/project-runtime-v1.md).
+window above. Fork schema has its own ledger and migration registry, so it no longer collides with
+upstream migration ids. Existing fork histories are reconciled in place; see
+[Project Runtime release and verification](../operations/project-runtime-v1.md).

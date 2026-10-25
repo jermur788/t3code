@@ -18,7 +18,8 @@ selected.
 Project Home does not read the current conversation or provider. A disabled Runtime
 still shows project identity and the assigned profile; the Runtime areas say they are
 disabled rather than showing remembered chat content. If no project exists, the home
-asks you to add one. The stock T3 home remains available at `/?classic=1`.
+asks you to add one. **Classic T3 Home** in the home actions opens the stock T3
+experience; `/?classic=1` does the same.
 
 Runtime is provider-neutral. It belongs to the project on one environment, not to
 Claude, Codex, OpenCode, or any other provider. Changing the provider changes who
@@ -52,11 +53,9 @@ boundaries, and how work should be done. T3 supplies the current saved instructi
 automatically before each agent turn, including the first turn in a fresh thread.
 Changes apply to the next turn without restarting the server; they do not change
 a turn already running. Clearing instructions affects later turns; an existing
-conversation may retain an earlier snapshot in its prompt history, so start a new
-thread for a clean slate. If Claude has background agents or commands running, T3
-keeps them alive and refuses the next message until they finish or you press Stop.
-Instructions remain subordinate to T3 Code's own instructions and to your current
-request.
+conversation may retain an earlier snapshot in its prompt or provider history, so
+start a new thread for a clean slate. Instructions remain subordinate to T3 Code's
+own instructions and to your current request.
 
 Edit the text and choose **Save instructions**; a draft is saved only when you
 choose Save. The revision, update time, and author appear above the editor. If
