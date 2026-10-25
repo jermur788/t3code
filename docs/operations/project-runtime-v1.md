@@ -164,8 +164,10 @@ The integrated branch was rebased onto upstream `5b35402623` and qualified on
 | OpenCode/DeepSeek V4.1 Flash live   | Same scenarios, including current-revision delivery on a reused session                                                         |
 | Web build                           | Production build passes                                                                                                         |
 | Prompt copy                         | Runtime bootstrap 3,311 → 2,388 characters; 11 Runtime tool descriptions 2,897 → 1,458 characters                               |
+| Independent review                  | PASS: Codex GPT-5.6 Sol re-reviewed the fixed tree and found no remaining required fixes                                        |
 
-`check:changed` ran the full 1,046-file suite. Two failures reproduce on the
+`check:changed` ran the full 1,046-file suite. Format, lint, knip, both GraphQL
+checks, and typecheck of all 34 packages passed. Two test failures reproduce on the
 original fork checkpoint on this Linux host and do not touch this diff:
 `AcpSessionRuntime.processTree.test.ts` (cwd/cgroup fixture) and
 `build-desktop-artifact.test.ts` (cross-architecture Windows probe). They are
