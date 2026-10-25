@@ -51,8 +51,12 @@ Project Instructions are working guidance owned by the project: conventions,
 boundaries, and how work should be done. T3 supplies the current saved instructions
 automatically before each agent turn, including the first turn in a fresh thread.
 Changes apply to the next turn without restarting the server; they do not change
-a turn already running. Instructions remain subordinate to T3 Code's own
-instructions and to your current request.
+a turn already running. Clearing instructions affects later turns; an existing
+conversation may retain an earlier snapshot in its prompt history, so start a new
+thread for a clean slate. If Claude has background agents or commands running, T3
+keeps them alive and refuses the next message until they finish or you press Stop.
+Instructions remain subordinate to T3 Code's own instructions and to your current
+request.
 
 Edit the text and choose **Save instructions**; a draft is saved only when you
 choose Save. The revision, update time, and author appear above the editor. If

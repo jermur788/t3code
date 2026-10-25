@@ -7,9 +7,11 @@ a project-scoped record of instructions, source descriptors, tasks, and append-o
 handoffs, plus the MCP and settings surfaces that read them.
 
 The module is deliberately provider-neutral. Provider behavior stays behind the
-adapters; the only provider-specific Runtime change is adding the read tool names to
-Claude's existing read-only MCP allowlist. Runtime state belongs to a project row,
-not to a thread, provider, or worktree.
+adapters. Project Runtime V1 itself added only the read tool names to Claude's
+existing read-only MCP allowlist. Automatic instruction delivery adds narrow
+transport seams in several adapters, but precedence, formatting, and bounds stay in
+the shared resolution path. Runtime state belongs to a project row, not to a thread,
+provider, or worktree.
 
 ## Modules
 
@@ -137,9 +139,19 @@ The shared provider instructions contain one `Project Runtime` section, delivere
 through the existing system, first-run, and ACP paths. It defines profile/project
 precedence and directs agents to the canonical context instead of reconstructing
 inheritance in provider adapters. A guard test asserts it
-appears once and stays provider-neutral. Claude's read-only T3 MCP allowlist is the
-one provider-specific seam; a future Runtime read tool must be added there and to its
-test. Write tools are not pre-approved.
+appears once and stays provider-neutral.
+
+Instruction delivery is a separate provider seam. Claude adds the snapshot to its
+append-system-prompt and includes it in the query reuse key, so changing guidance
+restarts the query and is refused while background agents or commands are still
+running. Codex adds numbered additional-context entries chunked below its 4,000-byte
+limit. ACP, Cursor, and Pi prepend the snapshot to prompt text; Muse and OpenCode use
+the shared system-prompt builder. All call the same shared helpers, so precedence and
+bounds stay provider-neutral.
+
+Claude's read-only T3 MCP allowlist remains a provider-specific seam; a future
+Runtime read tool must be added there and to its test. Write tools are not
+pre-approved.
 
 ## Extension points
 

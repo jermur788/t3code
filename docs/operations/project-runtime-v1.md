@@ -12,6 +12,8 @@ fork candidate, not an integration of current upstream.
   SHA in the release handoff
 - Upstream base: `f9c1d023f1dad68360e19a8db89c9c485e2da410`
 - Current upstream observed during PRT-100: `aaf4a901c490da4f0943afe1d941f3a8d58dc1c8`
+- Current upstream observed during post-integration review (2026-10-25): `3d004999362848ae33b6f40e4bbd33b9d5c0ea59` (204 commits
+  since the fork base)
 
 No merge or rebase against current upstream was performed or qualified. Do not
 describe this build as current upstream, and do not publish a merged tree as the V1
@@ -77,11 +79,11 @@ commits. A manifest records the candidate SHA and hashes its inputs; verify the
 hashes before trusting a verdict, and treat a summary as a pointer to the raw
 records rather than a replacement for them.
 
-## Migration 68 collision
+## Migration history collision
 
-This fork adds `068_ProjectRuntime`. Current upstream, observed at
-`aaf4a901c490da4f0943afe1d941f3a8d58dc1c8`, also has
-`068_ShellStopRequestIndex`. Both declare migration id 68 in
+This fork adds `068_ProjectRuntime` and `069_DevelopmentProfiles`. Current upstream,
+observed at `3d004999362848ae33b6f40e4bbd33b9d5c0ea59`, uses the same ids for
+`068_ShellStopRequestIndex` and `069_ThreadMessageSearch`. Both declare the ids in
 `apps/server/src/persistence/Migrations.ts`, and the migration manifest guard
 refuses to start when a recorded id has a different name. The failure is a
 `MigrationError(BadState)`, not silent corruption.
@@ -90,18 +92,28 @@ Consequences:
 
 - Never share one T3 home or database between this fork and an upstream build.
 - Never swap the two binaries against the same database.
-- A textual merge that keeps both id-68 entries is not a fix; it creates duplicate
+- A textual merge that keeps both id entries is not a fix; it creates duplicate
   identifiers and rows.
+- The fork's own `migrate-dev-db` seeding copies the live migration history and then
+  runs migrations, so seeding hard-fails once the source home has passed id 67.
 
-Integrating upstream later requires a deliberate, separately qualified upgrade path
-that understands both existing schema histories. Renumbering Runtime to 69 alone is
-not sufficient: a fork database that already recorded 68 as `ProjectRuntime` still
-has a 68 row that the merged build calls `ShellStopRequestIndex`, so the guard
-fails. A database already migrated through 69 on a renumbered fork would also skip
-a newly introduced upstream 68 because the migrator skips ids up to the highest
-recorded id; the guard then refuses to start. A fresh merged database has neither history; that does not solve
-upgrades for existing installations. Do not discard or silently rewrite
-databases to make the guard pass.
+Integrating upstream requires a deliberate, separately qualified upgrade path that
+understands both existing schema histories. Renumbering to the next free ids is
+necessary but not sufficient for an existing fork database: after the renumber, the
+migrator's high-water mark skips the upstream migrations that occupied 68 and 69,
+and the guard refuses the history. A fork-origin database therefore needs explicit
+history reconciliation in the same data-preserving style as
+`reconcileV2PreviewMigration`, including running the skipped upstream migrations.
+Deleting the fork rows alone is not a fix because the fork DDL is not idempotent.
+A second migrator table for fork-owned schema is a possible structural alternative,
+but it touches persistence core and needs maintainer sign-off. Do not discard or
+silently rewrite databases to make the guard pass.
+
+A fresh merged database and an upstream-origin database at id 67 or below can adopt
+a renumbered fork history. An upstream-origin database that already includes current
+68/69, and any fork-origin database, cannot. The review's disposable rebase probe
+found 14 conflict hunks across 10 hand-resolved files plus the generated route tree;
+that probe was not compiled or qualified.
 
 ## Development Profiles migration dependency
 
@@ -117,8 +129,12 @@ proof of a safe upgrade from either installed history.
 
 ## Rebase hotspots
 
-- `apps/server/src/persistence/Migrations.ts` is the only textual conflict found by
-  the PRT-100 diagnostic merge.
+- `apps/server/src/persistence/Migrations.ts` and the hard-coded manifest tail in
+  `reconcileV2PreviewMigration.test.ts` conflict whenever either side adds a
+  migration. The post-integration probe also found conflicts in
+  `WorkspaceFileSystem.ts`, `orchestrationInstructions.ts`, `ws.ts`,
+  `packages/contracts/src/rpc.ts`, `routeTree.gen.ts`, `ClaudeAdapterV2.ts`,
+  `CodexAdapterV2.ts`, `runtimeLayer.ts`, and `provider-pi/src/server/adapter.ts`.
 - Central registries are likely to churn again: `server.ts`, `ws.ts`,
   `RpcAuthorization.ts`, `RpcInstrumentation.ts`, `packages/contracts/src/rpc.ts`,
   and the Claude read-only allowlist.
@@ -128,9 +144,20 @@ proof of a safe upgrade from either installed history.
 
 ## Known limits and deferrals
 
-- Runtime reads use writer transactions. This is a contention and convention gap,
-  not a measured performance result; moving reads to the read-only connection is an
-  explicit post-V1 item.
+- Runtime reads use writer transactions. The post-integration review measured about
+  0.24 ms mean and 0.34 ms p95 per effective-instruction resolution on a migrated
+  file database, so this is a convention gap rather than a demonstrated latency
+  problem. Moving reads to the read-only connection is still an explicit post-V1
+  item.
+- Instruction edits invalidate loaded-session policy keys. On Claude, an edit while
+  background agents or commands are still running refuses the next message until
+  that work finishes or the user presses Stop.
+- Clearing guidance affects later turns, but prompt-carrying providers keep earlier
+  snapshots in an existing conversation's history. Start a new thread for a clean
+  slate.
+- Per-adapter delivery conformance tests exist for Claude, Codex, and OpenCode2.
+  ACP, Cursor, Muse, Pi, and OpenCode v1 share the tested helper but do not have
+  adapter-level delivery tests.
 - Registered-source search collects at most 500 workspace index candidates before
   filtering to registered paths. A truncated empty result is not proof of no match;
   narrow the query or read a known source directly. A source-scoped index is
