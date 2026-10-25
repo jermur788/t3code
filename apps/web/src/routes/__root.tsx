@@ -18,7 +18,7 @@ import { APP_BASE_NAME, APP_DISPLAY_NAME, APP_STAGE_LABEL, APP_VERSION } from ".
 import { resolveServerBackedAppDisplayName } from "../branding.logic";
 import { AppSidebarLayout } from "../components/AppSidebarLayout";
 import { CommandPalette } from "../components/CommandPalette";
-import { keepsUpstreamHome } from "../components/forkHome/forkHome.logic";
+import { shouldRedirectToForkHome } from "../components/forkHome/forkHome.logic";
 import { CustomSnoozeDialogHost } from "../components/CustomSnoozeDialog";
 import { GuestShareDialogHost } from "../components/chat/GuestShareControls";
 import { AddProjectToMachineDialogHost } from "../components/AddProjectToMachineDialog";
@@ -128,9 +128,11 @@ export const Route = createRootRoute({
       throw redirect({ to: "/settings/snap-shot", replace: true });
     }
     if (
-      location.pathname === "/" &&
-      authGateState.status === "authenticated" &&
-      !keepsUpstreamHome(location.search)
+      shouldRedirectToForkHome({
+        pathname: location.pathname,
+        authStatus: authGateState.status,
+        search: location.search,
+      })
     ) {
       throw redirect({ to: "/home", replace: true });
     }

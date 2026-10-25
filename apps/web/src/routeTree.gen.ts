@@ -33,6 +33,7 @@ import { Route as ChatSettingsKeybindingsRouteImport } from './routes/_chat.sett
 import { Route as ChatSettingsIntegrationsRouteImport } from './routes/_chat.settings.integrations'
 import { Route as ChatSettingsGeneralRouteImport } from './routes/_chat.settings.general'
 import { Route as ChatSettingsDiagnosticsRouteImport } from './routes/_chat.settings.diagnostics'
+import { Route as ChatSettingsDevelopmentProfilesRouteImport } from './routes/_chat.settings.development-profiles'
 import { Route as ChatSettingsConnectionsRouteImport } from './routes/_chat.settings.connections'
 import { Route as ChatSettingsBetaRouteImport } from './routes/_chat.settings.beta'
 import { Route as ChatSettingsArchivedRouteImport } from './routes/_chat.settings.archived'
@@ -163,6 +164,12 @@ const ChatSettingsDiagnosticsRoute = ChatSettingsDiagnosticsRouteImport.update({
   path: '/diagnostics',
   getParentRoute: () => ChatSettingsRoute,
 } as any)
+const ChatSettingsDevelopmentProfilesRoute =
+  ChatSettingsDevelopmentProfilesRouteImport.update({
+    id: '/development-profiles',
+    path: '/development-profiles',
+    getParentRoute: () => ChatSettingsRoute,
+  } as any)
 const ChatSettingsConnectionsRoute = ChatSettingsConnectionsRouteImport.update({
   id: '/connections',
   path: '/connections',
@@ -201,7 +208,6 @@ export interface FileRoutesByFullPath {
   '/connect-agent': typeof ConnectAgentRoute
   '/guest': typeof GuestRoute
   '/home': typeof HomeRoute
-  '/home': typeof HomeRoute
   '/pair': typeof PairRoute
   '/welcome': typeof WelcomeRoute
   '/new': typeof ChatNewRoute
@@ -215,6 +221,7 @@ export interface FileRoutesByFullPath {
   '/settings/archived': typeof ChatSettingsArchivedRoute
   '/settings/beta': typeof ChatSettingsBetaRoute
   '/settings/connections': typeof ChatSettingsConnectionsRoute
+  '/settings/development-profiles': typeof ChatSettingsDevelopmentProfilesRoute
   '/settings/diagnostics': typeof ChatSettingsDiagnosticsRoute
   '/settings/general': typeof ChatSettingsGeneralRoute
   '/settings/integrations': typeof ChatSettingsIntegrationsRoute
@@ -246,6 +253,7 @@ export interface FileRoutesByTo {
   '/settings/archived': typeof ChatSettingsArchivedRoute
   '/settings/beta': typeof ChatSettingsBetaRoute
   '/settings/connections': typeof ChatSettingsConnectionsRoute
+  '/settings/development-profiles': typeof ChatSettingsDevelopmentProfilesRoute
   '/settings/diagnostics': typeof ChatSettingsDiagnosticsRoute
   '/settings/general': typeof ChatSettingsGeneralRoute
   '/settings/integrations': typeof ChatSettingsIntegrationsRoute
@@ -279,6 +287,7 @@ export interface FileRoutesById {
   '/_chat/settings/archived': typeof ChatSettingsArchivedRoute
   '/_chat/settings/beta': typeof ChatSettingsBetaRoute
   '/_chat/settings/connections': typeof ChatSettingsConnectionsRoute
+  '/_chat/settings/development-profiles': typeof ChatSettingsDevelopmentProfilesRoute
   '/_chat/settings/diagnostics': typeof ChatSettingsDiagnosticsRoute
   '/_chat/settings/general': typeof ChatSettingsGeneralRoute
   '/_chat/settings/integrations': typeof ChatSettingsIntegrationsRoute
@@ -299,7 +308,6 @@ export interface FileRouteTypes {
     | '/connect-agent'
     | '/guest'
     | '/home'
-    | '/home'
     | '/pair'
     | '/welcome'
     | '/new'
@@ -313,6 +321,7 @@ export interface FileRouteTypes {
     | '/settings/archived'
     | '/settings/beta'
     | '/settings/connections'
+    | '/settings/development-profiles'
     | '/settings/diagnostics'
     | '/settings/general'
     | '/settings/integrations'
@@ -344,6 +353,7 @@ export interface FileRouteTypes {
     | '/settings/archived'
     | '/settings/beta'
     | '/settings/connections'
+    | '/settings/development-profiles'
     | '/settings/diagnostics'
     | '/settings/general'
     | '/settings/integrations'
@@ -376,6 +386,7 @@ export interface FileRouteTypes {
     | '/_chat/settings/archived'
     | '/_chat/settings/beta'
     | '/_chat/settings/connections'
+    | '/_chat/settings/development-profiles'
     | '/_chat/settings/diagnostics'
     | '/_chat/settings/general'
     | '/_chat/settings/integrations'
@@ -416,6 +427,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof PairRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/home': {
+      id: '/home'
+      path: '/home'
+      fullPath: '/home'
+      preLoaderRoute: typeof HomeRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/guest': {
       id: '/guest'
       path: '/guest'
@@ -428,13 +446,6 @@ declare module '@tanstack/react-router' {
       path: '/connect-agent'
       fullPath: '/connect-agent'
       preLoaderRoute: typeof ConnectAgentRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/home': {
-      id: '/home'
-      path: '/home'
-      fullPath: '/home'
-      preLoaderRoute: typeof HomeRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/connect': {
@@ -570,6 +581,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ChatSettingsDiagnosticsRouteImport
       parentRoute: typeof ChatSettingsRoute
     }
+    '/_chat/settings/development-profiles': {
+      id: '/_chat/settings/development-profiles'
+      path: '/development-profiles'
+      fullPath: '/settings/development-profiles'
+      preLoaderRoute: typeof ChatSettingsDevelopmentProfilesRouteImport
+      parentRoute: typeof ChatSettingsRoute
+    }
     '/_chat/settings/connections': {
       id: '/_chat/settings/connections'
       path: '/connections'
@@ -620,6 +638,7 @@ interface ChatSettingsRouteChildren {
   ChatSettingsArchivedRoute: typeof ChatSettingsArchivedRoute
   ChatSettingsBetaRoute: typeof ChatSettingsBetaRoute
   ChatSettingsConnectionsRoute: typeof ChatSettingsConnectionsRoute
+  ChatSettingsDevelopmentProfilesRoute: typeof ChatSettingsDevelopmentProfilesRoute
   ChatSettingsDiagnosticsRoute: typeof ChatSettingsDiagnosticsRoute
   ChatSettingsGeneralRoute: typeof ChatSettingsGeneralRoute
   ChatSettingsIntegrationsRoute: typeof ChatSettingsIntegrationsRoute
@@ -638,6 +657,7 @@ const ChatSettingsRouteChildren: ChatSettingsRouteChildren = {
   ChatSettingsArchivedRoute: ChatSettingsArchivedRoute,
   ChatSettingsBetaRoute: ChatSettingsBetaRoute,
   ChatSettingsConnectionsRoute: ChatSettingsConnectionsRoute,
+  ChatSettingsDevelopmentProfilesRoute: ChatSettingsDevelopmentProfilesRoute,
   ChatSettingsDiagnosticsRoute: ChatSettingsDiagnosticsRoute,
   ChatSettingsGeneralRoute: ChatSettingsGeneralRoute,
   ChatSettingsIntegrationsRoute: ChatSettingsIntegrationsRoute,

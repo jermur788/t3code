@@ -21,6 +21,7 @@ import {
 } from "../../hooks/useSettings";
 import { observeResize } from "../../lib/observeResize";
 import { cn } from "../../lib/utils";
+import { shouldSettleSettingsTarget } from "./settingsScroll";
 import { WorkspacePageContainer, type WorkspacePageWidth } from "../WorkspacePageContainer";
 import { Button } from "../ui/button";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
@@ -140,9 +141,18 @@ function scrollAndFocusSettingsTarget(target: HTMLElement, highlight = true): vo
       ? (target.firstElementChild as HTMLElement)
       : target);
 
-  const scroll = () => scrollTarget.scrollIntoView({ behavior: "auto", block: "center" });
+  const scroll = () =>
+    scrollTarget.scrollIntoView({
+      behavior: prefersReducedMotion ? "auto" : "smooth",
+      block: "center",
+    });
   scroll();
-  settleScrollAfterLayout(scrollTarget, target.closest<HTMLElement>("[data-settings-page-scroll]"));
+  if (shouldSettleSettingsTarget(target.id)) {
+    settleScrollAfterLayout(
+      scrollTarget,
+      target.closest<HTMLElement>("[data-settings-page-scroll]"),
+    );
+  }
   const panel = target.parentElement?.closest<HTMLElement>(
     '[data-slot="collapsible-panel"][data-open]',
   );

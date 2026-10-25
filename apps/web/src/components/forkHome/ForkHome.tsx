@@ -227,6 +227,13 @@ export function ForkHome({
                       >
                         Project settings
                       </Button>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        render={<Link to="/" search={{ classic: 1 }} />}
+                      >
+                        Classic T3 Home
+                      </Button>
                     </div>
                   ) : null}
                 </div>

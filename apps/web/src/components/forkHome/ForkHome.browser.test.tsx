@@ -216,6 +216,17 @@ it.each([
   });
 });
 
+it("offers the classic upstream home without making it primary", async () => {
+  setup();
+  await using screen = await render(<ForkHome search={{}} onSearchChange={vi.fn()} />, {
+    router: "/home",
+  });
+
+  const classic = screen.getByRole("link", { name: "Classic T3 Home" });
+  await expect.element(classic).toBeVisible();
+  expect(classic.element().getAttribute("href")).toBe("/?classic=1");
+});
+
 it("starts a thread through the existing project-scoped workflow", async () => {
   setup();
   await using screen = await render(<ForkHome search={{}} onSearchChange={vi.fn()} />, {

@@ -19,6 +19,7 @@ import { resolveSettingsScope } from "../settings/settingsScope";
 import {
   defaultForkProjectSelection,
   keepsUpstreamHome,
+  shouldRedirectToForkHome,
   projectOptionLabel,
   selectedForkProject,
   selectionForProject,
@@ -138,6 +139,29 @@ function handoff(input: {
 }
 
 describe("fork home root routing", () => {
+  it("redirects only an authenticated root without the classic flag", () => {
+    expect(
+      shouldRedirectToForkHome({ pathname: "/", authStatus: "authenticated", search: {} }),
+    ).toBe(true);
+    expect(
+      shouldRedirectToForkHome({
+        pathname: "/",
+        authStatus: "authenticated",
+        search: { classic: 1 },
+      }),
+    ).toBe(false);
+    expect(
+      shouldRedirectToForkHome({ pathname: "/", authStatus: "unauthenticated", search: {} }),
+    ).toBe(false);
+    expect(
+      shouldRedirectToForkHome({
+        pathname: "/settings",
+        authStatus: "authenticated",
+        search: {},
+      }),
+    ).toBe(false);
+  });
+
   it("requires the explicit classic flag to keep the upstream home", () => {
     expect(keepsUpstreamHome({ classic: 1 })).toBe(true);
     expect(keepsUpstreamHome({ classic: "1" })).toBe(true);

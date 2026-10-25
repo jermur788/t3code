@@ -90,6 +90,19 @@ export function keepsUpstreamHome(search: unknown): boolean {
   return classic === true || classic === 1 || classic === "1";
 }
 
+/** The fork home is the authenticated root; `?classic=1` opts into upstream. */
+export function shouldRedirectToForkHome(input: {
+  readonly pathname: string;
+  readonly authStatus: string;
+  readonly search: unknown;
+}): boolean {
+  return (
+    input.pathname === "/" &&
+    input.authStatus === "authenticated" &&
+    !keepsUpstreamHome(input.search)
+  );
+}
+
 function timeValue(iso: string): number {
   const value = Date.parse(iso);
   return Number.isNaN(value) ? 0 : value;
