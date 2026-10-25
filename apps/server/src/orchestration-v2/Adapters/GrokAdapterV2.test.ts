@@ -1,5 +1,7 @@
+import * as DevelopmentProfileService from "../../developmentProfiles/DevelopmentProfileService.ts";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import {
+  DEVELOPMENT_PROFILE_PRECEDENCE,
   ProjectId,
   MessageId,
   NodeId,
@@ -336,6 +338,19 @@ describe("Grok launch permission mode", () => {
       }).pipe(
         Effect.provide(
           RuntimePolicy.layerFromProjectStore.pipe(
+            Layer.provide(
+              Layer.mock(DevelopmentProfileService.DevelopmentProfileService)({
+                resolveEffectiveProjectInstructions: (projectId) =>
+                  Effect.succeed({
+                    projectId,
+                    assignment: null,
+                    developmentProfile: null,
+                    projectInstructions: null,
+                    precedence: DEVELOPMENT_PROFILE_PRECEDENCE,
+                    formattedInstructions: "",
+                  }),
+              }),
+            ),
             Layer.provide(
               Layer.mock(ProjectStore.ProjectStoreV2)({
                 get: () => Effect.die("the thread has a worktree"),

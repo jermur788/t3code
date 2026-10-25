@@ -7165,6 +7165,7 @@ export const makeAcpAdapterV2 = Effect.fn("makeAcpAdapterV2")(function* (
             prompt.push({
               type: "text",
               text: buildRuntimeInstructions({
+                projectInstructions: turnInput.runtimePolicy.projectInstructions,
                 harness: flavor.runtimeHarness ?? driver,
                 model: turnInput.modelSelection.model,
               }),

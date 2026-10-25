@@ -142,6 +142,7 @@ const noOpenRequests: ReadonlyArray<ProviderReplayEntry> = [
 
 const withInstructions = (
   entries: ReadonlyArray<ProviderReplayEntry>,
+  expectedInstructions = "<any>",
 ): ReadonlyArray<ProviderReplayEntry> => {
   const first = entries.findIndex(
     (entry) =>
@@ -174,7 +175,7 @@ const withInstructions = (
         out("session.instructions.entry.put", {
           sessionID: SESSION,
           key: "t3-code",
-          value: "<any>",
+          value: expectedInstructions,
         }),
         reply("session.instructions.entry.put", null),
         ...entries.slice(at),
@@ -313,25 +314,29 @@ const resumed = (
     readonly attachmentsDir?: string;
     readonly fileSystem?: FileSystem.FileSystem;
     readonly onPrompt?: (input: unknown) => void;
+    readonly expectedInstructions?: string;
   },
 ) =>
   Effect.gen(function* () {
     const runtime = yield* openCode2ReplayRuntime(
-      withInstructions([
-        ...opening,
-        out("session.get", { sessionID: SESSION }),
-        replyData("session.get", sessionInfo()),
-        ...noOpenRequests,
-        ...(options?.supervised === true
-          ? [
-              out("agent.list", "<any>"),
-              reply("agent.list", agentList),
-              out("session.update", { sessionID: SESSION, permissions: supervisedRules }),
-              reply("session.update", null),
-            ]
-          : []),
-        ...entries,
-      ]),
+      withInstructions(
+        [
+          ...opening,
+          out("session.get", { sessionID: SESSION }),
+          replyData("session.get", sessionInfo()),
+          ...noOpenRequests,
+          ...(options?.supervised === true
+            ? [
+                out("agent.list", "<any>"),
+                reply("agent.list", agentList),
+                out("session.update", { sessionID: SESSION, permissions: supervisedRules }),
+                reply("session.update", null),
+              ]
+            : []),
+          ...entries,
+        ],
+        options?.expectedInstructions,
+      ),
       {
         ...(options?.fileSystem === undefined ? {} : { fileSystem: options.fileSystem }),
         ...(options?.onPrompt === undefined ? {} : { onPrompt: options.onPrompt }),
@@ -2300,6 +2305,60 @@ it.layer(McpProviderSessions.layer)("OpenCode2 adapter", (it) => {
       assert.equal(last?.type === "dynamic_tool" ? last.toolName : null, name);
       assert.deepEqual(last?.type === "dynamic_tool" ? last.input : null, input);
     }).pipe(Effect.scoped),
+  );
+
+  it.effect(
+    "updates project instructions before prompting a reused session and clears them for another project",
+    () =>
+      Effect.gen(function* () {
+        const revisionA = "PRT-AUTO-7c91-A";
+        const revisionB = "PRT-AUTO-7c91-B";
+        const revisions = [revisionA, revisionB, revisionB, undefined];
+        const turn = [
+          out("session.prompt", { sessionID: SESSION, text: "hi" }),
+          promptAccepted,
+          event("session.execution.succeeded", { sessionID: SESSION }),
+        ];
+        // Setup inserts the first instruction entry; subsequent puts must precede prompts.
+        const { runtime, thread } = yield* resumed(
+          [
+            ...turn,
+            ...revisions.slice(1).flatMap((projectInstructions, index) => [
+              ...(projectInstructions === revisions[index]
+                ? []
+                : [
+                    out("session.instructions.entry.put", {
+                      sessionID: SESSION,
+                      key: "t3-code",
+                      value: buildRuntimeInstructions({
+                        harness: "OpenCode",
+                        model: bigPickle.model,
+                        projectInstructions,
+                      }),
+                    }),
+                    reply("session.instructions.entry.put", null),
+                  ]),
+              ...turn,
+            ]),
+          ],
+          {
+            expectedInstructions: buildRuntimeInstructions({
+              harness: "OpenCode",
+              model: bigPickle.model,
+              projectInstructions: revisionA,
+            }),
+          },
+        );
+        for (const projectInstructions of revisions) {
+          const terminal = yield* terminalOf(runtime).pipe(Effect.forkScoped);
+          const input = turnInput(thread);
+          yield* runtime.startTurn({
+            ...input,
+            runtimePolicy: { ...input.runtimePolicy, projectInstructions },
+          });
+          assert.equal((yield* Fiber.join(terminal))?.status, "completed");
+        }
+      }).pipe(Effect.scoped),
   );
 
   it.effect("re-registers T3 MCP each turn and drops its instructions when adding fails", () =>

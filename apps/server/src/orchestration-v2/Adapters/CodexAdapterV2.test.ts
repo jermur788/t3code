@@ -207,6 +207,34 @@ describe("CodexAdapterV2 runtime policy", () => {
     }),
   );
 
+  it.effect(
+    "delivers the current project snapshot as application context without requiring MCP",
+    () =>
+      Effect.gen(function* () {
+        for (const projectInstructions of ["PRT-AUTO-7c91-A", "PRT-AUTO-7c91-B", undefined]) {
+          const params = yield* CodexAdapterV2.buildCodexTurnStartParams({
+            nativeThreadId: "project-policy-test",
+            codexInput: [{ type: "text", text: "Hello" }],
+            runtimePolicy: {
+              runtimeMode: "full-access",
+              interactionMode: "default",
+              cwd: null,
+              projectInstructions,
+            },
+            modelSelection: { instanceId: ProviderInstanceId.make("codex"), model: "gpt-5.4" },
+          });
+          const entries = Object.entries(params.additionalContext ?? {}).filter(([key]) =>
+            key.startsWith("t3_project_instructions_"),
+          );
+          if (projectInstructions === undefined) assert.isEmpty(entries);
+          else {
+            assert.isTrue(entries.every(([, entry]) => entry.kind === "application"));
+            assert.include(entries.map(([, entry]) => entry.value).join(""), projectInstructions);
+          }
+        }
+      }),
+  );
+
   it.effect("sends MCP app model context as untrusted Codex context", () =>
     Effect.gen(function* () {
       const policy = { runtimeMode: "full-access", interactionMode: "default", cwd: null } as const;

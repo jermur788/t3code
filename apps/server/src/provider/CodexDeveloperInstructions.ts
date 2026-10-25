@@ -1,5 +1,8 @@
 import type { V2TurnStartParams__AdditionalContextEntry } from "effect-codex-app-server/schema";
-import { buildRuntimeInstructions } from "@t3tools/provider-core/server/runtimeInstructions";
+import {
+  buildProjectInstructions,
+  buildRuntimeInstructions,
+} from "@t3tools/provider-core/server/runtimeInstructions";
 
 import {
   T3_CODE_BROWSER_TOOL_INSTRUCTIONS,
@@ -36,6 +39,7 @@ const toolInstructions = (availability: boolean | T3CodeToolAvailability): strin
 
 export interface CodexRuntimeInfo {
   readonly model: string;
+  readonly projectInstructions?: string | undefined;
   readonly modelName?: string | undefined;
   readonly reasoningEffort?: string | undefined;
 }
@@ -56,8 +60,45 @@ export function buildCodexAdditionalContext(
     ),
     t3_code_runtime: {
       kind: "application",
-      value: buildRuntimeInstructions({ harness: "Codex", ...runtime }),
+      value: buildRuntimeInstructions({
+        harness: "Codex",
+        ...runtime,
+        projectInstructions: undefined,
+      }),
     },
+    ...buildCodexProjectInstructions(runtime.projectInstructions),
     ...(tools ? { t3_code_tools: { kind: "application", value: tools } } : {}),
   };
+}
+
+export function buildCodexProjectInstructions(
+  instructions: string | undefined,
+): Record<string, V2TurnStartParams__AdditionalContextEntry> {
+  return Object.fromEntries(
+    projectInstructionChunks(instructions).map((value, index) => [
+      `t3_project_instructions_${String(index + 1).padStart(3, "0")}`,
+      { kind: "application" as const, value },
+    ]),
+  );
+}
+
+function projectInstructionChunks(instructions: string | undefined): ReadonlyArray<string> {
+  if (!instructions) return [];
+  // Codex truncates individual context entries at 4,000 bytes. Split on code points
+  // so long project guidance survives intact, including multibyte characters.
+  const chunks: Array<string> = [];
+  let chunk = "";
+  let bytes = 0;
+  for (const character of buildProjectInstructions(instructions)) {
+    const size = Buffer.byteLength(character);
+    if (bytes + size > 3_500) {
+      chunks.push(chunk);
+      chunk = "";
+      bytes = 0;
+    }
+    chunk += character;
+    bytes += size;
+  }
+  if (chunk) chunks.push(chunk);
+  return chunks;
 }

@@ -4,6 +4,7 @@ import { describe, it } from "vite-plus/test";
 
 import {
   buildCodexAdditionalContext,
+  buildCodexProjectInstructions,
   CODEX_ADDITIONAL_CONTEXT_VALUE_MAX_BYTES,
 } from "./CodexDeveloperInstructions.ts";
 
@@ -66,3 +67,19 @@ describe("Codex orchestration context", () => {
 function runtimeInstructions(runtime: Parameters<typeof buildCodexAdditionalContext>[0]) {
   return buildCodexAdditionalContext(runtime).t3_code_runtime!.value;
 }
+
+it("delivers long project guidance intact within Codex limits and removes previous revisions", () => {
+  const instructions = "PRT-AUTO-7c91-B\n" + "🦊 guidance\n".repeat(4000);
+  const context = buildCodexProjectInstructions(instructions);
+  for (const entry of Object.values(context)) {
+    NodeAssert.equal(entry.kind, "application");
+    NodeAssert.ok(Buffer.byteLength(entry.value) <= CODEX_ADDITIONAL_CONTEXT_VALUE_MAX_BYTES);
+  }
+  const delivered = Object.keys(context)
+    .sort()
+    .map((key) => context[key]!.value)
+    .join("");
+  NodeAssert.ok(delivered.includes(instructions));
+  NodeAssert.ok(!delivered.includes("PRT-AUTO-7c91-A"));
+  NodeAssert.deepEqual(buildCodexProjectInstructions(undefined), {});
+});

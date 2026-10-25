@@ -1,5 +1,11 @@
+import * as NodeServices from "@effect/platform-node/NodeServices";
+import * as SqlClient from "effect/sql/SqlClient";
+import * as SqlitePersistence from "../persistence/Sqlite.ts";
+import * as DevelopmentProfileService from "../developmentProfiles/DevelopmentProfileService.ts";
+import * as ProjectRuntimeService from "../projectRuntime/ProjectRuntimeService.ts";
 import { assert, it } from "@effect/vitest";
 import {
+  DEVELOPMENT_PROFILE_PRECEDENCE,
   type ModelSelection,
   type OrchestrationV2AppThread,
   ProjectId,
@@ -74,35 +80,52 @@ const providerInstanceFor = (instanceId: ProviderInstanceId) =>
     },
   }) as ProviderInstance;
 
-const layerTest = RuntimePolicy.layerFromProjectStore.pipe(
+const providePolicyDependencies = <A, E, R>(layer: Layer.Layer<A, E, R>) =>
+  layer.pipe(
+    Layer.provide(
+      Layer.succeed(ProviderInstanceRegistry.ProviderInstanceRegistry, {
+        getInstance: (instanceId) => Effect.succeed(providerInstanceFor(instanceId)),
+        listInstances: Effect.succeed([]),
+        listUnavailable: Effect.succeed([]),
+        streamChanges: Stream.empty,
+        subscribeChanges: Effect.never,
+      }),
+    ),
+    Layer.provide(
+      Layer.mock(ProjectStore.ProjectStoreV2)({
+        get: () =>
+          Effect.succeed(
+            Option.some({
+              projectId,
+              title: "Project",
+              workspaceRoot: "/project-root",
+              defaultModelSelection: null,
+              defaultThreadEnvMode: null,
+              autoPull: false,
+              faviconPath: null,
+              projectIcon: null,
+              scripts: [],
+              createdAt: "2026-06-21T00:00:00.000Z",
+              updatedAt: "2026-06-21T00:00:00.000Z",
+              deletedAt: null,
+            }),
+          ),
+      }),
+    ),
+  );
+
+const layerTest = providePolicyDependencies(RuntimePolicy.layerFromProjectStore).pipe(
   Layer.provide(
-    Layer.succeed(ProviderInstanceRegistry.ProviderInstanceRegistry, {
-      getInstance: (instanceId) => Effect.succeed(providerInstanceFor(instanceId)),
-      listInstances: Effect.succeed([]),
-      listUnavailable: Effect.succeed([]),
-      streamChanges: Stream.empty,
-      subscribeChanges: Effect.never,
-    }),
-  ),
-  Layer.provide(
-    Layer.mock(ProjectStore.ProjectStoreV2)({
-      get: () =>
-        Effect.succeed(
-          Option.some({
-            projectId,
-            title: "Project",
-            workspaceRoot: "/project-root",
-            defaultModelSelection: null,
-            defaultThreadEnvMode: null,
-            autoPull: false,
-            faviconPath: null,
-            projectIcon: null,
-            scripts: [],
-            createdAt: "2026-06-21T00:00:00.000Z",
-            updatedAt: "2026-06-21T00:00:00.000Z",
-            deletedAt: null,
-          }),
-        ),
+    Layer.mock(DevelopmentProfileService.DevelopmentProfileService)({
+      resolveEffectiveProjectInstructions: (projectId) =>
+        Effect.succeed({
+          projectId,
+          assignment: null,
+          developmentProfile: null,
+          projectInstructions: null,
+          precedence: DEVELOPMENT_PROFILE_PRECEDENCE,
+          formattedInstructions: "",
+        }),
     }),
   ),
 );
@@ -127,3 +150,58 @@ it.layer(layerTest)("RuntimePolicyV2", (it) => {
     }),
   );
 });
+
+it.effect(
+  "delivers committed project instructions on every bootstrap without cross-project reuse",
+  () =>
+    Effect.gen(function* () {
+      const sql = yield* SqlClient.SqlClient;
+      const otherProjectId = ProjectId.make("project:other-runtime-policy");
+      for (const id of [projectId, otherProjectId]) {
+        yield* sql`INSERT INTO projection_projects (project_id, title, workspace_root, scripts_json, created_at, updated_at)
+        VALUES (${id}, 'Test', '/same-path', '[]', '2026-10-25T00:00:00Z', '2026-10-25T00:00:00Z')`;
+      }
+      const runtime = yield* ProjectRuntimeService.ProjectRuntimeService;
+      const policy = yield* RuntimePolicy.RuntimePolicyV2;
+      const now = yield* DateTime.now;
+      const resolve = (id = projectId) =>
+        policy.resolve({
+          thread: { ...makeThread({ now, worktreePath: "/same-path" }), projectId: id },
+          modelSelection,
+        });
+      assert.equal((yield* resolve()).projectInstructions, undefined);
+      yield* runtime.setEnabled(projectId, { enabled: true });
+      const revisionA = yield* runtime.saveInstructions(
+        projectId,
+        { instructions: "PRT-AUTO-7c91-A" },
+        { actor: "user:test" },
+      );
+      assert.include((yield* resolve()).projectInstructions!, revisionA.instructions);
+      const revisionB = yield* runtime.saveInstructions(
+        projectId,
+        { instructions: "PRT-AUTO-7c91-B", expectedRevision: revisionA.revision },
+        { actor: "user:test" },
+      );
+      for (let trial = 0; trial < 3; trial++) {
+        const current = yield* resolve();
+        assert.include(current.projectInstructions!, revisionB.instructions);
+        assert.notInclude(current.projectInstructions!, revisionA.instructions);
+        assert.equal((yield* resolve(otherProjectId)).projectInstructions, undefined);
+        const explicit = yield* runtime.readContext(projectId);
+        assert.equal(explicit.instructions?.revision, revisionB.revision);
+        assert.include(current.projectInstructions!, explicit.instructions!.instructions);
+      }
+      yield* runtime.setEnabled(projectId, { enabled: false });
+      assert.equal((yield* resolve()).projectInstructions, undefined);
+    }).pipe(
+      Effect.provide(
+        providePolicyDependencies(RuntimePolicy.layerFromProjectStore).pipe(
+          Layer.provideMerge(
+            ProjectRuntimeService.layer.pipe(Layer.provideMerge(DevelopmentProfileService.layer)),
+          ),
+          Layer.provideMerge(SqlitePersistence.layerMemory),
+          Layer.provide(NodeServices.layer),
+        ),
+      ),
+    ),
+);

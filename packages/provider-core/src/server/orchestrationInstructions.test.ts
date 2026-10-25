@@ -1,3 +1,4 @@
+import { buildRuntimeInstructions, promptWithProjectInstructions } from "./runtimeInstructions.ts";
 // @effect-diagnostics nodeBuiltinImport:off
 import * as NodeFS from "node:fs";
 import * as NodePath from "node:path";
@@ -23,8 +24,8 @@ describe("Project Runtime bootstrap", () => {
     expect(T3_CODE_ORCHESTRATION_INSTRUCTIONS.split(runtime)).toHaveLength(2);
     for (const guidance of [
       "t3_project_context",
-      "fresh project-working session/run",
-      "Before each subsequent project-working turn, refresh",
+      "automatically before each project-working turn",
+      "without requiring a tool call",
       "enabled:false",
       "subordinate to system/developer instructions",
       "Retrieve source bodies on demand",
@@ -85,5 +86,27 @@ describe("Project Runtime bootstrap", () => {
         );
       }
     }
+  });
+});
+
+describe("saved project instruction delivery", () => {
+  it.each(["Claude Code", "OpenCode", "ACP", "Muse Code"])(
+    "includes the current snapshot in %s runtime instructions without discovery",
+    (harness) => {
+      const plain = buildRuntimeInstructions({ harness });
+      expect(plain).not.toContain("t3_project_instructions");
+      const first = buildRuntimeInstructions({ harness, projectInstructions: "PRT-AUTO-7c91-A" });
+      const second = buildRuntimeInstructions({ harness, projectInstructions: "PRT-AUTO-7c91-B" });
+      expect(first).toContain("PRT-AUTO-7c91-A");
+      expect(second).toContain("PRT-AUTO-7c91-B");
+      expect(second).not.toContain("PRT-AUTO-7c91-A");
+    },
+  );
+  it("carries project guidance for prompt-only providers while preserving native commands", () => {
+    expect(promptWithProjectInstructions("Hello", undefined)).toBe("Hello");
+    expect(promptWithProjectInstructions("/help", "PRT-AUTO-7c91-A")).toBe("/help");
+    const prompt = promptWithProjectInstructions("Hello", "PRT-AUTO-7c91-B");
+    expect(prompt).toContain("PRT-AUTO-7c91-B");
+    expect(prompt).toContain("<user_request>\nHello\n</user_request>");
   });
 });

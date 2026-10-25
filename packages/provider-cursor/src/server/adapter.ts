@@ -1,3 +1,4 @@
+import { promptWithProjectInstructions } from "@t3tools/provider-core/server/runtimeInstructions";
 import type {
   AgentMessage,
   AgentOptions,
@@ -2205,18 +2206,21 @@ export const makeCursorAdapterV2 = Effect.fn("makeCursorAdapterV2")(function* (
                 .map((skill) => skill.name),
             );
           }
-          const userText = t3OrchestrationPromptForFirstRun({
-            prompt: providerMessageTextWithAttachmentPaths({
-              text:
-                cursorSkillNames === undefined
-                  ? rawText
-                  : rewriteCursorSkillMentions(rawText, cursorSkillNames),
-              attachments: turnInput.message.attachments,
-              resolveAttachmentPath: host.resolveAttachmentPath,
+          const userText = promptWithProjectInstructions(
+            t3OrchestrationPromptForFirstRun({
+              prompt: providerMessageTextWithAttachmentPaths({
+                text:
+                  cursorSkillNames === undefined
+                    ? rawText
+                    : rewriteCursorSkillMentions(rawText, cursorSkillNames),
+                attachments: turnInput.message.attachments,
+                resolveAttachmentPath: host.resolveAttachmentPath,
+              }),
+              runOrdinal: turnInput.runOrdinal,
+              hasT3Mcp: mcpServers !== undefined,
             }),
-            runOrdinal: turnInput.runOrdinal,
-            hasT3Mcp: mcpServers !== undefined,
-          });
+            turnInput.runtimePolicy.projectInstructions,
+          );
           const images = yield* Effect.forEach(
             turnInput.message.attachments.filter(isProviderNativeImageAttachment),
             (attachment: ChatAttachment) =>

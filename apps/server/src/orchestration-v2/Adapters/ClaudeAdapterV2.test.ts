@@ -501,6 +501,32 @@ describe("ClaudeAdapterV2 MCP query overrides", () => {
     assert.isFalse(overrides.allowedTools?.includes(ClaudeAdapterV2.CLAUDE_T3_MCP_TOOL_WILDCARD));
   });
 
+  it("delivers project instructions without MCP and invalidates reuse on update or removal", () => {
+    const queryPolicy = ClaudeAdapterV2.claudeRuntimeQueryPolicyForRuntimePolicy(
+      CLAUDE_TEST_RUNTIME_POLICY,
+    );
+    const keys = [undefined, "PRT-AUTO-7c91-A", "PRT-AUTO-7c91-B"].map((projectInstructions) => {
+      const options = ClaudeAdapterV2.makeClaudeQueryOptions({
+        modelSelection: {
+          instanceId: ProviderInstanceId.make("claudeAgent"),
+          model: "claude-sonnet-4-6",
+        },
+        nativeThreadId: "project-instructions-test",
+        resume: false,
+        cwd: "/workspace",
+        ...(projectInstructions === undefined ? {} : { projectInstructions }),
+      });
+      const append = (options.systemPrompt as { append: string }).append;
+      if (projectInstructions === undefined) assert.notInclude(append, "t3_project_instructions");
+      else {
+        assert.include(append, projectInstructions);
+        assert.include(append, "subordinate to system/developer rules");
+      }
+      return ClaudeAdapterV2.claudeEffectiveQueryPolicyKey(queryPolicy, { projectInstructions });
+    });
+    assert.equal(new Set(keys).size, 3);
+  });
+
   it("invalidates live-query reuse when MCP credentials rotate", () => {
     const threadId = ThreadId.make("thread-claude-mcp-credential-rotation");
     const mcpSession = mcpSessionFor(threadId);
@@ -850,7 +876,11 @@ describe("ClaudeAdapterV2 Auto-accept edits", () => {
 });
 
 describe("ClaudeAdapterV2 append-system-prompt-file launch argument", () => {
-  const startTurnWithLaunchArgs = Effect.fnUntraced(function* (launchArgs: string, cwd: string) {
+  const startTurnWithLaunchArgs = Effect.fnUntraced(function* (
+    launchArgs: string,
+    cwd: string,
+    projectInstructions?: string,
+  ) {
     const fileSystem = yield* FileSystem.FileSystem;
     const opened: Array<ClaudeAdapterV2.ClaudeAgentSdkQueryOptions> = [];
     const adapter = yield* ClaudeAdapterV2.makeClaudeAdapterV2({
@@ -888,6 +918,7 @@ describe("ClaudeAdapterV2 append-system-prompt-file launch argument", () => {
       runtimeMode: "full-access",
       interactionMode: "default",
       cwd,
+      ...(projectInstructions === undefined ? {} : { projectInstructions }),
     });
     const threadId = ThreadId.make("thread-claude-append-file");
     const runtime = yield* adapter.openSession({
@@ -919,6 +950,32 @@ describe("ClaudeAdapterV2 append-system-prompt-file launch argument", () => {
 
   const appendSystemPrompt = (options: ClaudeAdapterV2.ClaudeAgentSdkQueryOptions | undefined) =>
     (options?.systemPrompt as { readonly append?: string } | undefined)?.append;
+
+  it.effect(
+    "sends the current project snapshot to the actual SDK query before its first prompt",
+    () =>
+      Effect.scoped(
+        Effect.gen(function* () {
+          const fileSystem = yield* FileSystem.FileSystem;
+          const cwd = yield* fileSystem.makeTempDirectoryScoped({
+            prefix: "t3-claude-instructions-",
+          });
+          for (const revision of ["PRT-AUTO-7c91-A", "PRT-AUTO-7c91-B", undefined]) {
+            const { exit, opened } = yield* startTurnWithLaunchArgs("", cwd, revision);
+            assert.isTrue(Exit.isSuccess(exit));
+            assert.lengthOf(opened, 1);
+            const append = appendSystemPrompt(opened[0])!;
+            if (revision === undefined) assert.notInclude(append, "t3_project_instructions");
+            else assert.include(append, revision);
+            if (revision !== "PRT-AUTO-7c91-A") assert.notInclude(append, "PRT-AUTO-7c91-A");
+          }
+        }).pipe(
+          Effect.provide(
+            Layer.mergeAll(IdAllocator.layer, McpProviderSessions.layer, NodeServices.layer),
+          ),
+        ),
+      ),
+  );
 
   it.effect("sends append launch arguments to Claude after the T3 instructions", () =>
     Effect.scoped(

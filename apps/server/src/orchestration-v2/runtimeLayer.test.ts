@@ -254,6 +254,27 @@ const seedProject = (input: {
     }),
   );
 
+// Lifecycle fixtures need a real project now that turn admission resolves saved project policy.
+const createTestThread = Effect.fn("test.createThread")(function* (
+  orchestrator: Orchestrator.OrchestratorV2["Service"],
+  command: Extract<
+    Parameters<Orchestrator.OrchestratorV2["Service"]["dispatch"]>[0],
+    { type: "thread.create" }
+  >,
+) {
+  const projects = yield* Effect.serviceOption(ProjectStore.ProjectStoreV2);
+  if (Option.isSome(projects) && Option.isNone(yield* projects.value.get(command.projectId))) {
+    yield* seedProject({
+      projectId: command.projectId,
+      title: "Lifecycle fixture",
+      workspaceRoot: command.worktreePath ?? process.cwd(),
+      defaultModelSelection: command.modelSelection ?? null,
+      createdAt: "2026-10-25T00:00:00.000Z",
+    }).pipe(Effect.provideService(ProjectStore.ProjectStoreV2, projects.value));
+  }
+  return yield* orchestrator.dispatch(command);
+});
+
 const moveProject = (projectId: ProjectId, workspaceRoot: string, updatedAt: string) =>
   Effect.flatMap(ProjectStore.ProjectStoreV2, (projects) =>
     projects.apply({
@@ -387,7 +408,7 @@ it.layer(layerProjectDeletionTest)("project deletion during thread commands", (i
           workspaceRoot: `/work/automation-lifecycle/${deletion}`,
         });
         for (const id of [threadId, otherThreadId]) {
-          yield* orchestrator.dispatch({
+          yield* createTestThread(orchestrator, {
             type: "thread.create",
             commandId: CommandId.make(`automation-create:${id}`),
             createdBy: "user",
@@ -507,7 +528,7 @@ it.layer(layerProjectDeletionTest)("project deletion during thread commands", (i
         title: "Concurrent deletion",
         workspaceRoot: "/work/concurrent-deletion",
       });
-      yield* orchestrator.dispatch({
+      yield* createTestThread(orchestrator, {
         type: "thread.create",
         commandId: CommandId.make("runtime-thread-delete-concurrent-create"),
         createdBy: "user",
@@ -643,7 +664,7 @@ it.layer(layerTest)("OrchestrationV2LayerLive", (it) => {
       const eventSink = yield* EventSink.EventSinkV2;
       const outbox = yield* EffectOutbox.EffectOutboxV2;
       const threadId = ThreadId.make(name);
-      yield* orchestrator.dispatch({
+      yield* createTestThread(orchestrator, {
         type: "thread.create",
         createdBy: "user",
         creationSource: "web",
@@ -749,7 +770,7 @@ it.layer(layerTest)("OrchestrationV2LayerLive", (it) => {
       const eventSink = yield* EventSink.EventSinkV2;
       const outbox = yield* EffectOutbox.EffectOutboxV2;
       const threadId = ThreadId.make("runtime-rollback-readiness");
-      yield* orchestrator.dispatch({
+      yield* createTestThread(orchestrator, {
         type: "thread.create",
         createdBy: "user",
         creationSource: "web",
@@ -826,7 +847,7 @@ it.layer(layerTest)("OrchestrationV2LayerLive", (it) => {
             ["provider-thread.rollback"],
           );
           const path = yield* Path.Path.pipe(Effect.provide(NodeServices.layer));
-          yield* orchestrator.dispatch({
+          yield* createTestThread(orchestrator, {
             type: "thread.create",
             createdBy: "user",
             creationSource: "web",
@@ -911,7 +932,7 @@ it.layer(layerTest)("OrchestrationV2LayerLive", (it) => {
       const outbox = yield* EffectOutbox.EffectOutboxV2;
       const sessions = yield* ProviderSessionManager.ProviderSessionManagerV2;
       const threadId = ThreadId.make("runtime-delivery-intent");
-      yield* orchestrator.dispatch({
+      yield* createTestThread(orchestrator, {
         type: "thread.create",
         createdBy: "user",
         creationSource: "web",
@@ -1088,7 +1109,7 @@ it.layer(layerTest)("OrchestrationV2LayerLive", (it) => {
       const requestId = RuntimeRequestId.make("runtime-async-question-request");
       const nodeId = NodeId.make("runtime-async-question-node");
       const itemId = TurnItemId.make("runtime-async-question-item");
-      yield* orchestrator.dispatch({
+      yield* createTestThread(orchestrator, {
         type: "thread.create",
         commandId: CommandId.make("runtime-async-question-create"),
         createdBy: "user",
@@ -1372,7 +1393,7 @@ it.layer(layerTest)("OrchestrationV2LayerLive", (it) => {
         const nodeId = NodeId.make(`${name}-node`);
         const itemId = TurnItemId.make(`${name}-item`);
         const now = yield* DateTime.now;
-        yield* orchestrator.dispatch({
+        yield* createTestThread(orchestrator, {
           type: "thread.create",
           commandId: CommandId.make(`${name}-create`),
           createdBy: "user",
@@ -1519,7 +1540,7 @@ it.layer(layerTest)("OrchestrationV2LayerLive", (it) => {
       );
       const forkTransferId = ContextTransferId.make("runtime-layer-waiting-merge-fork-transfer");
 
-      yield* orchestrator.dispatch({
+      yield* createTestThread(orchestrator, {
         type: "thread.create",
         createdBy: "user",
         creationSource: "web",
@@ -2173,7 +2194,7 @@ it.layer(layerTest)("OrchestrationV2LayerLive lifecycle", (it) => {
         defaultModelSelection: null,
         createdAt: "2026-09-17T00:00:00.000Z",
       });
-      yield* orchestrator.dispatch({
+      yield* createTestThread(orchestrator, {
         type: "thread.create",
         createdBy: "user",
         creationSource: "web",
@@ -2274,7 +2295,7 @@ it.layer(layerTest)("OrchestrationV2LayerLive lifecycle", (it) => {
       const orchestrator = yield* Orchestrator.OrchestratorV2;
       const maintenance = yield* ProjectionMaintenance.ProjectionMaintenanceV2;
       const threadId = ThreadId.make("runtime-multiple-pull-requests");
-      yield* orchestrator.dispatch({
+      yield* createTestThread(orchestrator, {
         type: "thread.create",
         createdBy: "user",
         creationSource: "web",
@@ -2365,7 +2386,7 @@ it.layer(layerTest)("OrchestrationV2LayerLive lifecycle", (it) => {
       const orchestrator = yield* Orchestrator.OrchestratorV2;
       const maintenance = yield* ProjectionMaintenance.ProjectionMaintenanceV2;
       const threadId = ThreadId.make("runtime-pull-request-watch");
-      yield* orchestrator.dispatch({
+      yield* createTestThread(orchestrator, {
         type: "thread.create",
         createdBy: "user",
         creationSource: "web",
@@ -2457,7 +2478,7 @@ it.layer(layerTest)("OrchestrationV2LayerLive lifecycle", (it) => {
       const orchestrator = yield* Orchestrator.OrchestratorV2;
       const maintenance = yield* ProjectionMaintenance.ProjectionMaintenanceV2;
       const threadId = ThreadId.make(`pr-watch-settle-${mode}`);
-      yield* orchestrator.dispatch({
+      yield* createTestThread(orchestrator, {
         type: "thread.create",
         createdBy: "user",
         creationSource: "web",
@@ -2561,7 +2582,7 @@ it.layer(layerTest)("OrchestrationV2LayerLive lifecycle", (it) => {
     Effect.gen(function* () {
       const orchestrator = yield* Orchestrator.OrchestratorV2;
       const threadId = ThreadId.make("runtime-pull-request-watch-archive");
-      yield* orchestrator.dispatch({
+      yield* createTestThread(orchestrator, {
         type: "thread.create",
         createdBy: "user",
         creationSource: "web",
@@ -2626,7 +2647,7 @@ it.layer(layerTest)("OrchestrationV2LayerLive lifecycle", (it) => {
         defaultModelSelection: null,
         createdAt: "2026-10-01T00:00:00.000Z",
       });
-      yield* orchestrator.dispatch({
+      yield* createTestThread(orchestrator, {
         type: "thread.create",
         createdBy: "user",
         creationSource: "web",
@@ -2685,7 +2706,7 @@ it.layer(layerTest)("OrchestrationV2LayerLive lifecycle", (it) => {
         defaultModelSelection: null,
         createdAt: "2026-10-01T00:00:00.000Z",
       });
-      yield* orchestrator.dispatch({
+      yield* createTestThread(orchestrator, {
         type: "thread.create",
         createdBy: "user",
         creationSource: "web",
@@ -2904,7 +2925,7 @@ it.layer(layerTest)("OrchestrationV2LayerLive lifecycle", (it) => {
         defaultModelSelection: null,
         createdAt: "2026-10-01T00:00:00.000Z",
       });
-      yield* orchestrator.dispatch({
+      yield* createTestThread(orchestrator, {
         type: "thread.create",
         createdBy: "user",
         creationSource: "web",
@@ -3026,7 +3047,7 @@ it.layer(layerTest)("OrchestrationV2LayerLive lifecycle", (it) => {
         defaultModelSelection: null,
         createdAt: "2026-10-01T00:00:00.000Z",
       });
-      yield* orchestrator.dispatch({
+      yield* createTestThread(orchestrator, {
         type: "thread.create",
         createdBy: "user",
         creationSource: "web",
@@ -3130,7 +3151,7 @@ it.layer(layerTest)("OrchestrationV2LayerLive lifecycle", (it) => {
         defaultModelSelection: null,
         createdAt: "2026-10-01T00:00:00.000Z",
       });
-      yield* orchestrator.dispatch({
+      yield* createTestThread(orchestrator, {
         type: "thread.create",
         createdBy: "user",
         creationSource: "web",
@@ -3236,7 +3257,7 @@ it.layer(layerTest)("OrchestrationV2LayerLive lifecycle", (it) => {
     Effect.gen(function* () {
       const orchestrator = yield* Orchestrator.OrchestratorV2;
       const threadId = ThreadId.make("runtime-pull-request-watch-dismissed");
-      yield* orchestrator.dispatch({
+      yield* createTestThread(orchestrator, {
         type: "thread.create",
         createdBy: "user",
         creationSource: "web",
@@ -3318,7 +3339,7 @@ it.layer(layerTest)("OrchestrationV2LayerLive lifecycle", (it) => {
         defaultModelSelection: null,
         createdAt: "2026-10-01T00:00:00.000Z",
       });
-      yield* orchestrator.dispatch({
+      yield* createTestThread(orchestrator, {
         type: "thread.create",
         createdBy: "user",
         creationSource: "web",
@@ -3512,7 +3533,7 @@ it.layer(layerTest)("OrchestrationV2LayerLive lifecycle", (it) => {
         const orchestrator = yield* Orchestrator.OrchestratorV2;
         const eventSink = yield* EventSink.EventSinkV2;
         const threadId = ThreadId.make("runtime-layer-restart-continuation");
-        yield* orchestrator.dispatch({
+        yield* createTestThread(orchestrator, {
           type: "thread.create",
           createdBy: "user",
           creationSource: "web",
@@ -3634,7 +3655,7 @@ it.layer(layerTest)("OrchestrationV2LayerLive lifecycle", (it) => {
         const orchestrator = yield* Orchestrator.OrchestratorV2;
         const eventSink = yield* EventSink.EventSinkV2;
         const threadId = ThreadId.make(`runtime-layer-restart-${status}-${kind}-source`);
-        yield* orchestrator.dispatch({
+        yield* createTestThread(orchestrator, {
           type: "thread.create",
           createdBy: "user",
           creationSource: "web",
@@ -3725,7 +3746,7 @@ it.layer(layerTest)("OrchestrationV2LayerLive lifecycle", (it) => {
       const orchestrator = yield* Orchestrator.OrchestratorV2;
       const threadId = ThreadId.make("runtime-layer-active-settle-thread");
 
-      yield* orchestrator.dispatch({
+      yield* createTestThread(orchestrator, {
         type: "thread.create",
         createdBy: "user",
         creationSource: "web",
@@ -3794,7 +3815,7 @@ it.layer(layerTest)("OrchestrationV2LayerLive lifecycle", (it) => {
       const projectId = ProjectId.make("runtime-layer-settle-after-run-project");
       const threadId = ThreadId.make("runtime-layer-settle-after-run-thread");
 
-      yield* orchestrator.dispatch({
+      yield* createTestThread(orchestrator, {
         type: "thread.create",
         createdBy: "user",
         creationSource: "web",
@@ -3860,7 +3881,7 @@ it.layer(layerTest)("OrchestrationV2LayerLive lifecycle", (it) => {
       const eventSink = yield* EventSink.EventSinkV2;
       const threadId = ThreadId.make("runtime-layer-settle-automatic-queued");
 
-      yield* orchestrator.dispatch({
+      yield* createTestThread(orchestrator, {
         type: "thread.create",
         createdBy: "user",
         creationSource: "web",
@@ -3986,7 +4007,7 @@ it.layer(layerTest)("OrchestrationV2LayerLive lifecycle", (it) => {
       const orchestrator = yield* Orchestrator.OrchestratorV2;
       const maintenance = yield* ProjectionMaintenance.ProjectionMaintenanceV2;
       const threadId = ThreadId.make("runtime-layer-archive-preparing-thread");
-      yield* orchestrator.dispatch({
+      yield* createTestThread(orchestrator, {
         type: "thread.create",
         createdBy: "user",
         creationSource: "web",
@@ -4095,7 +4116,7 @@ it.layer(layerTest)("OrchestrationV2LayerLive lifecycle", (it) => {
         const eventSink = yield* EventSink.EventSinkV2;
         const threadId = ThreadId.make(`runtime-layer-serialized-queue-thread-${automatic}`);
 
-        yield* orchestrator.dispatch({
+        yield* createTestThread(orchestrator, {
           type: "thread.create",
           createdBy: "user",
           creationSource: "web",
@@ -4295,7 +4316,7 @@ it.layer(layerTest)("OrchestrationV2LayerLive lifecycle", (it) => {
       const threadId = ThreadId.make("runtime-layer-wake-work-start-thread");
       const messageId = (key: string) => MessageId.make(`runtime-layer-wake-work-start-${key}`);
 
-      yield* orchestrator.dispatch({
+      yield* createTestThread(orchestrator, {
         type: "thread.create",
         createdBy: "user",
         creationSource: "web",
@@ -4417,7 +4438,7 @@ it.layer(layerTest)("OrchestrationV2LayerLive lifecycle", (it) => {
         const eventSink = yield* EventSink.EventSinkV2;
         const threadId = ThreadId.make(`runtime-layer-failed-queue-${failureClass}`);
 
-        yield* orchestrator.dispatch({
+        yield* createTestThread(orchestrator, {
           type: "thread.create",
           createdBy: "user",
           creationSource: "web",
@@ -4556,7 +4577,7 @@ it.layer(layerTest)("OrchestrationV2LayerLive lifecycle", (it) => {
         model: "gpt-5.5",
         options: [{ id: "reasoningEffort", value: "high" }],
       };
-      yield* orchestrator.dispatch({
+      yield* createTestThread(orchestrator, {
         type: "thread.create",
         commandId: CommandId.make(`${threadId}:create`),
         threadId,
@@ -4706,7 +4727,7 @@ it.layer(layerTest)("OrchestrationV2LayerLive lifecycle", (it) => {
         const threadId = ThreadId.make(
           `runtime-layer-queue-current-conversation-${creationSource}-${currentSelection.instanceId}`,
         );
-        yield* orchestrator.dispatch({
+        yield* createTestThread(orchestrator, {
           type: "thread.create",
           commandId: CommandId.make(`${threadId}:create`),
           threadId,
@@ -4811,7 +4832,7 @@ it.layer(layerTest)("OrchestrationV2LayerLive lifecycle", (it) => {
     Effect.gen(function* () {
       const orchestrator = yield* Orchestrator.OrchestratorV2;
       const threadId = ThreadId.make("runtime-layer-interrupted-queue");
-      yield* orchestrator.dispatch({
+      yield* createTestThread(orchestrator, {
         type: "thread.create",
         createdBy: "user",
         creationSource: "web",
@@ -4865,7 +4886,7 @@ it.layer(layerTest)("OrchestrationV2LayerLive lifecycle", (it) => {
       const eventSink = yield* EventSink.EventSinkV2;
       const threadId = ThreadId.make("runtime-layer-continuation-before-queue");
       const messageId = (key: string) => MessageId.make(`${threadId}:${key}`);
-      yield* orchestrator.dispatch({
+      yield* createTestThread(orchestrator, {
         type: "thread.create",
         createdBy: "user",
         creationSource: "web",
@@ -4974,7 +4995,7 @@ it.layer(layerTest)("OrchestrationV2LayerLive lifecycle", (it) => {
         const orchestrator = yield* Orchestrator.OrchestratorV2;
         const recovery = yield* ProviderRuntimeRecoveryService.ProviderRuntimeRecoveryService;
         const threadId = ThreadId.make(`queue-hold-${trigger}`);
-        yield* orchestrator.dispatch({
+        yield* createTestThread(orchestrator, {
           type: "thread.create",
           createdBy: "user",
           creationSource: "web",
@@ -5071,7 +5092,7 @@ it.layer(layerTest)("OrchestrationV2LayerLive lifecycle", (it) => {
       const orchestrator = yield* Orchestrator.OrchestratorV2;
       const threadId = ThreadId.make("runtime-layer-queued-edit-thread");
 
-      yield* orchestrator.dispatch({
+      yield* createTestThread(orchestrator, {
         type: "thread.create",
         createdBy: "user",
         creationSource: "web",
@@ -5237,7 +5258,7 @@ it.layer(layerSharedApplicationDataPlaneTest)("pending provider interruption", (
         title: "Pending interrupt project",
         workspaceRoot: "/tmp/runtime-layer-pending-interrupt-project",
       });
-      yield* orchestrator.dispatch({
+      yield* createTestThread(orchestrator, {
         type: "thread.create",
         createdBy: "user",
         creationSource: "web",
@@ -5304,7 +5325,7 @@ it.layer(layerTest)("snooze queued runs", (it) => {
         const eventSink = yield* EventSink.EventSinkV2;
         const threadId = ThreadId.make(`snooze-queued:${kind}`);
         const snoozedUntil = "2099-07-25T09:00:00.000Z";
-        yield* orchestrator.dispatch({
+        yield* createTestThread(orchestrator, {
           type: "thread.create",
           commandId: CommandId.make(`create:${threadId}`),
           threadId,
@@ -5443,7 +5464,7 @@ it.layer(layerTest)("snooze queued runs", (it) => {
         const orchestrator = yield* Orchestrator.OrchestratorV2;
         const threadId = ThreadId.make(`snooze-wake:${kind}`);
         const snoozedUntil = "2099-07-25T09:00:00.000Z";
-        yield* orchestrator.dispatch({
+        yield* createTestThread(orchestrator, {
           type: "thread.create",
           commandId: CommandId.make(`create:${threadId}`),
           threadId,
@@ -5509,7 +5530,7 @@ it.layer(layerSharedApplicationDataPlaneTest)("snooze projection", (it) => {
         title: "Snoozed shell projection",
         workspaceRoot: "/tmp/runtime-layer-snoozed-project",
       });
-      yield* orchestrator.dispatch({
+      yield* createTestThread(orchestrator, {
         type: "thread.create",
         createdBy: "user",
         creationSource: "web",
@@ -5606,7 +5627,7 @@ it.layer(layerSharedApplicationDataPlaneTest)("visited projection", (it) => {
         title: "Visited shell projection",
         workspaceRoot: "/tmp/runtime-layer-visited-project",
       });
-      yield* orchestrator.dispatch({
+      yield* createTestThread(orchestrator, {
         type: "thread.create",
         createdBy: "user",
         creationSource: "web",
@@ -5770,7 +5791,7 @@ it.layer(Layer.fresh(layerSharedApplicationDataPlaneTest))("compact PR events", 
       const maintenance = yield* ProjectionMaintenance.ProjectionMaintenanceV2;
       const sql = yield* SqlClient.SqlClient;
       const threadId = ThreadId.make("compact-pr-sync");
-      yield* orchestrator.dispatch({
+      yield* createTestThread(orchestrator, {
         type: "thread.create",
         createdBy: "user",
         creationSource: "web",
@@ -5979,7 +6000,7 @@ it.layer(layerSharedApplicationDataPlaneTest)("shared application data plane", (
       const projectEvent = yield* Queue.take(delivered);
       assert.isTrue("aggregateKind" in projectEvent && projectEvent.aggregateId === projectId);
 
-      const threadResult = yield* orchestrator.dispatch({
+      const threadResult = yield* createTestThread(orchestrator, {
         type: "thread.create",
         createdBy: "user",
         creationSource: "web",
@@ -6042,7 +6063,7 @@ it.layer(layerTest)("usage-limit recovery", (it) => {
           defaultModelSelection: modelSelection,
           createdAt,
         });
-        yield* orchestrator.dispatch({
+        yield* createTestThread(orchestrator, {
           type: "thread.create",
           commandId: CommandId.make(`manual-resume:create:${reason}`),
           threadId,
@@ -6212,7 +6233,7 @@ it.layer(layerTest)("usage-limit recovery", (it) => {
         defaultModelSelection: modelSelection,
         createdAt: DateTime.formatIso(yield* DateTime.now),
       });
-      yield* orchestrator.dispatch({
+      yield* createTestThread(orchestrator, {
         type: "thread.create",
         commandId: CommandId.make(`recovery:create:${scenario}`),
         threadId,
@@ -6792,7 +6813,7 @@ it.layer(layerQueueResumeDisabledInstanceTest)(
             model: "gpt-5.5",
           } satisfies ModelSelection;
 
-          yield* orchestrator.dispatch({
+          yield* createTestThread(orchestrator, {
             type: "thread.create",
             createdBy: "user",
             creationSource: "web",

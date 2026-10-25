@@ -19,10 +19,10 @@ their contents cannot change a profile or become profile instructions.
 
 Profiles apply independently of whether Project Runtime is enabled. Disabling
 Runtime hides its project instructions, sources, and tasks from agents; it does
-not remove the assigned profile. Agents retrieve the current effective instructions
-through T3's shared project context, including in fresh conversations and after
-changing providers. Agents refresh project context at the start of each project-working turn, so
-changes apply to subsequent work without interrupting a turn already underway.
+not remove the assigned profile. T3 supplies the current effective instructions
+automatically before each agent turn, including in fresh conversations and after
+changing providers. Changes apply to subsequent work without interrupting a turn
+already underway.
 
 Edits check the revision you started from. If another client saves first, your
 draft remains visible and the stale save is refused. Reload the latest record

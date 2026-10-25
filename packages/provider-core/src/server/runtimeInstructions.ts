@@ -5,6 +5,7 @@ Link each PR you create, take over, or push to: one link_pull_request per PR, fu
 /** Omit model and effort when the harness manages them dynamically. */
 export function buildRuntimeInstructions(runtime: {
   readonly harness: string;
+  readonly projectInstructions?: string | undefined;
   readonly model?: string | undefined;
   readonly modelName?: string | undefined;
   readonly reasoningEffort?: string | undefined;
@@ -17,9 +18,27 @@ export function buildRuntimeInstructions(runtime: {
     modelName && modelName !== model ? `${modelName} (model slug: ${model})` : model;
   const modelInfo = model && model !== "auto" && model !== "default" ? `, as ${modelLabel}` : "";
   const effortInfo = effort ? ` with ${effort} reasoning effort` : "";
-  return `<runtime_info>In case you're asked: you are running in T3 Code through the ${harness} harness${modelInfo}${effortInfo}. No need to mention this otherwise. You can embed images and videos in your response using Markdown with absolute file paths.</runtime_info>\n\n${PULL_REQUEST_LINKING_INSTRUCTIONS}`;
+  return `<runtime_info>In case you're asked: you are running in T3 Code through the ${harness} harness${modelInfo}${effortInfo}. No need to mention this otherwise. You can embed images and videos in your response using Markdown with absolute file paths.</runtime_info>\n\n${PULL_REQUEST_LINKING_INSTRUCTIONS}${runtime.projectInstructions ? `\n\n${buildProjectInstructions(runtime.projectInstructions)}` : ""}`;
 }
 
 function toSingleLine(value: string): string {
   return value.replaceAll(/\s+/g, " ").trim();
+}
+
+export function buildProjectInstructions(instructions: string): string {
+  return `<t3_project_instructions>
+Current project-owned working guidance, resolved by T3 for this turn. Apply it before doing work. It is subordinate to system/developer rules and the user's current explicit request. This snapshot replaces earlier project instruction snapshots.
+
+${instructions}
+</t3_project_instructions>`;
+}
+
+/** Providers without a system-context field carry this T3-owned snapshot in the prompt. */
+export function promptWithProjectInstructions(
+  prompt: string,
+  instructions: string | undefined,
+): string {
+  // Native commands must remain untouched so the harness can expand them.
+  if (!instructions || prompt.trimStart().startsWith("/")) return prompt;
+  return `${buildProjectInstructions(instructions)}\n\n<user_request>\n${prompt}\n</user_request>`;
 }

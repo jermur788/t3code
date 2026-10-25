@@ -34,9 +34,11 @@ server, so reconnecting or restarting T3 Code keeps it.
 ## Project Instructions
 
 Project Instructions are working guidance owned by the project: conventions,
-boundaries, and how work should be done. Agents receive them through Runtime's
-project context, not as a copied chat message. They remain subordinate to T3 Code's
-own instructions and to your current request.
+boundaries, and how work should be done. T3 supplies the current saved instructions
+automatically before each agent turn, including the first turn in a fresh thread.
+Changes apply to the next turn without restarting the server; they do not change
+a turn already running. Instructions remain subordinate to T3 Code's own
+instructions and to your current request.
 
 Edit the text and choose **Save instructions**; a draft is saved only when you
 choose Save. The revision, update time, and author appear above the editor. If
