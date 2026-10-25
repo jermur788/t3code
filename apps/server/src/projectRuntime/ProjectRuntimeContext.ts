@@ -70,18 +70,10 @@ export const disabledContext = (
   truncated: { sources: false, tasks: false, handoffs: false },
 });
 
-/**
- * `contextMaxBytes` budgets only the variable bootstrap collections (source
- * descriptors, task summaries, latest-handoff references), measured as the
- * UTF-8 bytes of their serialized JSON. Project Instructions are deliberately
- * outside it: they keep their own `instructionsMaxLength` bound and are never
- * truncated, so the packed Runtime fields are bounded by that, this budget,
- * and the fixed status fields. Profile resolution adds separately bounded text.
- *
- * Packing is greedy in the given order: sources first, then tasks. A task
- * whose handoff reference does not fit is kept without it (`handoffs`); a task
- * that does not fit at all ends the list (`tasks`).
- */
+// contextMaxBytes bounds only variable collections (sources, task summaries,
+// handoff refs) as serialized JSON. Project Instructions keep their own bound
+// and are never truncated. Packing is greedy: sources, then tasks; a task whose
+// handoff does not fit stays without it, and one that does not fit ends the list.
 export const packContext = (
   candidates: ProjectRuntimeContextCandidates,
   maxBytes: number = PROJECT_RUNTIME_BOUNDS.contextMaxBytes,

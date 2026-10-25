@@ -139,9 +139,8 @@ export function ForkHome({
       }
     } catch {
       setStartError("Could not start a thread for this project. Try again.");
-    } finally {
-      setStarting(false);
     }
+    setStarting(false);
   };
 
   return (
