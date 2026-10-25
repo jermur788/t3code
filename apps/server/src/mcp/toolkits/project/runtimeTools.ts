@@ -49,17 +49,17 @@ const withSources = {
 const projectId = Schema.optional(
   ProjectId.annotate({
     description:
-      "Only for an MCP client running outside a T3 thread, which must pass it. An agent in a T3 thread always acts on its own project; a different projectId is refused.",
+      "Outside a T3 thread only. An agent in a T3 thread acts on its own project; a different projectId is refused.",
   }),
 );
 
 const worktreeMetadataNote =
-  "branch, worktreePath and baseSha are descriptive notes only: setting them does not create, move, bind, or authorize a worktree or change the thread's workspace.";
+  "branch, worktreePath, and baseSha are descriptive only; they do not create, move, bind, or authorize a worktree or change the thread workspace.";
 
 export const ProjectContextTool = Tool.make("t3_project_context", {
   ...shared,
   description:
-    "Read the Project Runtime bootstrap for this project: its status, full Project Instructions, enabled source descriptors, and summaries of active, blocked and review tasks with each task's latest handoff. Built only from saved Runtime state, never from conversation history, and it never includes source contents (use t3_project_source_read). Assigned Development Profile metadata and canonical effectiveInstructions contain inherited policy, followed by higher-precedence Project Runtime instructions. Profiles remain available when Runtime is disabled; in that case Runtime returns enabled:false with no project instructions, sources or tasks. truncated flags report anything omitted for the count and size limits; page the full lists with the list tools.",
+    "Read saved Project Runtime context: status, instructions, enabled source descriptors, and active/blocked/review task summaries. Never source bodies. `enabled:false` means Runtime is off; profiles still apply. `truncated` means a limit cut something.",
   parameters: Schema.Struct({ projectId }),
   success: ProjectRuntimeContext,
 })
@@ -70,7 +70,7 @@ export const ProjectContextTool = Tool.make("t3_project_context", {
 export const ProjectSourceListTool = Tool.make("t3_project_source_list", {
   ...withSources,
   description:
-    "List this project's registered Runtime sources with their current health (available, missing, unreadable or unsupported). Disabled sources are listed too. Read-only: the registry is managed by the user.",
+    "List registered sources and health. Disabled entries are included. Read-only; the user manages the registry.",
   parameters: Schema.Struct({ projectId, ...ProjectRuntimeSourceListInput.fields }),
   success: ProjectRuntimeSourceListResult,
 })
@@ -81,7 +81,7 @@ export const ProjectSourceListTool = Tool.make("t3_project_source_list", {
 export const ProjectSourceSearchTool = Tool.make("t3_project_source_search", {
   ...withSources,
   description:
-    "Search the contents of this project's enabled, readable registered sources. Only registered source files are searched, never other workspace files. truncated is true when results were cut by a limit.",
+    "Search enabled, readable registered sources only. `truncated` means a limit cut results.",
   parameters: Schema.Struct({ projectId, ...ProjectRuntimeSourceSearchInput.fields }),
   success: ProjectRuntimeSourceSearchResult,
 })
@@ -92,7 +92,7 @@ export const ProjectSourceSearchTool = Tool.make("t3_project_source_search", {
 export const ProjectSourceReadTool = Tool.make("t3_project_source_read", {
   ...withSources,
   description:
-    "Read lines from one registered source by sourceId. Returns at most 400 lines and 65,536 UTF-8 bytes; truncated says more follows, so continue from toLine + 1. A disabled, missing, binary or unreadable source fails with a structured error. It takes no file path.",
+    "Read one registered source by `sourceId`, at most 400 lines or 65,536 bytes. When `truncated`, continue from `toLine + 1`. No file paths. Disabled, missing, binary, or unreadable sources return a structured error.",
   parameters: Schema.Struct({
     projectId,
     ...ProjectRuntimeSourceReadInput.fields,
@@ -108,7 +108,7 @@ export const ProjectSourceReadTool = Tool.make("t3_project_source_read", {
 export const ProjectTaskListTool = Tool.make("t3_project_task_list", {
   ...shared,
   description:
-    "List this project's Runtime tasks, optionally by status, oldest first. Pass nextCursor back as cursor for the next page.",
+    "List Runtime tasks, oldest first; optional status. Pass `nextCursor` back as `cursor`.",
   parameters: Schema.Struct({ projectId, ...ProjectRuntimeTaskListInput.fields }),
   success: ProjectRuntimeTaskListResult,
 })
@@ -118,7 +118,7 @@ export const ProjectTaskListTool = Tool.make("t3_project_task_list", {
 
 export const ProjectTaskReadTool = Tool.make("t3_project_task_read", {
   ...shared,
-  description: "Read one Runtime task of this project by taskId, including its current revision.",
+  description: "Read one Runtime task by `taskId`, including its revision.",
   parameters: Schema.Struct({ projectId, ...ProjectRuntimeTaskReadInput.fields }),
   success: ProjectRuntimeTask,
 })
@@ -128,7 +128,7 @@ export const ProjectTaskReadTool = Tool.make("t3_project_task_read", {
 
 export const ProjectTaskCreateTool = Tool.make("t3_project_task_create", {
   ...shared,
-  description: `Create a Runtime task in this project. Who created it is recorded by the server. ${worktreeMetadataNote}`,
+  description: `Create a Runtime task. The server records the author. ${worktreeMetadataNote}`,
   parameters: Schema.Struct({ projectId, ...ProjectRuntimeTaskCreateInput.fields }),
   success: ProjectRuntimeTask,
 })
@@ -137,7 +137,7 @@ export const ProjectTaskCreateTool = Tool.make("t3_project_task_create", {
 
 export const ProjectTaskUpdateTool = Tool.make("t3_project_task_update", {
   ...shared,
-  description: `Update a Runtime task. expectedRevision is required and must be the revision you last read; a stale value fails with ProjectRuntimeConflictError naming expectedRevision and currentRevision, so read the task again and retry. Omitted fields are kept; null clears nextAction, branch, worktreePath or baseSha. ${worktreeMetadataNote}`,
+  description: `Update a Runtime task. Pass the revision last read as \`expectedRevision\`; on \`ProjectRuntimeConflictError\`, reread and retry. Omitted fields stay; null clears optional metadata. ${worktreeMetadataNote}`,
   parameters: Schema.Struct({ projectId, ...ProjectRuntimeTaskUpdateInput.fields }),
   success: ProjectRuntimeTask,
 }).annotate(Tool.OpenWorld, false);
@@ -145,7 +145,7 @@ export const ProjectTaskUpdateTool = Tool.make("t3_project_task_update", {
 export const ProjectHandoffAppendTool = Tool.make("t3_project_handoff_append", {
   ...shared,
   description:
-    "Append an immutable handoff to a Runtime task: a checkpoint summary for whoever continues the work. The author, thread, provider and model are recorded by the server from this call; handoffs cannot be edited or deleted afterwards.",
+    "Append an immutable handoff to a Runtime task: a checkpoint for the next worker. The server records author, thread, provider, and model. Cannot be edited or deleted.",
   parameters: Schema.Struct({ projectId, ...ProjectRuntimeHandoffAppendInput.fields }),
   success: ProjectRuntimeHandoff,
 })
@@ -155,7 +155,7 @@ export const ProjectHandoffAppendTool = Tool.make("t3_project_handoff_append", {
 export const ProjectHandoffListTool = Tool.make("t3_project_handoff_list", {
   ...shared,
   description:
-    "List this project's Runtime handoffs, oldest first, optionally for one taskId. Pass nextCursor back as cursor for the next page.",
+    "List Runtime handoffs, oldest first; optional `taskId`. Pass `nextCursor` back as `cursor`.",
   parameters: Schema.Struct({ projectId, ...ProjectRuntimeHandoffListInput.fields }),
   success: ProjectRuntimeHandoffListResult,
 })
@@ -165,7 +165,7 @@ export const ProjectHandoffListTool = Tool.make("t3_project_handoff_list", {
 
 export const ProjectHandoffReadTool = Tool.make("t3_project_handoff_read", {
   ...shared,
-  description: "Read one Runtime handoff of this project by handoffId.",
+  description: "Read one Runtime handoff by `handoffId`.",
   parameters: Schema.Struct({ projectId, ...ProjectRuntimeHandoffReadInput.fields }),
   success: ProjectRuntimeHandoff,
 })
