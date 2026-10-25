@@ -41,7 +41,7 @@ platform distribution from the targeted evidence below. Those were not run.
 | PRT-070            | PASS: 34 qualification steps. Claude Sonnet 5.5 wrote state, DeepSeek V4.1 Flash via OpenCode continued from it, stale writes were rejected, and state survived a server restart. Focused regressions: 87 tests in 9 test files. `check:changed`: 402 tests in 23 files, typecheck of 32 packages.                                                         |
 | PRT-080            | PASS: 45 PASS, 0 FAIL, 1 INFO. Git, worktree, orchestration, and delegated-work regressions. Targeted logs: 498 tests across 16 test files (nine commands). `check:changed` as above. Independent DeepSeek and Sonnet reviews passed; the Opus run ended on a usage limit and produced no verdict.                                                         |
 | PRT-090            | PASS: 27 PASS, 0 FAIL. The CCF fixture was a pinned documentation snapshot whose working files stayed unchanged. Fresh provider threads ran through instructions, sources, on-demand reads, task CAS, and handoffs. Corrected evidence is the review2 report; the original R1 failure is preserved. Same 498/16 targeted tests and `check:changed` counts. |
-| PRT-100            | PASS: 56 changed files, +8,959/−76, seven commits. Runtime remains additive; one textual upstream conflict: the migration collision below. Independent Sonnet review passed.                                                                                                                                                                               |
+| PRT-100            | PASS: 56 changed files, +8,959/−76, seven commits. Runtime remains additive; the historical migration collision is resolved by the fork ledger described below. Independent Sonnet review passed.                                                                                                                                                          |
 | PRT-110            | Documentation and implementation reconciliation. Final checks, independent review, and candidate SHA are recorded in the release handoff; this page is not a release verdict.                                                                                                                                                                              |
 
 Recomputed from the logs, the nine regression commands contain 498 tests across 16
@@ -147,6 +147,29 @@ case. Take an offline backup before upgrading any home.
   and desktop use the web settings UI.
 - Cosmetic placement items from PRT-100 were retained rather than churning qualified
   files.
+
+## Pre-publish hardening evidence
+
+The integrated branch was rebased onto upstream `5b35402623` and qualified on
+2026-10-25.
+
+| Check                               | Result                                                                                                                          |
+| ----------------------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
+| Fresh home                          | Upstream 1–69, then fork `1_ProjectRuntime` and `2_DevelopmentProfiles`; a second boot is a no-op                               |
+| Upstream-origin home                | Fork schema added; upstream ledger stays at 1–69                                                                                |
+| Fork-origin home, synthetic fixture | Exact Runtime/Profile rows preserved; upstream 68/69 applied; audit rows written                                                |
+| Fork-origin home, real copy         | Six fork tables unchanged; original ledger timestamps moved to the fork ledger; `foreign_key_check` empty; `integrity_check` ok |
+| Integrated home                     | Boot is a no-op beyond normal future migrations                                                                                 |
+| Claude live                         | Profile + project precedence, revision update, removal, new-thread delivery, project isolation, and restart persistence         |
+| OpenCode/DeepSeek V4.1 Flash live   | Same scenarios, including current-revision delivery on a reused session                                                         |
+| Web build                           | Production build passes                                                                                                         |
+| Prompt copy                         | Runtime bootstrap 3,311 → 2,388 characters; 11 Runtime tool descriptions 2,897 → 1,458 characters                               |
+
+`check:changed` ran the full 1,046-file suite. Two failures reproduce on the
+original fork checkpoint on this Linux host and do not touch this diff:
+`AcpSessionRuntime.processTree.test.ts` (cwd/cgroup fixture) and
+`build-desktop-artifact.test.ts` (cross-architecture Windows probe). They are
+environment gaps, not integration regressions.
 
 ## Evidence handling
 
