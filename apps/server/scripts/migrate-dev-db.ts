@@ -17,6 +17,11 @@ import { Command, Flag } from "effect/cli";
 
 import * as ProjectionStore from "../src/orchestration-v2/ProjectionStore.ts";
 import { rebuildMessageSearch } from "../src/orchestration-v2/messageSearchIndex.ts";
+import {
+  FORK_MIGRATION_TABLE,
+  FORK_RECONCILIATION_TABLE,
+  forkMigrationManifest,
+} from "../src/persistence/ForkMigrations.ts";
 import { migrationManifest, runMigrations } from "../src/persistence/Migrations.ts";
 import * as NodeSqliteClient from "@t3tools/shared/nodeSqliteClient";
 
@@ -99,6 +104,30 @@ export class MigrateDevDbSlotCollisionError extends Schema.TaggedError<MigrateDe
 ) {
   override get message(): string {
     return `Migration slot collision at ${this.slot}: this checkout registers '${this.codeName}' but the database already applied '${this.appliedName}' in that slot. Renumber the new migration to a free slot.`;
+  }
+}
+
+export class MigrateDevDbForkSlotCollisionError extends Schema.TaggedError<MigrateDevDbForkSlotCollisionError>()(
+  "MigrateDevDbForkSlotCollisionError",
+  {
+    slot: Schema.Number,
+    codeName: Schema.String,
+    appliedName: Schema.String,
+  },
+) {
+  override get message(): string {
+    return `Fork migration slot collision at ${this.slot}: this checkout registers '${this.codeName}' but the fork ledger already applied '${this.appliedName}'. Do not reuse a fork migration slot.`;
+  }
+}
+
+export class MigrateDevDbForkLedgerError extends Schema.TaggedError<MigrateDevDbForkLedgerError>()(
+  "MigrateDevDbForkLedgerError",
+  {
+    reason: Schema.String,
+  },
+) {
+  override get message(): string {
+    return `Fork migration verification failed: ${this.reason}`;
   }
 }
 
@@ -424,6 +453,43 @@ const verifyMigrationSlots = Effect.fn("verifyMigrationSlots")(function* () {
     const appliedName = appliedById.get(slot);
     if (appliedName !== undefined && appliedName !== codeName) {
       return yield* new MigrateDevDbSlotCollisionError({ slot, codeName, appliedName });
+    }
+  }
+  const forkLedgers = yield* sql`
+    SELECT name FROM sqlite_master WHERE type = 'table' AND name = ${FORK_MIGRATION_TABLE}`;
+  if (forkLedgers.length === 0) {
+    return yield* new MigrateDevDbForkLedgerError({
+      reason: `${FORK_MIGRATION_TABLE} is missing after a full migration run.`,
+    });
+  }
+  const appliedFork = yield* sql<{ migration_id: number; name: string }>`
+    SELECT migration_id, name FROM ${sql(FORK_MIGRATION_TABLE)}`;
+  const appliedForkById = new Map(appliedFork.map((row) => [Number(row.migration_id), row.name]));
+  for (const [slot, codeName] of forkMigrationManifest) {
+    const appliedName = appliedForkById.get(slot);
+    if (appliedName === undefined) {
+      return yield* new MigrateDevDbForkLedgerError({
+        reason: `${FORK_MIGRATION_TABLE} is missing ${slot}_${codeName}.`,
+      });
+    }
+    if (appliedName !== codeName) {
+      return yield* new MigrateDevDbForkSlotCollisionError({ slot, codeName, appliedName });
+    }
+  }
+  const auditTables = yield* sql`
+    SELECT name FROM sqlite_master
+    WHERE type = 'table' AND name = ${FORK_RECONCILIATION_TABLE}`;
+  if (auditTables.length > 0) {
+    const orphanedReconciliations = yield* sql<{ readonly legacy_migration_id: number }>`
+      SELECT a.legacy_migration_id
+      FROM ${sql(FORK_RECONCILIATION_TABLE)} a
+      LEFT JOIN ${sql(FORK_MIGRATION_TABLE)} f
+        ON f.migration_id = a.fork_migration_id AND f.name = a.fork_name
+      WHERE f.migration_id IS NULL`;
+    if (orphanedReconciliations.length > 0) {
+      return yield* new MigrateDevDbForkLedgerError({
+        reason: `${FORK_RECONCILIATION_TABLE} references missing fork migrations: ${orphanedReconciliations.map((row) => row.legacy_migration_id).join(", ")}.`,
+      });
     }
   }
 });
