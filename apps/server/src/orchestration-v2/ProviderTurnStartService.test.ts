@@ -31,6 +31,7 @@ import * as PlatformError from "effect/PlatformError";
 import * as Schema from "effect/Schema";
 
 import * as ServerConfig from "../config.ts";
+import * as ProjectInstructions from "../developmentProfiles/ProjectInstructions.ts";
 import { withWorkspaceLease } from "../workspace/workspaceLease.ts";
 import * as GitWorkflow from "../git/GitWorkflowService.ts";
 import * as ProjectService from "../project/ProjectService.ts";
@@ -59,6 +60,8 @@ const normalize = (target: string) => {
   }
   return `/${parts.join("/")}`;
 };
+const layerProjectInstructions = ProjectInstructions.layerEmpty;
+
 const layerWorktreeLocation = (worktreesDir = managedWorktreesDir) =>
   Layer.mergeAll(
     Path.layer,
@@ -181,6 +184,7 @@ function startWithMissingWorktree(
         }),
         Layer.mock(RunExecutionService.RunExecutionServiceV2)({ startRootRun }),
         Layer.mock(RuntimePolicy.RuntimePolicyV2)({}),
+        layerProjectInstructions,
       ),
     ),
   );
@@ -270,6 +274,7 @@ function makeLocalCommandHarness(input: {
   readonly interruptRunBeforeOpenFailure?: boolean;
   readonly writeFailure?: unknown;
   readonly failReadsAfterRunning?: boolean;
+  readonly projectInstructions?: string;
   readonly previousTurn?: {
     readonly runStatus: "failed" | "completed";
     readonly turnStatus: "running" | "completed" | "interrupted";
@@ -738,6 +743,11 @@ function makeLocalCommandHarness(input: {
         Layer.mock(RuntimePolicy.RuntimePolicyV2)({
           resolve: resolveRuntimePolicy,
         }),
+        input.projectInstructions === undefined
+          ? layerProjectInstructions
+          : Layer.succeed(ProjectInstructions.ProjectInstructions, {
+              resolve: () => Effect.succeed({ formattedInstructions: input.projectInstructions! }),
+            }),
       ),
     ),
   );
@@ -771,6 +781,22 @@ function makeLocalCommandHarness(input: {
     }).pipe(Effect.provide(layer)),
   };
 }
+
+effectIt.effect("passes the current turn-scoped instruction snapshot to the provider turn", () =>
+  Effect.gen(function* () {
+    const harness = makeLocalCommandHarness({
+      text: "Continue",
+      previousTurn: { runStatus: "failed", turnStatus: "running" },
+      projectInstructions: "PRT-AUTO-7c91-CURRENT",
+    });
+
+    yield* harness.start;
+
+    expect(harness.startRootRun.mock.calls[0]?.[0].projectInstructions).toBe(
+      "PRT-AUTO-7c91-CURRENT",
+    );
+  }),
+);
 
 effectIt.effect("recovers an abandoned failed turn before continuing its native conversation", () =>
   Effect.gen(function* () {

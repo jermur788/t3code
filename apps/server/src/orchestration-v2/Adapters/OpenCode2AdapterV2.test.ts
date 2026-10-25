@@ -2354,7 +2354,7 @@ it.layer(McpProviderSessions.layer)("OpenCode2 adapter", (it) => {
           const input = turnInput(thread);
           yield* runtime.startTurn({
             ...input,
-            runtimePolicy: { ...input.runtimePolicy, projectInstructions },
+            ...(projectInstructions === undefined ? {} : { projectInstructions }),
           });
           assert.equal((yield* Fiber.join(terminal))?.status, "completed");
         }

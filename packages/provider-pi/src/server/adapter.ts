@@ -2426,7 +2426,7 @@ export const makePiAdapterV2 = Effect.fn("makePiAdapterV2")(function* (
                 ? yield* resolvePromptPayload(
                     promptWithProjectInstructions(
                       turnInput.message.text,
-                      turnInput.runtimePolicy.projectInstructions,
+                      turnInput.projectInstructions,
                     ),
                     turnInput.message.attachments,
                   )

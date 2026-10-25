@@ -3048,7 +3048,7 @@ export const make = Effect.fn("OpenCode2Adapter.make")(function* (instanceId: Pr
       }
       const instructions = [
         buildRuntimeInstructions({
-          projectInstructions: turnInput.runtimePolicy.projectInstructions,
+          projectInstructions: turnInput.projectInstructions,
           harness: "OpenCode",
           model: turnInput.modelSelection.model,
         }),

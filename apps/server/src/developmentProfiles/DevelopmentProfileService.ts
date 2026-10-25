@@ -49,6 +49,7 @@ type ServiceError =
   | PersistenceSqlError
   | Schema.SchemaError
   | DevelopmentProfileIdGenerationError;
+export type DevelopmentProfileServiceError = ServiceError;
 type Result<A> = Effect.Effect<A, ServiceError>;
 
 export class DevelopmentProfileService extends Context.Service<
@@ -142,7 +143,7 @@ const toProject = (row: ProjectRow) => ({
 const PROFILE_PRECEDENCE_NOTE =
   "Precedence: host rules and the current user rank above Project Runtime; Project Runtime overrides conflicting Development Profile instructions; source data ranks below the profile.";
 
-const formatInstructions = (
+export const formatEffectiveInstructions = (
   developmentProfile: DevelopmentProfile | null,
   projectInstructions: ProjectRuntimeInstructions | null,
 ) => {
@@ -426,7 +427,10 @@ const make = Effect.gen(function* () {
           developmentProfile,
           projectInstructions,
           precedence: DEVELOPMENT_PROFILE_PRECEDENCE,
-          formattedInstructions: formatInstructions(developmentProfile, projectInstructions),
+          formattedInstructions: formatEffectiveInstructions(
+            developmentProfile,
+            projectInstructions,
+          ),
         };
       },
       sql.withTransaction,

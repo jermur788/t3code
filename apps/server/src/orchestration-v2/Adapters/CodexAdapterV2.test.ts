@@ -219,9 +219,9 @@ describe("CodexAdapterV2 runtime policy", () => {
               runtimeMode: "full-access",
               interactionMode: "default",
               cwd: null,
-              projectInstructions,
             },
             modelSelection: { instanceId: ProviderInstanceId.make("codex"), model: "gpt-5.4" },
+            ...(projectInstructions === undefined ? {} : { projectInstructions }),
           });
           const entries = Object.entries(params.additionalContext ?? {}).filter(([key]) =>
             key.startsWith("t3_project_instructions_"),

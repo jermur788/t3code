@@ -13,7 +13,6 @@ import * as Schema from "effect/Schema";
 
 import * as ProviderInstanceRegistry from "../provider/ProviderInstanceRegistry.ts";
 import * as ProviderAdapter from "@t3tools/provider-core/server/ProviderAdapter";
-import * as DevelopmentProfileService from "../developmentProfiles/DevelopmentProfileService.ts";
 import * as ProjectStore from "./ProjectStore.ts";
 
 export class RuntimePolicyResolveError extends Schema.TaggedError<RuntimePolicyResolveError>()(
@@ -74,14 +73,11 @@ function providerRuntimeMode(
 export const layerFromProjectStore: Layer.Layer<
   RuntimePolicyV2,
   never,
-  | ProjectStore.ProjectStoreV2
-  | ProviderInstanceRegistry.ProviderInstanceRegistry
-  | DevelopmentProfileService.DevelopmentProfileService
+  ProjectStore.ProjectStoreV2 | ProviderInstanceRegistry.ProviderInstanceRegistry
 > = Layer.effect(
   RuntimePolicyV2,
   Effect.gen(function* () {
     const projects = yield* ProjectStore.ProjectStoreV2;
-    const instructions = yield* DevelopmentProfileService.DevelopmentProfileService;
     const providerInstances = yield* ProviderInstanceRegistry.ProviderInstanceRegistry;
     return RuntimePolicyV2.of({
       resolve: Effect.fn("RuntimePolicyV2.resolve")(function* (input) {
@@ -115,26 +111,10 @@ export const layerFromProjectStore: Layer.Layer<
               }),
             ),
           ));
-        // Resolve by the durable project binding on every turn, never by cwd or provider session.
-        const effective = yield* instructions
-          .resolveEffectiveProjectInstructions(input.thread.projectId)
-          .pipe(
-            Effect.mapError(
-              (cause) =>
-                new RuntimePolicyResolveError({
-                  projectId: input.thread.projectId,
-                  providerInstanceId: input.modelSelection.instanceId,
-                  cause,
-                }),
-            ),
-          );
         return ProviderAdapter.ProviderAdapterV2RuntimePolicy.make({
           runtimeMode: providerRuntimeMode(input.thread.runtimeMode, supportedRuntimeModes),
           interactionMode: input.thread.interactionMode,
           cwd,
-          ...(effective.formattedInstructions.length === 0
-            ? {}
-            : { projectInstructions: effective.formattedInstructions }),
         });
       }),
     });

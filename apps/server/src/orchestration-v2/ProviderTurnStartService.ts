@@ -31,6 +31,7 @@ import * as ProjectService from "../project/ProjectService.ts";
 import * as ProviderAuthService from "../provider/ProviderAuthService.ts";
 import * as ServerSettings from "../serverSettings.ts";
 import { makeIsManagedWorktreePath } from "../worktreesDirectory.ts";
+import * as ProjectInstructions from "../developmentProfiles/ProjectInstructions.ts";
 import * as EventSink from "./EventSink.ts";
 import * as ContextHandoffService from "./ContextHandoffService.ts";
 import {
@@ -113,6 +114,7 @@ export const layer: Layer.Layer<
   | ProviderSessionManager.ProviderSessionManagerV2
   | RunExecutionService.RunExecutionServiceV2
   | RuntimePolicy.RuntimePolicyV2
+  | ProjectInstructions.ProjectInstructions
 > = Layer.effect(
   ProviderTurnStartServiceV2,
   Effect.gen(function* () {
@@ -130,6 +132,7 @@ export const layer: Layer.Layer<
     const providerSessions = yield* ProviderSessionManager.ProviderSessionManagerV2;
     const runExecution = yield* RunExecutionService.RunExecutionServiceV2;
     const runtimePolicy = yield* RuntimePolicy.RuntimePolicyV2;
+    const projectInstructions = yield* ProjectInstructions.ProjectInstructions;
     const isManagedWorktreePath = yield* makeIsManagedWorktreePath;
 
     // Build draining callbacks outside startup scope so they cannot retain full thread history.
@@ -548,6 +551,9 @@ export const layer: Layer.Layer<
         thread: projection.thread,
         modelSelection: run.modelSelection,
       });
+      const instructionSnapshot = yield* projectInstructions
+        .resolve(projection.thread.projectId)
+        .pipe(Effect.mapError((cause) => new ProviderTurnStartError({ runId, cause })));
       if (!(yield* isCurrentAttemptInStatus("starting"))) return;
       const existingSessionProjection = projection.providerSessions.find(
         (candidate) => candidate.id === providerSessionId,
@@ -1337,6 +1343,9 @@ export const layer: Layer.Layer<
         },
         modelSelection: run.modelSelection,
         runtimePolicy: resolvedRuntimePolicy,
+        ...(instructionSnapshot.formattedInstructions.length === 0
+          ? {}
+          : { projectInstructions: instructionSnapshot.formattedInstructions }),
       });
     });
 
