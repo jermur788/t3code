@@ -146,10 +146,11 @@ session-scoped state: modes, cwd, and approval/sandbox overrides. The effective
 Project/Profile snapshot is resolved per turn in `ProviderTurnStartService` through
 `ProjectInstructions` and passed as `turnInput.projectInstructions`. Codex adds
 numbered additional-context entries chunked below its 4,000-byte limit. Claude,
-ACP, Cursor, and Pi put the snapshot in the turn prompt; Muse and OpenCode use the
-shared system-prompt builder. Claude's live-query reuse key excludes the snapshot, so
-ordinary instruction edits do not replace the query. All adapters call the same
-shared helpers, so precedence and bounds stay provider-neutral.
+ACP, Cursor, OpenCode, and Pi put the snapshot in the turn prompt; Muse uses the
+shared runtime text per turn. Claude's live-query reuse key excludes the snapshot,
+and OpenCode's session instructions stay static, so ordinary instruction edits do
+not replace a provider session. All adapters call the same shared helpers, so
+precedence and bounds stay provider-neutral.
 
 Claude's read-only T3 MCP allowlist remains a provider-specific seam; a future
 Runtime read tool must be added there and to its test. Write tools are not

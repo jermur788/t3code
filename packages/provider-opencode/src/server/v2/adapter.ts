@@ -58,7 +58,10 @@ import * as OpenCode2Client from "./OpenCode2Client.ts";
 import * as OpenCode2Server from "./OpenCode2Server.ts";
 import * as OpenCodeRuntime from "../OpenCodeRuntime.ts";
 import * as McpProviderSessions from "@t3tools/provider-core/server/McpProviderSessions";
-import { buildRuntimeInstructions } from "@t3tools/provider-core/server/runtimeInstructions";
+import {
+  buildRuntimeInstructions,
+  promptWithProjectInstructions,
+} from "@t3tools/provider-core/server/runtimeInstructions";
 import { t3OrchestrationSystemPrompt } from "@t3tools/provider-core/server/orchestrationInstructions";
 import { SKILL_MENTION_PATTERN } from "@t3tools/shared/composerInlineTokens";
 import * as KeyedLock from "@t3tools/shared/KeyedLock";
@@ -2964,11 +2967,14 @@ export const make = Effect.fn("OpenCode2Adapter.make")(function* (instanceId: Pr
     });
 
     const promptText = (turnInput: ProviderAdapter.ProviderAdapterV2TurnInput) =>
-      providerMessageTextWithAttachmentPaths({
-        text: turnInput.message.text,
-        attachments: turnInput.message.attachments,
-        resolveAttachmentPath: host.resolveAttachmentPath,
-      }).trim();
+      promptWithProjectInstructions(
+        providerMessageTextWithAttachmentPaths({
+          text: turnInput.message.text,
+          attachments: turnInput.message.attachments,
+          resolveAttachmentPath: host.resolveAttachmentPath,
+        }).trim(),
+        turnInput.projectInstructions,
+      );
 
     const promptFiles = Effect.fnUntraced(function* (attachments: ReadonlyArray<ChatAttachment>) {
       const files: Array<{ uri: string; name: string }> = [];
@@ -3048,7 +3054,6 @@ export const make = Effect.fn("OpenCode2Adapter.make")(function* (instanceId: Pr
       }
       const instructions = [
         buildRuntimeInstructions({
-          projectInstructions: turnInput.projectInstructions,
           harness: "OpenCode",
           model: turnInput.modelSelection.model,
         }),

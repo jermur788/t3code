@@ -2308,45 +2308,28 @@ it.layer(McpProviderSessions.layer)("OpenCode2 adapter", (it) => {
   );
 
   it.effect(
-    "updates project instructions before prompting a reused session and clears them for another project",
+    "delivers each turn's project instructions in the prompt and clears them for another project",
     () =>
       Effect.gen(function* () {
         const revisionA = "PRT-AUTO-7c91-A";
         const revisionB = "PRT-AUTO-7c91-B";
         const revisions = [revisionA, revisionB, revisionB, undefined];
+        const prompts: Array<string> = [];
         const turn = [
-          out("session.prompt", { sessionID: SESSION, text: "hi" }),
+          out("session.prompt", { sessionID: SESSION, text: "<any>" }),
           promptAccepted,
           event("session.execution.succeeded", { sessionID: SESSION }),
         ];
-        // Setup inserts the first instruction entry; subsequent puts must precede prompts.
         const { runtime, thread } = yield* resumed(
-          [
-            ...turn,
-            ...revisions.slice(1).flatMap((projectInstructions, index) => [
-              ...(projectInstructions === revisions[index]
-                ? []
-                : [
-                    out("session.instructions.entry.put", {
-                      sessionID: SESSION,
-                      key: "t3-code",
-                      value: buildRuntimeInstructions({
-                        harness: "OpenCode",
-                        model: bigPickle.model,
-                        projectInstructions,
-                      }),
-                    }),
-                    reply("session.instructions.entry.put", null),
-                  ]),
-              ...turn,
-            ]),
-          ],
+          revisions.flatMap(() => turn),
           {
             expectedInstructions: buildRuntimeInstructions({
               harness: "OpenCode",
               model: bigPickle.model,
-              projectInstructions: revisionA,
             }),
+            onPrompt: (input) => {
+              prompts.push(String((input as { readonly text?: unknown }).text ?? ""));
+            },
           },
         );
         for (const projectInstructions of revisions) {
@@ -2358,6 +2341,13 @@ it.layer(McpProviderSessions.layer)("OpenCode2 adapter", (it) => {
           });
           assert.equal((yield* Fiber.join(terminal))?.status, "completed");
         }
+        assert.equal(prompts.length, revisions.length);
+        assert.include(prompts[0], revisionA);
+        assert.include(prompts[1], revisionB);
+        assert.notInclude(prompts[1], revisionA);
+        assert.include(prompts[2], revisionB);
+        assert.notInclude(prompts[3], revisionA);
+        assert.notInclude(prompts[3], revisionB);
       }).pipe(Effect.scoped),
   );
 
