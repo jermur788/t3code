@@ -6,6 +6,20 @@ notes with the project instead of in one chat thread. A new thread, or a thread 
 different provider, can then recover the work from saved state rather than from copied
 chat history.
 
+## Fork project home
+
+On web and desktop, opening the fork lands on **Project Home** at `/home`. Choose a
+project or checkout to see its durable identity, the Development Profile assigned to
+it, and summaries of Project Instructions, sources, Project State, and tasks and
+handoffs before you enter a thread. Each area links to its authoritative settings
+surface. **Start a thread** continues into normal T3 work with that project already
+selected.
+
+Project Home does not read the current conversation or provider. A disabled Runtime
+still shows project identity and the assigned profile; the Runtime areas say they are
+disabled rather than showing remembered chat content. If no project exists, the home
+asks you to add one. The stock T3 home remains available at `/?classic=1`.
+
 Runtime is provider-neutral. It belongs to the project on one environment, not to
 Claude, Codex, OpenCode, or any other provider. Changing the provider changes who
 wrote a handoff; it does not change the project's instructions, sources, tasks, or

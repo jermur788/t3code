@@ -11,11 +11,19 @@ import {
   useRuntimeLoad,
 } from "./ProjectRuntimeFields";
 import type { ProjectRuntimeApi } from "./useProjectRuntimeApi";
+import { useSettingsSearchTarget } from "./settingsLayout";
 
 export function ProjectRuntimeInstructions({ api }: { api: ProjectRuntimeApi }) {
   const { result, reload } = useRuntimeLoad(() => api.readInstructions());
+  const targetRef = useSettingsSearchTarget<HTMLElement>("project-runtime-instructions");
   return (
-    <section className="space-y-3" aria-label="Project Instructions">
+    <section
+      id="project-runtime-instructions"
+      ref={targetRef}
+      tabIndex={-1}
+      className="space-y-3"
+      aria-label="Project Instructions"
+    >
       <h3 className="text-sm font-medium">Project Instructions</h3>
       <RuntimeLoadError result={result} reload={reload} />
       {result?.ok && (

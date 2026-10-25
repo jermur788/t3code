@@ -14,13 +14,15 @@ export function runtimeErrorMessage(error: unknown): string {
       return "The registered source is missing. Its registry record is preserved.";
     case "ProjectRuntimeSourceUnsupportedError":
       return "This source is unreadable or unsupported. Register a workspace text file.";
-    case "ProjectRuntimeRequestError":
-      return typeof error === "object" &&
-        error !== null &&
-        "reason" in error &&
-        error.reason === "not_found"
-        ? "This project is no longer available."
-        : "The Runtime request could not be completed. Check the form values and reload.";
+    case "ProjectRuntimeRequestError": {
+      const reason =
+        typeof error === "object" && error !== null && "reason" in error ? error.reason : null;
+      if (reason === "not_found") return "This project is no longer available.";
+      if (reason === "invalid_request") {
+        return "The Runtime request or saved record is not valid. Reload the record or review it in Runtime settings.";
+      }
+      return "The Runtime request could not be completed. Check the form values and reload.";
+    }
     case "EnvironmentAuthorizationError":
       return "This connection does not have permission to access Project Runtime.";
     default:

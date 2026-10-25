@@ -15,11 +15,19 @@ import {
 } from "./ProjectRuntimeFields";
 import type { ProjectRuntimeApi } from "./useProjectRuntimeApi";
 import { ProjectRuntimeHandoffs } from "./ProjectRuntimeHandoffs";
+import { useSettingsSearchTarget } from "./settingsLayout";
 
 export function ProjectRuntimeTasks({ api }: { api: ProjectRuntimeApi }) {
   const [cursor, setCursor] = useState(0);
+  const targetRef = useSettingsSearchTarget<HTMLElement>("project-runtime-tasks");
   return (
-    <section className="space-y-3" aria-label="Runtime tasks">
+    <section
+      id="project-runtime-tasks"
+      ref={targetRef}
+      tabIndex={-1}
+      className="space-y-3"
+      aria-label="Runtime tasks"
+    >
       <h3 className="text-sm font-medium">Runtime tasks</h3>
       <p className="text-xs text-muted-foreground">
         Durable project work, independent of threads and delegated executions. A status change does

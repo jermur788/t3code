@@ -19,6 +19,7 @@ import {
   PRIMARY_SETTINGS_UNAVAILABLE_MESSAGE,
   usePrimarySettingsAvailable,
 } from "../../hooks/useSettings";
+import { observeResize } from "../../lib/observeResize";
 import { cn } from "../../lib/utils";
 import { WorkspacePageContainer, type WorkspacePageWidth } from "../WorkspacePageContainer";
 import { Button } from "../ui/button";
@@ -76,6 +77,55 @@ function SettingsSearchTargetProvider({
 }
 
 let pendingTargetScroll: AbortController | undefined;
+let pendingTargetSettle: AbortController | undefined;
+
+/**
+ * Settings above the target can finish loading after the target mounts, which
+ * moves it without changing its own size. Re-scroll while the page height
+ * settles, and stop as soon as the user takes over or the layout is quiet.
+ */
+function settleScrollAfterLayout(scrollTarget: HTMLElement, page: HTMLElement | null): void {
+  pendingTargetSettle?.abort();
+  if (page === null) return;
+  const content = page.firstElementChild;
+  if (content === null) return;
+  const controller = new AbortController();
+  pendingTargetSettle = controller;
+  const { signal } = controller;
+  let quietTimer: number | undefined;
+  const armQuiet = (delay = 350) => {
+    window.clearTimeout(quietTimer);
+    quietTimer = window.setTimeout(() => controller.abort(), delay);
+  };
+  const stopObserving = observeResize([page, content], () => {
+    if (signal.aborted) return;
+    scrollTarget.scrollIntoView({ behavior: "auto", block: "center" });
+    armQuiet();
+  });
+  // Async sections above the target may mount well after the first paint.
+  const settleTimers = [120, 400, 900, 1_600].map((delay) =>
+    window.setTimeout(() => {
+      if (!signal.aborted) {
+        scrollTarget.scrollIntoView({ behavior: "auto", block: "center" });
+      }
+    }, delay),
+  );
+  armQuiet(2_000);
+  const cancel = () => controller.abort();
+  for (const event of ["wheel", "pointerdown", "touchstart", "keydown"] as const) {
+    window.addEventListener(event, cancel, { once: true, capture: true, signal });
+  }
+  signal.addEventListener(
+    "abort",
+    () => {
+      window.clearTimeout(quietTimer);
+      for (const timer of settleTimers) window.clearTimeout(timer);
+      stopObserving();
+      if (pendingTargetSettle === controller) pendingTargetSettle = undefined;
+    },
+    { once: true },
+  );
+}
 
 function scrollAndFocusSettingsTarget(target: HTMLElement, highlight = true): void {
   pendingTargetScroll?.abort();
@@ -90,12 +140,9 @@ function scrollAndFocusSettingsTarget(target: HTMLElement, highlight = true): vo
       ? (target.firstElementChild as HTMLElement)
       : target);
 
-  const scroll = () =>
-    scrollTarget.scrollIntoView({
-      behavior: prefersReducedMotion ? "auto" : "smooth",
-      block: "center",
-    });
+  const scroll = () => scrollTarget.scrollIntoView({ behavior: "auto", block: "center" });
   scroll();
+  settleScrollAfterLayout(scrollTarget, target.closest<HTMLElement>("[data-settings-page-scroll]"));
   const panel = target.parentElement?.closest<HTMLElement>(
     '[data-slot="collapsible-panel"][data-open]',
   );

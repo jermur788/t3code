@@ -12,22 +12,16 @@ import {
   type ProjectRuntimeInstructions,
   type ProjectRuntimeSourceHealth,
 } from "@t3tools/contracts";
-import type { ReactNode } from "react";
-import { render } from "../../../test/render";
+import { Link } from "@tanstack/react-router";
+import { act, render } from "../../../test/render";
 import type { SidebarProjectGroupMember } from "../../sidebarProjectGrouping";
 import type { ProjectRuntimeApi, RuntimeResult } from "./useProjectRuntimeApi";
 
 const mock = vi.hoisted(() => ({ useApi: vi.fn() }));
 vi.mock("./useProjectRuntimeApi", () => ({ useProjectRuntimeApi: mock.useApi }));
-vi.mock("./settingsLayout", () => ({
-  SettingsSection: ({ children, title }: { children: ReactNode; title: string }) => (
-    <section>
-      <h2>{title}</h2>
-      {children}
-    </section>
-  ),
-}));
+vi.mock("./SettingsScopeSentence", () => ({ SettingsScopeSentence: () => null }));
 import { ProjectRuntimeSettings } from "./ProjectRuntimeSettings";
+import { SettingsPageContainer } from "./settingsLayout";
 
 const time = "2026-10-23T12:00:00.000Z";
 const a = {
@@ -165,6 +159,114 @@ function setup({ enabled = true, canEdit = true }: { enabled?: boolean; canEdit?
   mock.useApi.mockImplementation(() => api);
   return { api, project, other, source, task };
 }
+
+it.each([
+  ["project-runtime-instructions", "Project Instructions"],
+  ["project-runtime-sources", "Registered sources"],
+  ["project-runtime-state", "Project State"],
+  ["project-runtime-tasks", "Runtime tasks"],
+])(
+  "retains %s until async Runtime status loads, then scrolls and focuses its section",
+  async (target, name) => {
+    const t = setup();
+    let resolveStatus!: (value: Awaited<ReturnType<ProjectRuntimeApi["status"]>>) => void;
+    const status = new Promise<Awaited<ReturnType<ProjectRuntimeApi["status"]>>>((resolve) => {
+      resolveStatus = resolve;
+    });
+    vi.mocked(t.api.status).mockReturnValueOnce(status);
+    await using screen = await render(
+      <SettingsPageContainer>
+        <ProjectRuntimeSettings members={[a]} />
+      </SettingsPageContainer>,
+      { router: `/settings/projects#${target}` },
+    );
+    using scroll = vi.spyOn(HTMLElement.prototype, "scrollIntoView");
+    await expect.element(screen.getByText("Loading Runtime…", { exact: true })).toBeVisible();
+    expect(screen.router?.state.location.hash).toBe(target);
+    await act(() => resolveStatus(ok({ enabled: true, version: 1, revision: 1 })));
+    const section = screen.getByRole("region", { name, exact: true });
+    await expect.element(section).toHaveFocus();
+    await vi.waitFor(() => {
+      expect(scroll.mock.contexts).toContain(section.element().firstElementChild);
+      expect(screen.router?.state.location.hash).toBe("");
+    });
+  },
+);
+
+it.each([
+  ["project-runtime-instructions", "Project Instructions"],
+  ["project-runtime-sources", "Registered sources"],
+  ["project-runtime-tasks", "Runtime tasks"],
+])("keeps a distinct disabled target for %s", async (target, name) => {
+  setup({ enabled: false });
+  await using screen = await render(
+    <SettingsPageContainer>
+      <ProjectRuntimeSettings members={[a]} />
+    </SettingsPageContainer>,
+    { router: `/settings/projects#${target}` },
+  );
+  const section = screen.getByRole("region", { name, exact: true });
+  await expect.element(section).toHaveFocus();
+  expect(section.element().textContent).toContain("Enable Runtime");
+  await vi.waitFor(() => expect(screen.router?.state.location.hash).toBe(""));
+});
+
+it("re-scrolls after content above the target grows", async () => {
+  setup();
+  const scroll = vi.spyOn(HTMLElement.prototype, "scrollIntoView");
+  const Page = () => (
+    <SettingsPageContainer>
+      <div data-testid="spacer" style={{ height: 0 }} />
+      <ProjectRuntimeSettings members={[a]} />
+    </SettingsPageContainer>
+  );
+  await using screen = await render(<Page />, {
+    router: "/settings/projects#project-runtime-sources",
+  });
+  await expect.element(screen.getByRole("region", { name: "Registered sources" })).toHaveFocus();
+  await vi.waitFor(() => expect(scroll).toHaveBeenCalled());
+  const before = scroll.mock.calls.length;
+  const spacer = screen.container.querySelector<HTMLElement>('[data-testid="spacer"]');
+  if (!spacer) throw new Error("spacer missing");
+  spacer.style.height = "1200px";
+  await vi.waitFor(() => expect(scroll.mock.calls.length).toBeGreaterThan(before));
+});
+
+it("navigates between mounted Runtime sections without the parent consuming their targets", async () => {
+  setup();
+  await using screen = await render(
+    <>
+      <Link to="/settings/projects" hash="project-runtime-instructions">
+        Instructions target
+      </Link>
+      <Link to="/settings/projects" hash="project-runtime-sources">
+        Sources target
+      </Link>
+      <Link to="/settings/projects" hash="project-runtime-state">
+        State target
+      </Link>
+      <Link to="/settings/projects" hash="project-runtime-tasks">
+        Tasks target
+      </Link>
+      <SettingsPageContainer>
+        <ProjectRuntimeSettings members={[a]} />
+      </SettingsPageContainer>
+    </>,
+    { router: "/settings/projects" },
+  );
+  await expect.element(screen.getByText("Runtime enabled", { exact: true })).toBeVisible();
+  for (const [link, name] of [
+    ["Instructions target", "Project Instructions"],
+    ["Sources target", "Registered sources"],
+    ["State target", "Project State"],
+    ["Tasks target", "Runtime tasks"],
+    ["Instructions target", "Project Instructions"],
+  ] as const) {
+    await userEvent.click(screen.getByRole("link", { name: link, exact: true }));
+    await expect.element(screen.getByRole("region", { name, exact: true })).toHaveFocus();
+    await vi.waitFor(() => expect(screen.router?.state.location.hash).toBe(""));
+  }
+});
 
 it("requires a concrete checkout without reading or mutating grouped projects", async () => {
   setup();

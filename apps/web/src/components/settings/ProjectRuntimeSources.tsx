@@ -15,11 +15,19 @@ import {
   useRuntimeLoad,
 } from "./ProjectRuntimeFields";
 import type { ProjectRuntimeApi } from "./useProjectRuntimeApi";
+import { useSettingsSearchTarget } from "./settingsLayout";
 
 export function ProjectRuntimeSources({ api }: { api: ProjectRuntimeApi }) {
   const [cursor, setCursor] = useState(0);
+  const targetRef = useSettingsSearchTarget<HTMLElement>("project-runtime-sources");
   return (
-    <section className="space-y-3" aria-label="Registered sources">
+    <section
+      id="project-runtime-sources"
+      ref={targetRef}
+      tabIndex={-1}
+      className="space-y-3"
+      aria-label="Registered sources"
+    >
       <h3 className="text-sm font-medium">Registered sources</h3>
       <p className="text-xs text-muted-foreground">
         Workspace-relative text files only. Health is a bounded accessibility probe, not full-file

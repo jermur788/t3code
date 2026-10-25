@@ -1,7 +1,7 @@
 import { useState } from "react";
 import type { SidebarProjectGroupMember } from "../../sidebarProjectGrouping";
 import { Button } from "../ui/button";
-import { SettingsSection } from "./settingsLayout";
+import { SettingsSection, useSettingsSearchTarget } from "./settingsLayout";
 import { useProjectRuntimeApi } from "./useProjectRuntimeApi";
 import { RuntimeError, RuntimeLoadError, useRuntimeLoad } from "./ProjectRuntimeFields";
 import { ProjectRuntimeInstructions } from "./ProjectRuntimeInstructions";
@@ -28,9 +28,28 @@ export function ProjectRuntimeSettings({
     </SettingsSection>
   );
 }
+function DisabledRuntimeSection({
+  targetId,
+  title,
+  description,
+}: {
+  targetId: string;
+  title: string;
+  description: string;
+}) {
+  const targetRef = useSettingsSearchTarget<HTMLElement>(targetId);
+  return (
+    <section id={targetId} ref={targetRef} tabIndex={-1} className="space-y-2" aria-label={title}>
+      <h3 className="text-sm font-medium">{title}</h3>
+      <p className="text-sm text-muted-foreground">{description}</p>
+    </section>
+  );
+}
+
 function RuntimeProject({ member }: { member: SidebarProjectGroupMember }) {
   const api = useProjectRuntimeApi({ environmentId: member.environmentId, projectId: member.id });
   const { result, reload } = useRuntimeLoad(() => api.status(), api.ready);
+  const stateTargetRef = useSettingsSearchTarget<HTMLElement>("project-runtime-state");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const toggle = async (enabled: boolean) => {
@@ -48,34 +67,63 @@ function RuntimeProject({ member }: { member: SidebarProjectGroupMember }) {
       <RuntimeLoadError result={result} reload={reload} />
       {result?.ok && (
         <>
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div>
-              <p className="text-sm font-medium">
-                Runtime {result.value.enabled ? "enabled" : "disabled"}
-              </p>
-              <p className="text-xs text-muted-foreground">Version {result.value.version}</p>
+          <section
+            id="project-runtime-state"
+            ref={stateTargetRef}
+            tabIndex={-1}
+            className="space-y-3"
+            aria-label="Project State"
+          >
+            <h3 className="text-sm font-medium">Project State</h3>
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <p className="text-sm font-medium">
+                  Runtime {result.value.enabled ? "enabled" : "disabled"}
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  Revision {result.value.revision} · Version {result.value.version}
+                </p>
+              </div>
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={!api.canEdit || busy}
+                onClick={() => void toggle(!result.value.enabled)}
+              >
+                {result.value.enabled ? "Disable Runtime" : "Enable Runtime"}
+              </Button>
             </div>
-            <Button
-              size="sm"
-              variant="outline"
-              disabled={!api.canEdit || busy}
-              onClick={() => void toggle(!result.value.enabled)}
-            >
-              {result.value.enabled ? "Disable Runtime" : "Enable Runtime"}
-            </Button>
-          </div>
-          <p className="text-xs text-muted-foreground">
-            Runtime data is preserved and will be available again when re-enabled.
-          </p>
+            <p className="text-xs text-muted-foreground">
+              Runtime data is preserved and will be available again when re-enabled.
+            </p>
+          </section>
           {!api.canEdit && (
             <p className="text-sm text-muted-foreground">This connection is read-only.</p>
           )}
           <RuntimeError message={error} />
-          {result.value.enabled && (
+          {result.value.enabled ? (
             <>
               <ProjectRuntimeInstructions api={api} />
               <ProjectRuntimeSources api={api} />
               <ProjectRuntimeTasks api={api} />
+            </>
+          ) : (
+            <>
+              <DisabledRuntimeSection
+                targetId="project-runtime-instructions"
+                title="Project Instructions"
+                description="Enable Runtime to view and edit project instructions."
+              />
+              <DisabledRuntimeSection
+                targetId="project-runtime-sources"
+                title="Registered sources"
+                description="Enable Runtime to view and manage registered sources."
+              />
+              <DisabledRuntimeSection
+                targetId="project-runtime-tasks"
+                title="Runtime tasks"
+                description="Enable Runtime to view tasks and handoffs."
+              />
             </>
           )}
         </>
