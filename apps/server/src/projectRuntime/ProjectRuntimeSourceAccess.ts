@@ -136,13 +136,10 @@ const fitUtf8 = (raw: Buffer, maxBytes: number, lineNumber: number) => {
   return text;
 };
 
-/**
- * Collects `lineCount` lines from `fromLine` across sequential chunks without holding more than
- * one line. A line ends at "\n" and keeps it, so contents are verbatim and a file's final
- * unterminated line is not given a fabricated terminator or an extra empty line after it.
- * Decoded UTF-8 is never smaller than the raw bytes, so a line whose raw bytes exceed the
- * budget cannot fit and need not be buffered further.
- */
+// Collect a line window without holding more than one line. A line keeps its
+// "\n", so content stays verbatim and a final unterminated line gets no extra
+// terminator. Decoded UTF-8 is never smaller than raw bytes, so a line over the
+// byte budget cannot fit and need not be buffered.
 const makeLineWindow = (options: {
   readonly fromLine: number;
   readonly lineCount: number;
