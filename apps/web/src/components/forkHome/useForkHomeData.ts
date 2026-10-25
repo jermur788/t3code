@@ -68,8 +68,24 @@ export function useForkHomeRuntime(target: {
       return;
     }
     setData(LOADING_RUNTIME);
-    const [status, instructions, sources, tasks, handoffs] = await Promise.all([
-      api.status(),
+    const status = await api.status();
+    if (!isActive()) return;
+    if (!status.ok) {
+      setData(unavailableRuntime(status.message));
+      return;
+    }
+    if (!status.value.enabled) {
+      const disabled = "Runtime is disabled for this project.";
+      setData({
+        status: { status: "ready", value: status.value },
+        instructions: { status: "unavailable", message: disabled },
+        sources: { status: "unavailable", message: disabled },
+        tasks: { status: "unavailable", message: disabled },
+        handoffs: { status: "unavailable", message: disabled },
+      });
+      return;
+    }
+    const [instructions, sources, tasks, handoffs] = await Promise.all([
       api.readInstructions(),
       api.listSources({ limit: 100 }),
       api.listTasks({ limit: 100 }),
@@ -77,7 +93,7 @@ export function useForkHomeRuntime(target: {
     ]);
     if (!isActive()) return;
     setData({
-      status: toSection(status),
+      status: { status: "ready", value: status.value },
       instructions: toSection(instructions),
       sources: toSection(sources),
       tasks: toSection(tasks),

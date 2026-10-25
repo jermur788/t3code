@@ -166,8 +166,8 @@ import type { ManagedServerProvider } from "@t3tools/provider-core/server/snapsh
 import { mergeProviderInstanceEnvironment } from "@t3tools/provider-core/server/instanceEnvironment";
 import { T3_CODE_ORCHESTRATION_INSTRUCTIONS } from "@t3tools/provider-core/server/orchestrationInstructions";
 import {
+  buildProjectInstructions,
   buildRuntimeInstructions,
-  promptWithProjectInstructions,
 } from "@t3tools/provider-core/server/runtimeInstructions";
 import {
   mcpToolPresentation,
@@ -1868,6 +1868,7 @@ function isSupportedClaudeImageMimeType(
 
 export function makeClaudeUserMessage(input: {
   readonly text: string;
+  readonly projectInstructions?: string;
   readonly priority?: SDKUserMessage["priority"];
   readonly skills?: ReadonlyMap<string, ClaudeSkillTarget>;
   readonly uuid?: SDKUserMessage["uuid"];
@@ -1876,18 +1877,30 @@ export function makeClaudeUserMessage(input: {
   // Keep the whole request before that block; see ClaudeSkillDispatch.
   const dispatch =
     input.skills === undefined ? undefined : planClaudeSkillDispatch(input.text, input.skills);
+  const instructionBlock =
+    input.projectInstructions === undefined
+      ? undefined
+      : buildProjectInstructions(input.projectInstructions);
   return {
     type: "user",
     message: {
       role: "user",
       content: dispatch
         ? [
+            ...(instructionBlock === undefined
+              ? []
+              : [{ type: "text" as const, text: instructionBlock }]),
             ...(dispatch.leadingText === undefined
               ? []
               : [{ type: "text" as const, text: dispatch.leadingText }]),
             { type: "text" as const, text: dispatch.commandText },
           ]
-        : input.text,
+        : instructionBlock === undefined
+          ? input.text
+          : [
+              { type: "text" as const, text: instructionBlock },
+              { type: "text" as const, text: input.text },
+            ],
     },
     parent_tool_use_id: null,
     ...(input.priority === undefined ? {} : { priority: input.priority }),
@@ -1897,6 +1910,7 @@ export function makeClaudeUserMessage(input: {
 
 const makeClaudeUserMessageWithAttachments = Effect.fnUntraced(function* (input: {
   readonly text: string;
+  readonly projectInstructions?: string;
   readonly attachments: ReadonlyArray<ChatAttachment>;
   readonly priority?: SDKUserMessage["priority"];
   readonly uuid?: SDKUserMessage["uuid"];
@@ -1907,6 +1921,9 @@ const makeClaudeUserMessageWithAttachments = Effect.fnUntraced(function* (input:
   if (input.attachments.length === 0) {
     return makeClaudeUserMessage({
       text: input.text,
+      ...(input.projectInstructions === undefined
+        ? {}
+        : { projectInstructions: input.projectInstructions }),
       ...(input.skills === undefined ? {} : { skills: input.skills }),
       ...(input.priority === undefined ? {} : { priority: input.priority }),
       ...(input.uuid === undefined ? {} : { uuid: input.uuid }),
@@ -1925,6 +1942,9 @@ const makeClaudeUserMessageWithAttachments = Effect.fnUntraced(function* (input:
       ? undefined
       : planClaudeSkillDispatch(textWithAttachmentPaths, input.skills);
   const content: Array<ClaudeUserContentBlock> = [];
+  if (input.projectInstructions !== undefined) {
+    content.push({ type: "text", text: buildProjectInstructions(input.projectInstructions) });
+  }
   if (dispatch?.leadingText !== undefined) {
     content.push({ type: "text", text: dispatch.leadingText });
   }
@@ -9535,13 +9555,13 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
               promptUuid === null
                 ? null
                 : yield* makeClaudeUserMessageWithAttachments({
-                    text: promptWithProjectInstructions(
-                      applyClaudePromptEffortPrefix(
-                        turnInput.message.text,
-                        compileClaudeModelSelection(turnInput.modelSelection).promptEffort,
-                      ),
-                      turnInput.projectInstructions,
+                    text: applyClaudePromptEffortPrefix(
+                      turnInput.message.text,
+                      compileClaudeModelSelection(turnInput.modelSelection).promptEffort,
                     ),
+                    ...(turnInput.projectInstructions === undefined
+                      ? {}
+                      : { projectInstructions: turnInput.projectInstructions }),
                     attachments: turnInput.message.attachments,
                     attachmentsDir,
                     fileSystem,
@@ -9966,13 +9986,13 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
               });
             }
             const userMessage = yield* makeClaudeUserMessageWithAttachments({
-              text: promptWithProjectInstructions(
-                applyClaudePromptEffortPrefix(
-                  turnInput.message.text,
-                  compileClaudeModelSelection(currentTurn.input.modelSelection).promptEffort,
-                ),
-                currentTurn.input.projectInstructions,
+              text: applyClaudePromptEffortPrefix(
+                turnInput.message.text,
+                compileClaudeModelSelection(currentTurn.input.modelSelection).promptEffort,
               ),
+              ...(currentTurn.input.projectInstructions === undefined
+                ? {}
+                : { projectInstructions: currentTurn.input.projectInstructions }),
               attachments: turnInput.message.attachments,
               priority: "now",
               attachmentsDir,

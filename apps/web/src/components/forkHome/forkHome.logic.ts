@@ -90,6 +90,11 @@ export function keepsUpstreamHome(search: unknown): boolean {
   return classic === true || classic === 1 || classic === "1";
 }
 
+/** Both the bare root and its fork-home target count as the app's landing page. */
+export function isForkLandingPath(pathname: string): boolean {
+  return pathname === "/" || pathname === "/home";
+}
+
 /** The fork home is the authenticated root; `?classic=1` opts into upstream. */
 export function shouldRedirectToForkHome(input: {
   readonly pathname: string;

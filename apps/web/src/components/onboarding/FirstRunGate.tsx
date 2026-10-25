@@ -25,6 +25,7 @@ import { primaryServerConfigAtom, primaryServerWelcomeAtom } from "../../state/s
 import { environmentShell } from "../../state/shell";
 import { environmentThreadShells } from "../../state/threads";
 import { Button } from "../ui/button";
+import { isForkLandingPath } from "../forkHome/forkHome.logic";
 
 /** Pending blocks all rendering, including EventRouter welcome navigation. */
 
@@ -158,7 +159,7 @@ export function FirstRunGate({
 
   // Setup opens by itself only from the home route. A direct link, such as
   // Settings, opens as asked so setup can never lock a user out of the app.
-  const wizardOwnsRoute = pathname === "/";
+  const wizardOwnsRoute = isForkLandingPath(pathname);
   useEffect(() => {
     if (decision === "wizard" && wizardOwnsRoute) {
       void navigate({ to: "/welcome", replace: true });

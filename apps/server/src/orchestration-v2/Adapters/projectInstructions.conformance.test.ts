@@ -84,9 +84,9 @@ const transports: ReadonlyArray<InstructionTransport> = [
   },
   {
     adapter: "OpenCode",
-    transport: "runtime",
+    transport: "prompt",
     deliver: (instructions) =>
-      text(buildRuntimeInstructions({ harness: "OpenCode", projectInstructions: instructions })),
+      text(promptWithProjectInstructions("Conformance request", instructions)),
   },
   {
     adapter: "ACP",

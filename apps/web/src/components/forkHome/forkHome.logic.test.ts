@@ -18,6 +18,7 @@ import type {
 import { resolveSettingsScope } from "../settings/settingsScope";
 import {
   defaultForkProjectSelection,
+  isForkLandingPath,
   keepsUpstreamHome,
   shouldRedirectToForkHome,
   projectOptionLabel,
@@ -139,6 +140,13 @@ function handoff(input: {
 }
 
 describe("fork home root routing", () => {
+  it("treats the bare root and /home as the same landing page", () => {
+    expect(isForkLandingPath("/")).toBe(true);
+    expect(isForkLandingPath("/home")).toBe(true);
+    expect(isForkLandingPath("/settings")).toBe(false);
+    expect(isForkLandingPath("/threads/1")).toBe(false);
+  });
+
   it("redirects only an authenticated root without the classic flag", () => {
     expect(
       shouldRedirectToForkHome({ pathname: "/", authStatus: "authenticated", search: {} }),

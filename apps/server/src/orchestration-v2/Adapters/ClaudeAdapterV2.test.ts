@@ -526,6 +526,23 @@ describe("ClaudeAdapterV2 MCP query overrides", () => {
     assert.equal(new Set(keys).size, 1);
   });
 
+  it("keeps a skill command as the last block when project instructions are present", () => {
+    const skills = new Map([
+      ["review-pr", { path: "/skills/review-pr/SKILL.md", userInvocationOnly: false }],
+    ]);
+    const message = ClaudeAdapterV2.makeClaudeUserMessage({
+      text: "$review-pr 123",
+      projectInstructions: "PRT-AUTO-7c91-SKILL",
+      skills,
+    });
+    const content = message.message.content;
+    assert.isTrue(Array.isArray(content));
+    if (!Array.isArray(content)) return;
+    assert.lengthOf(content, 2);
+    assert.include(content[0]?.text, "PRT-AUTO-7c91-SKILL");
+    assert.deepEqual(content[1], { type: "text", text: "/review-pr 123" });
+  });
+
   it("invalidates live-query reuse when MCP credentials rotate", () => {
     const threadId = ThreadId.make("thread-claude-mcp-credential-rotation");
     const mcpSession = mcpSessionFor(threadId);

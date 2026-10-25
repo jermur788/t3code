@@ -6,7 +6,7 @@ import {
   type SettingsScopeSearch,
 } from "../components/settings/settingsScope";
 
-export const Route = createFileRoute("/home")({
+export const Route = createFileRoute("/_chat/home")({
   validateSearch: (raw: Record<string, unknown>): SettingsScopeSearch =>
     validateSettingsScopeSearch(raw),
   beforeLoad: async ({ context }) => {
