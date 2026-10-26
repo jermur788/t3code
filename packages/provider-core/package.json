@@ -179,6 +179,10 @@
       "types": "./src/server/threadTitleContext.ts",
       "import": "./src/server/threadTitleContext.ts"
     },
+    "./server/turnContext": {
+      "types": "./src/server/turnContext.ts",
+      "import": "./src/server/turnContext.ts"
+    },
     "./server/usage": {
       "types": "./src/server/usage.ts",
       "import": "./src/server/usage.ts"

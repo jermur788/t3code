@@ -169,6 +169,10 @@ import { mergeProviderInstanceEnvironment } from "@t3tools/provider-core/server/
 import { T3_CODE_ORCHESTRATION_INSTRUCTIONS } from "@t3tools/provider-core/server/orchestrationInstructions";
 import { buildRuntimeInstructions } from "@t3tools/provider-core/server/runtimeInstructions";
 import {
+  instructionContextText,
+  type TurnContextEntry,
+} from "@t3tools/provider-core/server/turnContext";
+import {
   mcpToolPresentation,
   normalizeMcpText,
 } from "@t3tools/provider-core/server/mcpToolPresentation";
@@ -1591,6 +1595,14 @@ export const CLAUDE_READ_ONLY_T3_MCP_ALLOWED_TOOLS: ReadonlyArray<string> = [
   "mcp__t3-code__t3_worktree_list",
   "mcp__t3-code__t3_project_list",
   "mcp__t3-code__t3_project_read",
+  "mcp__t3-code__t3_project_context",
+  "mcp__t3-code__t3_project_source_list",
+  "mcp__t3-code__t3_project_source_search",
+  "mcp__t3-code__t3_project_source_read",
+  "mcp__t3-code__t3_project_task_list",
+  "mcp__t3-code__t3_project_task_read",
+  "mcp__t3-code__t3_project_handoff_list",
+  "mcp__t3-code__t3_project_handoff_read",
   "mcp__t3-code__t3_thread_search",
   "mcp__t3-code__t3_preview_list",
   "mcp__t3-code__t3_environment_read",
@@ -1955,6 +1967,7 @@ function isSupportedClaudeImageMimeType(
 
 export function makeClaudeUserMessage(input: {
   readonly text: string;
+  readonly turnContext?: ReadonlyArray<TurnContextEntry>;
   readonly priority?: SDKUserMessage["priority"];
   readonly skills?: ReadonlyMap<string, ClaudeSkillTarget>;
   readonly uuid?: SDKUserMessage["uuid"];
@@ -1963,18 +1976,27 @@ export function makeClaudeUserMessage(input: {
   // Keep the whole request before that block; see ClaudeSkillDispatch.
   const dispatch =
     input.skills === undefined ? undefined : planClaudeSkillDispatch(input.text, input.skills);
+  const instructionBlock = instructionContextText(input.turnContext) || undefined;
   return {
     type: "user",
     message: {
       role: "user",
       content: dispatch
         ? [
+            ...(instructionBlock === undefined
+              ? []
+              : [{ type: "text" as const, text: instructionBlock }]),
             ...(dispatch.leadingText === undefined
               ? []
               : [{ type: "text" as const, text: dispatch.leadingText }]),
             { type: "text" as const, text: dispatch.commandText },
           ]
-        : input.text,
+        : instructionBlock === undefined
+          ? input.text
+          : [
+              { type: "text" as const, text: instructionBlock },
+              { type: "text" as const, text: input.text },
+            ],
     },
     parent_tool_use_id: null,
     ...(input.priority === undefined ? {} : { priority: input.priority }),
@@ -2116,6 +2138,7 @@ const reserveClaudePdfBudget = (
 
 const makeClaudeUserMessageWithAttachments = Effect.fnUntraced(function* (input: {
   readonly text: string;
+  readonly turnContext?: ReadonlyArray<TurnContextEntry>;
   readonly attachments: ReadonlyArray<ChatAttachment>;
   readonly priority?: SDKUserMessage["priority"];
   readonly uuid?: SDKUserMessage["uuid"];
@@ -2127,6 +2150,7 @@ const makeClaudeUserMessageWithAttachments = Effect.fnUntraced(function* (input:
   if (input.attachments.length === 0) {
     const message = makeClaudeUserMessage({
       text: input.text,
+      ...(input.turnContext === undefined ? {} : { turnContext: input.turnContext }),
       ...(input.skills === undefined ? {} : { skills: input.skills }),
       ...(input.priority === undefined ? {} : { priority: input.priority }),
       ...(input.uuid === undefined ? {} : { uuid: input.uuid }),
@@ -2153,6 +2177,10 @@ const makeClaudeUserMessageWithAttachments = Effect.fnUntraced(function* (input:
       ? undefined
       : planClaudeSkillDispatch(textWithAttachmentPaths, input.skills);
   const content: Array<ClaudeUserContentBlock> = [];
+  const instructionBlock = instructionContextText(input.turnContext);
+  if (instructionBlock.length > 0) {
+    content.push({ type: "text", text: instructionBlock });
+  }
   // Base64 adds a third to the payload. Leave room below Anthropic's 32 MB
   // request limit for text, instructions, and SDK framing. The SDK does not
   // expose document/context-window capabilities, so use the 100-page limit
@@ -9930,6 +9958,9 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
                       turnInput.message.text,
                       compileClaudeModelSelection(turnInput.modelSelection).promptEffort,
                     ),
+                    ...(turnInput.turnContext === undefined
+                      ? {}
+                      : { turnContext: turnInput.turnContext }),
                     attachments: turnInput.message.attachments,
                     attachmentsDir,
                     fileSystem,
@@ -10383,6 +10414,9 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
                 turnInput.message.text,
                 compileClaudeModelSelection(currentTurn.input.modelSelection).promptEffort,
               ),
+              ...(currentTurn.input.turnContext === undefined
+                ? {}
+                : { turnContext: currentTurn.input.turnContext }),
               attachments: turnInput.message.attachments,
               priority: "now",
               attachmentsDir,

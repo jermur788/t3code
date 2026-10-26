@@ -5,6 +5,9 @@ import * as FileSystem from "effect/FileSystem";
 import * as Path from "effect/Path";
 import * as SqlClient from "effect/sql/SqlClient";
 
+import DevelopmentProfilesMigration from "../src/persistence/Migrations/Fork/002_DevelopmentProfiles.ts";
+import ProjectRuntimeMigration from "../src/persistence/Migrations/Fork/001_ProjectRuntime.ts";
+import { FORK_MIGRATION_TABLE } from "../src/persistence/ForkMigrations.ts";
 import { runMigrations } from "../src/persistence/Migrations.ts";
 import * as NodeSqliteClient from "@t3tools/shared/nodeSqliteClient";
 import { runMigrateDevDb } from "./migrate-dev-db.ts";
@@ -238,6 +241,169 @@ it.layer(NodeServices.layer)("migrate-dev-db", (it) => {
         { sharedHome: sourceDir },
       );
       assert.include(result.executedMigrations, "55_OrchestrationV2");
+    }),
+  );
+
+  it.effect("adds fork schema to an upstream-origin source", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const sourceDir = yield* fs.makeTempDirectoryScoped({ prefix: "migrate-dev-db-upstream-" });
+      const destDir = yield* fs.makeTempDirectoryScoped({
+        prefix: "migrate-dev-db-upstream-dest-",
+      });
+      const stateDir = path.join(sourceDir, "userdata");
+      const source = path.join(stateDir, "statev2.sqlite");
+      yield* fs.makeDirectory(stateDir, { recursive: true });
+      yield* withDatabase(
+        source,
+        Effect.gen(function* () {
+          const sql = yield* SqlClient.SqlClient;
+          yield* runMigrations({ toMigrationInclusive: 69 });
+          yield* sql`INSERT INTO projection_projects
+            (project_id, title, workspace_root, scripts_json, created_at, updated_at)
+            VALUES ('upstream-project', 'Upstream', '/tmp/upstream', '[]', '2026-08-01', '2026-08-01')`;
+        }),
+      );
+
+      const result = yield* runMigrateDevDb(
+        { baseDir: destDir, source, projects: 5, threadsPerProject: 10 },
+        { sharedHome: sourceDir },
+      );
+      const state = yield* withDatabase(
+        result.databasePath,
+        Effect.gen(function* () {
+          const sql = yield* SqlClient.SqlClient;
+          const upstream = yield* sql<{ migration_id: number; name: string }>`
+            SELECT migration_id, name FROM effect_sql_migrations ORDER BY migration_id`;
+          const fork = yield* sql<{ migration_id: number; name: string }>`
+            SELECT migration_id, name FROM ${sql(FORK_MIGRATION_TABLE)} ORDER BY migration_id`;
+          const audit = yield* sql`
+            SELECT name FROM sqlite_master WHERE name = 't3_fork_migration_reconciliations'`;
+          const projects = yield* sql<{ project_id: string }>`
+            SELECT project_id FROM projection_projects ORDER BY project_id`;
+          return { upstream, fork, audit, projects };
+        }),
+      );
+      assert.equal(state.upstream.at(-1)?.name, "ThreadMessageSearch");
+      assert.deepStrictEqual(
+        state.fork.map((row) => [row.migration_id, row.name]),
+        [
+          [1, "ProjectRuntime"],
+          [2, "DevelopmentProfiles"],
+        ],
+      );
+      assert.deepStrictEqual(state.audit, []);
+      assert.deepStrictEqual(state.projects, [{ project_id: "upstream-project" }]);
+    }),
+  );
+
+  it.effect("migrates a fork-origin source without losing Runtime or Profile data", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const sourceDir = yield* fs.makeTempDirectoryScoped({ prefix: "migrate-dev-db-fork-" });
+      const destDir = yield* fs.makeTempDirectoryScoped({ prefix: "migrate-dev-db-fork-dest-" });
+      const stateDir = path.join(sourceDir, "userdata");
+      const source = path.join(stateDir, "statev2.sqlite");
+      yield* fs.makeDirectory(stateDir, { recursive: true });
+      yield* withDatabase(
+        source,
+        Effect.gen(function* () {
+          const sql = yield* SqlClient.SqlClient;
+          yield* sql`PRAGMA foreign_keys = ON`;
+          yield* runMigrations({ toMigrationInclusive: 67 });
+          yield* ProjectRuntimeMigration;
+          yield* DevelopmentProfilesMigration;
+          yield* sql`INSERT INTO effect_sql_migrations (migration_id, name, created_at)
+            VALUES (68, 'ProjectRuntime', '2026-10-23 10:00:00'),
+                   (69, 'DevelopmentProfiles', '2026-10-24 11:00:00')`;
+          yield* sql`INSERT INTO projection_projects
+            (project_id, title, workspace_root, scripts_json, created_at, updated_at)
+            VALUES ('fork-project', 'Fork', '/tmp/fork', '[]', '2026-08-01', '2026-08-01')`;
+          yield* sql`INSERT INTO development_profiles
+            (profile_id, name, instructions, revision, created_at, updated_at, created_by, updated_by)
+            VALUES ('profile', 'Policy', 'Profile instructions', 4,
+              '2026-10-24', '2026-10-24', 'user:maintainer', 'user:maintainer')`;
+          yield* sql`INSERT INTO project_development_profiles
+            (project_id, profile_id, revision, created_at, updated_at)
+            VALUES ('fork-project', 'profile', 2, '2026-10-24', '2026-10-24')`;
+          yield* sql`INSERT INTO project_runtime
+            (project_id, enabled, revision, instructions_json, instructions_revision, created_at, updated_at)
+            VALUES ('fork-project', 1, 9, NULL, 0, '2026-10-24', '2026-10-24')`;
+          yield* sql`INSERT INTO project_runtime_sources
+            (source_id, project_id, revision, created_at, payload_json)
+            VALUES ('source', 'fork-project', 2, '2026-10-24', '{}')`;
+          yield* sql`INSERT INTO project_runtime_tasks
+            (task_id, project_id, status, revision, created_at, payload_json)
+            VALUES ('task', 'fork-project', 'active', 5, '2026-10-24', '{}')`;
+          yield* sql`INSERT INTO project_runtime_handoffs
+            (handoff_id, project_id, task_id, created_at, payload_json)
+            VALUES ('handoff', 'fork-project', 'task', '2026-10-24', '{}')`;
+        }),
+      );
+
+      const result = yield* runMigrateDevDb(
+        { baseDir: destDir, source, projects: 5, threadsPerProject: 10 },
+        { sharedHome: sourceDir },
+      );
+      const state = yield* withDatabase(
+        result.databasePath,
+        Effect.gen(function* () {
+          const sql = yield* SqlClient.SqlClient;
+          const fork = yield* sql<{ migration_id: number; name: string; created_at: string }>`
+            SELECT migration_id, name, created_at FROM ${sql(FORK_MIGRATION_TABLE)}
+            ORDER BY migration_id`;
+          const audit = yield* sql<{ legacy_migration_id: number }>`
+            SELECT legacy_migration_id FROM t3_fork_migration_reconciliations
+            ORDER BY legacy_migration_id`;
+          const runtime = yield* sql<{ project_id: string; revision: number }>`
+            SELECT project_id, revision FROM project_runtime`;
+          const sources = yield* sql<{ source_id: string }>`
+            SELECT source_id FROM project_runtime_sources`;
+          const tasks = yield* sql<{ task_id: string; revision: number }>`
+            SELECT task_id, revision FROM project_runtime_tasks`;
+          const handoffs = yield* sql<{ handoff_id: string }>`
+            SELECT handoff_id FROM project_runtime_handoffs`;
+          const profiles = yield* sql<{ profile_id: string; revision: number }>`
+            SELECT profile_id, revision FROM development_profiles`;
+          const assignments = yield* sql<{ project_id: string; profile_id: string }>`
+            SELECT project_id, profile_id FROM project_development_profiles`;
+          const upstream = yield* sql<{ migration_id: number; name: string }>`
+            SELECT migration_id, name FROM effect_sql_migrations ORDER BY migration_id`;
+          return {
+            fork,
+            audit,
+            runtime,
+            sources,
+            tasks,
+            handoffs,
+            profiles,
+            assignments,
+            upstream,
+          };
+        }),
+      );
+      assert.deepStrictEqual(
+        state.fork.map((row) => [row.migration_id, row.name, row.created_at]),
+        [
+          [1, "ProjectRuntime", "2026-10-23 10:00:00"],
+          [2, "DevelopmentProfiles", "2026-10-24 11:00:00"],
+        ],
+      );
+      assert.deepStrictEqual(
+        state.audit.map((row) => row.legacy_migration_id),
+        [68, 69],
+      );
+      assert.deepStrictEqual(state.runtime, [{ project_id: "fork-project", revision: 9 }]);
+      assert.deepStrictEqual(state.sources, [{ source_id: "source" }]);
+      assert.deepStrictEqual(state.tasks, [{ task_id: "task", revision: 5 }]);
+      assert.deepStrictEqual(state.handoffs, [{ handoff_id: "handoff" }]);
+      assert.deepStrictEqual(state.profiles, [{ profile_id: "profile", revision: 4 }]);
+      assert.deepStrictEqual(state.assignments, [
+        { project_id: "fork-project", profile_id: "profile" },
+      ]);
+      assert.equal(state.upstream.at(-1)?.name, "ThreadMessageSearch");
     }),
   );
 

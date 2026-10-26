@@ -69,6 +69,7 @@ import * as Scope from "effect/Scope";
 import * as Stream from "effect/Stream";
 import * as TestClock from "effect/testing/TestClock";
 import { Tool } from "effect/ai";
+import { projectInstructionsTurnContext } from "../../developmentProfiles/ProjectInstructions.ts";
 import { formatClaudeResumeCompactionQuestion } from "@t3tools/shared/claudeCompaction";
 import * as HostProcess from "@t3tools/shared/HostProcess";
 import { getModelSelectionStringOptionValue } from "@t3tools/shared/model";
@@ -207,6 +208,7 @@ function makeClaudeTestTurnInput(input: {
   readonly messageCreationSource?: ProviderAdapter.ProviderAdapterV2TurnInput["message"]["creationSource"];
   readonly modelSelection?: ModelSelection;
   readonly runtimePolicy?: ProviderAdapter.ProviderAdapterV2RuntimePolicy;
+  readonly projectInstructions?: string;
 }): ProviderAdapter.ProviderAdapterV2TurnInput {
   return {
     appThread: makeClaudeTestAppThread(input),
@@ -229,6 +231,9 @@ function makeClaudeTestTurnInput(input: {
     },
     modelSelection: input.modelSelection ?? CLAUDE_TEST_MODEL_SELECTION,
     runtimePolicy: input.runtimePolicy ?? CLAUDE_TEST_RUNTIME_POLICY,
+    ...(input.projectInstructions === undefined
+      ? {}
+      : { turnContext: projectInstructionsTurnContext(input.projectInstructions) }),
   };
 }
 
@@ -500,6 +505,65 @@ describe("ClaudeAdapterV2 MCP query overrides", () => {
       mcpServers: T3_MCP_SERVERS,
     });
     assert.isFalse(overrides.allowedTools?.includes(ClaudeAdapterV2.CLAUDE_T3_MCP_TOOL_WILDCARD));
+  });
+
+  it("keeps project instructions out of the Claude query identity", () => {
+    const queryPolicy = ClaudeAdapterV2.claudeRuntimeQueryPolicyForRuntimePolicy(
+      CLAUDE_TEST_RUNTIME_POLICY,
+    );
+    const options = ClaudeAdapterV2.makeClaudeQueryOptions({
+      modelSelection: {
+        instanceId: ProviderInstanceId.make("claudeAgent"),
+        model: "claude-sonnet-4-6",
+      },
+      nativeThreadId: "project-instructions-test",
+      resume: false,
+      cwd: "/workspace",
+    });
+    const append = (options.systemPrompt as { append: string }).append;
+    assert.notInclude(append, "t3_project_instructions");
+    const keys = ["PRT-AUTO-7c91-A", "PRT-AUTO-7c91-B", undefined].map(() =>
+      ClaudeAdapterV2.claudeEffectiveQueryPolicyKey(queryPolicy, {}),
+    );
+    assert.equal(new Set(keys).size, 1);
+  });
+
+  it("keeps a skill command as the last block when project instructions are present", () => {
+    const skills = new Map([
+      ["review-pr", { path: "/skills/review-pr/SKILL.md", userInvocationOnly: false }],
+    ]);
+    const message = ClaudeAdapterV2.makeClaudeUserMessage({
+      text: "$review-pr 123",
+      turnContext: projectInstructionsTurnContext("PRT-AUTO-7c91-SKILL"),
+      skills,
+    });
+    const content = message.message.content;
+    assert.isTrue(Array.isArray(content));
+    if (!Array.isArray(content)) return;
+    assert.lengthOf(content, 2);
+    assert.isTrue(content[0]?.type === "text");
+    if (content[0]?.type === "text") {
+      assert.include(content[0].text, "PRT-AUTO-7c91-SKILL");
+    }
+    assert.deepEqual(content[1], { type: "text", text: "/review-pr 123" });
+  });
+
+  it("keeps the logical user text in its own Claude content block", () => {
+    const message = ClaudeAdapterV2.makeClaudeUserMessage({
+      text: "What should I change?",
+      turnContext: projectInstructionsTurnContext("PRT-AUTO-7c91-BLOCK"),
+    });
+    const content = message.message.content;
+    assert.isTrue(Array.isArray(content));
+    if (!Array.isArray(content)) return;
+    assert.lengthOf(content, 2);
+    assert.isTrue(content[0]?.type === "text");
+    assert.isTrue(content[1]?.type === "text");
+    if (content[0]?.type === "text" && content[1]?.type === "text") {
+      assert.include(content[0].text, "PRT-AUTO-7c91-BLOCK");
+      assert.notInclude(content[0].text, "What should I change?");
+      assert.equal(content[1].text, "What should I change?");
+    }
   });
 
   it("invalidates live-query reuse when MCP credentials rotate", () => {
@@ -851,9 +915,14 @@ describe("ClaudeAdapterV2 Auto-accept edits", () => {
 });
 
 describe("ClaudeAdapterV2 append-system-prompt-file launch argument", () => {
-  const startTurnWithLaunchArgs = Effect.fnUntraced(function* (launchArgs: string, cwd: string) {
+  const startTurnWithLaunchArgs = Effect.fnUntraced(function* (
+    launchArgs: string,
+    cwd: string,
+    projectInstructions?: string,
+  ) {
     const fileSystem = yield* FileSystem.FileSystem;
     const opened: Array<ClaudeAdapterV2.ClaudeAgentSdkQueryOptions> = [];
+    const offered: Array<{ readonly message: { readonly content: unknown } }> = [];
     const adapter = yield* ClaudeAdapterV2.makeClaudeAdapterV2({
       instanceId: ClaudeAdapterV2.CLAUDE_DEFAULT_INSTANCE_ID,
       settings: { ...DEFAULT_CLAUDE_SETTINGS, launchArgs },
@@ -870,7 +939,10 @@ describe("ClaudeAdapterV2 append-system-prompt-file launch argument", () => {
             opened.push(input.options);
             return {
               messages: Stream.never,
-              offer: () => Effect.void,
+              offer: (message) =>
+                Effect.sync(() => {
+                  offered.push(message);
+                }),
               setModel: () => Effect.void,
               applyFlagSettings: () => Effect.void,
               setPermissionMode: () => Effect.void,
@@ -912,14 +984,51 @@ describe("ClaudeAdapterV2 append-system-prompt-file launch argument", () => {
           text: "What is the sentinel?",
           attachments: [],
           runtimePolicy,
+          ...(projectInstructions === undefined ? {} : { projectInstructions }),
         }),
       )
       .pipe(Effect.exit);
-    return { exit, opened };
+    return { exit, opened, offered };
   });
 
   const appendSystemPrompt = (options: ClaudeAdapterV2.ClaudeAgentSdkQueryOptions | undefined) =>
     (options?.systemPrompt as { readonly append?: string } | undefined)?.append;
+
+  it.effect(
+    "sends the current project snapshot in the turn prompt and not the query identity",
+    () =>
+      Effect.scoped(
+        Effect.gen(function* () {
+          const fileSystem = yield* FileSystem.FileSystem;
+          const cwd = yield* fileSystem.makeTempDirectoryScoped({
+            prefix: "t3-claude-instructions-",
+          });
+          for (const revision of ["PRT-AUTO-7c91-A", "PRT-AUTO-7c91-B", undefined]) {
+            const { exit, opened, offered } = yield* startTurnWithLaunchArgs("", cwd, revision);
+            assert.isTrue(Exit.isSuccess(exit));
+            assert.lengthOf(opened, 1);
+            assert.notInclude(appendSystemPrompt(opened[0])!, "t3_project_instructions");
+            const content = offered[0]!.message.content;
+            const text =
+              typeof content === "string"
+                ? content
+                : (content as ReadonlyArray<{ text?: string }>)
+                    .map((block) => block.text ?? "")
+                    .join("");
+            if (revision === undefined) assert.notInclude(text, "t3_project_instructions");
+            else {
+              assert.include(text, revision);
+              assert.include(text, "subordinate to system/developer rules");
+            }
+            if (revision !== "PRT-AUTO-7c91-A") assert.notInclude(text, "PRT-AUTO-7c91-A");
+          }
+        }).pipe(
+          Effect.provide(
+            Layer.mergeAll(IdAllocator.layer, McpProviderSessions.layer, NodeServices.layer),
+          ),
+        ),
+      ),
+  );
 
   it.effect("sends append launch arguments to Claude after the T3 instructions", () =>
     Effect.scoped(

@@ -1,6 +1,11 @@
 import * as Migrator from "effect/sql/Migrator";
 import * as Effect from "effect/Effect";
 import * as SqlClient from "effect/sql/SqlClient";
+import {
+  reconcileForkMigrationHistory,
+  runForkMigrations,
+  FORK_MIGRATION_TABLE,
+} from "./ForkMigrations.ts";
 import { reconcileV2PreviewMigration } from "./reconcileV2PreviewMigration.ts";
 
 import Migration0001 from "./Migrations/001_OrchestrationEvents.ts";
@@ -203,6 +208,10 @@ export const runMigrations = Effect.fn("runMigrations")(function* ({
 }: RunMigrationsOptions = {}) {
   const includesV2 =
     toMigrationInclusive === undefined || toMigrationInclusive >= FIRST_V2_MIGRATION_ID;
+  // A limited run exists for tests and schema probes. It never rewrites a
+  // released history or adds fork-owned schema.
+  const includesFork = includesV2 && toMigrationInclusive === undefined;
+  const forkReconciliations = includesFork ? yield* reconcileForkMigrationHistory() : [];
   const previewMigrations = includesV2 ? yield* reconcileV2PreviewMigration() : [];
   if (includesV2) {
     yield* assertV2MigrationsCanRun(toMigrationInclusive);
@@ -211,10 +220,28 @@ export const runMigrations = Effect.fn("runMigrations")(function* ({
     ...previewMigrations,
     ...(yield* run({ loader: makeMigrationLoader(toMigrationInclusive) })),
   ];
+  const forkMigrations = includesFork ? yield* runForkMigrations() : [];
   const migrations = executedMigrations.map(([id, name]) => `${id}_${name}`);
-  yield* migrations.length === 0
+  const forkMigrationNames = forkMigrations.map(([id, name]) => `${id}_${name}`);
+  yield* migrations.length === 0 && forkMigrationNames.length === 0
     ? Effect.logDebug("Database schema is current")
-    : Effect.log("Migrations ran successfully").pipe(Effect.annotateLogs({ migrations }));
+    : Effect.log("Migrations ran successfully").pipe(
+        Effect.annotateLogs({
+          migrations,
+          ...(forkMigrationNames.length === 0
+            ? {}
+            : { [`${FORK_MIGRATION_TABLE}_migrations`]: forkMigrationNames }),
+          ...(forkReconciliations.length === 0
+            ? {}
+            : {
+                forkMigrationReconciliations: forkReconciliations.map(
+                  (entry) =>
+                    `${entry.legacyMigrationId}_${entry.legacyName} -> ` +
+                    `${FORK_MIGRATION_TABLE}/${entry.forkMigrationId}_${entry.forkName}`,
+                ),
+              }),
+        }),
+      );
 
   const sql = yield* SqlClient.SqlClient;
   const recorded = yield* sql<{

@@ -16,6 +16,7 @@ import { useEffect, useEffectEvent, useRef, useState } from "react";
 import { APP_DISPLAY_NAME, APP_VERSION } from "../branding";
 import { AppSidebarLayout } from "../components/AppSidebarLayout";
 import { CommandPalette } from "../components/CommandPalette";
+import { isForkLandingPath, shouldRedirectToForkHome } from "../components/forkHome/forkHome.logic";
 import { CustomSnoozeDialogHost } from "../components/CustomSnoozeDialog";
 import { GuestShareDialogHost } from "../components/chat/GuestShareControls";
 import { AddProjectToMachineDialogHost } from "../components/AddProjectToMachineDialog";
@@ -99,6 +100,15 @@ export const Route = createRootRoute({
       location.pathname !== "/settings/snap-shot"
     ) {
       throw redirect({ to: "/settings/snap-shot", replace: true });
+    }
+    if (
+      shouldRedirectToForkHome({
+        pathname: location.pathname,
+        authStatus: authGateState.status,
+        search: location.search,
+      })
+    ) {
+      throw redirect({ to: "/home", replace: true });
     }
     return {
       authGateState,
@@ -347,7 +357,7 @@ function EventRouter({
         );
       useUiStateStore.getState().setProjectExpanded(bootstrapProjectKey, true);
 
-      if (readPathname() !== "/") {
+      if (!isForkLandingPath(readPathname())) {
         return;
       }
       if (skipInitialBootstrapNavigationRef.current) {

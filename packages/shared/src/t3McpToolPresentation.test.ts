@@ -68,3 +68,25 @@ describe("resolveT3McpSummaryAction", () => {
     expect(resolveT3McpSummaryAction("delegate_task", { task: "x" })).toBe("delegate");
   });
 });
+
+it("presents all eleven Runtime tools as T3-owned tools", () => {
+  for (const suffix of [
+    "context",
+    "source_list",
+    "source_search",
+    "source_read",
+    "task_list",
+    "task_read",
+    "task_create",
+    "task_update",
+    "handoff_append",
+    "handoff_list",
+    "handoff_read",
+  ]) {
+    const name = `t3_project_${suffix}`;
+    expect(T3_MCP_TOOL_NAMES).toContain(name);
+    const presentation = resolveT3McpToolPresentation(`mcp__t3-code__${name}`);
+    expect(presentation?.logo).toBe("t3-code");
+    expect(presentation?.displayName).toContain("Runtime");
+  }
+});

@@ -25,7 +25,8 @@ click a project to jump to it, or **Reset all** to make those projects follow th
 again.
 
 Providers and diagnostics are per machine: they show one environment at a time, the primary
-one until you pick another. Every other setting fans out to the selection.
+one until you pick another. Project Runtime also requires one concrete environment and checkout.
+Other shared settings fan out to the selection.
 
 With a project selected, a provider's switch in **Settings → Providers** turns it on or off for
 that project only, in either direction: a provider off on the machine can be used in one project,
@@ -231,3 +232,9 @@ On mobile, use **Settings → Source control** to change selected environment de
 T3 Code only pulls when it can fast-forward and the checkout has no changed files, untracked files,
 or local commits. It skips checkouts on another branch or without an upstream. If a checkout has
 local work, resolve it yourself before automatic pulls can resume.
+
+## Project Runtime
+
+Project Runtime keeps project-owned instructions, registered sources, tasks, and
+handoffs with one checkout. It requires one concrete environment and checkout. See
+[Project Runtime](./project-runtime.md) for setup and day-to-day use.

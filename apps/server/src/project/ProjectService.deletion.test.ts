@@ -1,3 +1,4 @@
+import * as DevelopmentProfileService from "../developmentProfiles/DevelopmentProfileService.ts";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, it } from "@effect/vitest";
 import {
@@ -28,6 +29,7 @@ import * as ProjectStore from "../orchestration-v2/ProjectStore.ts";
 import * as ThreadCommandExecutor from "../orchestration-v2/ThreadCommandExecutor.ts";
 import { planThreadDeletion } from "../orchestration-v2/ThreadDeletion.ts";
 import * as SqlitePersistence from "../persistence/Sqlite.ts";
+import * as ProjectRuntimeService from "../projectRuntime/ProjectRuntimeService.ts";
 import * as ServerSettings from "../serverSettings.ts";
 import * as WorkspacePaths from "../workspace/WorkspacePaths.ts";
 import * as ProjectEnrichmentService from "./ProjectEnrichmentService.ts";
@@ -39,6 +41,7 @@ const layerEventPersistence = EventSink.layer.pipe(
   Layer.provideMerge(Layer.merge(EventStore.layer, ProjectionStore.layer)),
 );
 const layerServices = Layer.mergeAll(
+  ProjectRuntimeService.layer.pipe(Layer.provideMerge(DevelopmentProfileService.layer)),
   LegacyV1ThreadImporter.layer.pipe(Layer.provideMerge(layerEventPersistence)),
   ProjectionMaintenance.layer.pipe(Layer.provide(layerEventPersistence)),
   ProjectStore.layer,
@@ -527,4 +530,208 @@ it.effect(
         assert.isUndefined(settingsAfterDelete.projectSettingsOverrides[projectId]);
       }).pipe(Effect.provide(layerServices));
     }).pipe(Effect.provide(layerDatabase)),
+);
+
+const seedRuntime = Effect.fn("ProjectDeletionTest.seedRuntime")(function* (projectId: ProjectId) {
+  const runtime = yield* ProjectRuntimeService.ProjectRuntimeService;
+  const context = { actor: "user:maintainer" };
+  yield* runtime.setEnabled(projectId, { enabled: true });
+  yield* runtime.saveInstructions(projectId, { instructions: "Keep project state" }, context);
+  const source = yield* runtime.createSource(
+    projectId,
+    { title: "Spec", role: "authority", relativePath: "missing.md" },
+    context,
+  );
+  const task = yield* runtime.createTask(
+    projectId,
+    { title: "Task", scope: "Runtime", acceptanceCriteria: "Persistence" },
+    context,
+  );
+  const handoff = yield* runtime.appendHandoff(
+    projectId,
+    { taskId: task.taskId, checkpoint: "PRT-020", summary: "Persisted" },
+    { ...context, threadId: ThreadId.make("runtime:thread-provenance") },
+  );
+  return { source, task, handoff };
+});
+
+it.effect(
+  "project deletion cascades all Runtime records and preserves another project's Runtime",
+  () =>
+    Effect.gen(function* () {
+      const projectId = ProjectId.make("runtime:delete-project");
+      const otherProjectId = ProjectId.make("runtime:keep-project");
+      yield* seedProject(projectId);
+      yield* seedProject(otherProjectId);
+      yield* Effect.gen(function* () {
+        const sql = yield* SqlClient.SqlClient;
+        const runtime = yield* ProjectRuntimeService.ProjectRuntimeService;
+        const service = yield* ProjectService.make;
+        yield* seedRuntime(projectId);
+        const preserved = yield* seedRuntime(otherProjectId);
+        const profiles = yield* DevelopmentProfileService.DevelopmentProfileService;
+        const profile = yield* profiles.create(
+          { name: "Shared deletion policy", instructions: "Shared policy" },
+          { actor: "user:maintainer" },
+        );
+        yield* profiles.setAssignment({
+          projectId,
+          profileId: profile.profileId,
+          expectedRevision: 0,
+        });
+        const keptAssignment = yield* profiles.setAssignment({
+          projectId: otherProjectId,
+          profileId: profile.profileId,
+          expectedRevision: 0,
+        });
+        yield* runtime.setEnabled(projectId, { enabled: false });
+        yield* service.delete({ projectId, commandId: CommandId.make("runtime:delete") });
+        for (const table of [
+          "project_runtime",
+          "project_runtime_sources",
+          "project_runtime_tasks",
+          "project_runtime_handoffs",
+          "project_development_profiles",
+        ]) {
+          assert.deepEqual(
+            yield* sql`SELECT 1 FROM ${sql(table)} WHERE project_id = ${projectId}`,
+            [],
+          );
+          assert.lengthOf(
+            yield* sql`SELECT 1 FROM ${sql(table)} WHERE project_id = ${otherProjectId}`,
+            1,
+          );
+        }
+        assert.deepEqual(
+          yield* runtime.readTask(otherProjectId, preserved.task.taskId),
+          preserved.task,
+        );
+        assert.deepEqual(
+          yield* runtime.readHandoff(otherProjectId, preserved.handoff.handoffId),
+          preserved.handoff,
+        );
+        assert.equal(
+          (yield* runtime.setEnabled(projectId, { enabled: true }).pipe(Effect.flip))._tag,
+          "ProjectNotFoundError",
+        );
+        yield* service.delete({ projectId, commandId: CommandId.make("runtime:delete") });
+        assert.deepEqual(yield* profiles.read(profile.profileId), profile);
+        assert.deepEqual(yield* profiles.getAssignment(otherProjectId), keptAssignment);
+        assert.deepEqual(yield* profiles.listProjects(profile.profileId), [
+          { projectId: otherProjectId, name: "Deletion test" },
+        ]);
+        assert.deepEqual(yield* sql`PRAGMA foreign_key_check`, []);
+      }).pipe(Effect.provide(layerServices));
+    }).pipe(Effect.provide(layerDatabase)),
+);
+
+it.effect("a failed Runtime cleanup rolls back the project deletion and its receipt", () =>
+  Effect.gen(function* () {
+    const projectId = ProjectId.make("runtime:rollback-project");
+    const commandId = CommandId.make("runtime:rollback-delete");
+    yield* seedProject(projectId);
+    yield* Effect.gen(function* () {
+      const sql = yield* SqlClient.SqlClient;
+      const service = yield* ProjectService.make;
+      const runtime = yield* ProjectRuntimeService.ProjectRuntimeService;
+      const records = yield* seedRuntime(projectId);
+      yield* sql`CREATE TEMP TRIGGER reject_runtime_cleanup BEFORE DELETE ON project_runtime
+        BEGIN SELECT RAISE(ABORT, 'injected Runtime cleanup failure'); END`;
+      assert.instanceOf(
+        yield* service.delete({ projectId, commandId }).pipe(Effect.flip),
+        ProjectService.ProjectOperationError,
+      );
+      assert.isTrue(Option.isSome(yield* service.getById(projectId)));
+      assert.deepEqual(yield* runtime.readTask(projectId, records.task.taskId), records.task);
+      assert.deepEqual(
+        yield* runtime.readHandoff(projectId, records.handoff.handoffId),
+        records.handoff,
+      );
+      assert.deepEqual(
+        yield* sql`SELECT sequence FROM orchestration_events WHERE event_type = 'project.deleted' AND stream_id = ${projectId}`,
+        [],
+      );
+      assert.deepEqual(
+        yield* sql`SELECT command_id FROM orchestration_v2_command_receipts WHERE command_id = ${commandId}`,
+        [],
+      );
+      yield* sql`DROP TRIGGER reject_runtime_cleanup`;
+      yield* service.delete({ projectId, commandId });
+      assert.isTrue(Option.isNone(yield* service.getById(projectId)));
+      assert.deepEqual(
+        yield* sql`SELECT 1 FROM project_runtime WHERE project_id = ${projectId}`,
+        [],
+      );
+    }).pipe(Effect.provide(layerServices));
+  }).pipe(Effect.provide(layerDatabase)),
+);
+
+it.effect("deleting a provenance thread preserves Project Runtime state", () =>
+  Effect.gen(function* () {
+    const projectId = ProjectId.make("runtime:thread-deletion");
+    const threadId = ThreadId.make("runtime:thread-provenance");
+    yield* seedProject(projectId);
+    yield* Effect.gen(function* () {
+      const runtime = yield* ProjectRuntimeService.ProjectRuntimeService;
+      const eventSink = yield* EventSink.EventSinkV2;
+      const projections = yield* ProjectionStore.ProjectionStoreV2;
+      const idAllocator = yield* IdAllocator.IdAllocatorV2;
+      yield* eventSink.write({ events: [nativeThreadCreated(projectId, threadId)] });
+      const records = yield* seedRuntime(projectId);
+      const profiles = yield* DevelopmentProfileService.DevelopmentProfileService;
+      const profile = yield* profiles.create(
+        { name: "Thread-independent policy", instructions: "Durable shared policy" },
+        { actor: "user:maintainer" },
+      );
+      const assignment = yield* profiles.setAssignment({
+        projectId,
+        profileId: profile.profileId,
+        expectedRevision: 0,
+      });
+      const before = yield* runtime.getStatus(projectId);
+      const instructions = yield* runtime.readInstructions(projectId);
+      const command = {
+        type: "thread.delete" as const,
+        threadId,
+        commandId: CommandId.make("runtime:delete-thread"),
+      };
+      const now = yield* DateTime.now;
+      const plan = yield* planThreadDeletion({
+        command,
+        projection: yield* projections.getThreadRecords(threadId, [
+          "runs",
+          "attempts",
+          "nodes",
+          "runtimeRequests",
+          "subagents",
+          "providerSessions",
+        ]),
+        attachmentIds: [],
+        now,
+        idAllocator,
+      });
+      yield* eventSink.commitCommand({
+        commandId: command.commandId,
+        commandType: command.type,
+        threadId,
+        acceptedAt: now,
+        events: plan.events,
+        effects: plan.effects,
+      });
+      assert.isNotNull((yield* projections.getThreadProjection(threadId)).thread.deletedAt);
+      assert.deepEqual(yield* profiles.read(profile.profileId), profile);
+      assert.deepEqual(yield* profiles.getAssignment(projectId), assignment);
+      assert.deepEqual(yield* runtime.getStatus(projectId), before);
+      assert.deepEqual(yield* runtime.readInstructions(projectId), instructions);
+      assert.deepEqual(
+        yield* runtime.readSource(projectId, records.source.sourceId),
+        records.source,
+      );
+      assert.deepEqual(yield* runtime.readTask(projectId, records.task.taskId), records.task);
+      assert.deepEqual(
+        yield* runtime.readHandoff(projectId, records.handoff.handoffId),
+        records.handoff,
+      );
+    }).pipe(Effect.provide(layerServices));
+  }).pipe(Effect.provide(layerDatabase)),
 );

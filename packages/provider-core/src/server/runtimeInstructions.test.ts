@@ -1,6 +1,7 @@
 import { assert, describe, it } from "@effect/vitest";
 
 import { buildRuntimeInstructions } from "./runtimeInstructions.ts";
+import type { TurnContextEntry } from "./turnContext.ts";
 
 describe("buildRuntimeInstructions", () => {
   it("links PRs the agent creates, takes over, or pushes to, and no others", () => {
@@ -37,5 +38,25 @@ describe("buildRuntimeInstructions", () => {
     );
     assert.include(instructions, "Never wait with sleep");
     assert.include(instructions, "call unwatch_pull_request");
+  });
+
+  it("appends turn context after the runtime and PR guidance", () => {
+    const turnContext: ReadonlyArray<TurnContextEntry> = [
+      {
+        key: "fixture",
+        text: "<t3_fixture>GUIDANCE</t3_fixture>",
+        authority: "privileged",
+        ordering: "instruction",
+        order: 0,
+        provenance: "test",
+      },
+    ];
+    const instructions = buildRuntimeInstructions({ harness: "Codex", turnContext });
+
+    assert.isBelow(
+      instructions.indexOf("</pull_request_linking>"),
+      instructions.indexOf("<t3_fixture>"),
+    );
+    assert.include(instructions, "<t3_fixture>GUIDANCE</t3_fixture>");
   });
 });

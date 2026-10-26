@@ -574,6 +574,8 @@ export interface RunExecutionServiceV2StartRootRunInput {
   readonly message: ProviderAdapter.ProviderAdapterV2TurnMessage;
   readonly modelSelection: ModelSelection;
   readonly runtimePolicy: ProviderAdapter.ProviderAdapterV2RuntimePolicy;
+  /** Turn-scoped context resolved by the caller. */
+  readonly turnContext?: ProviderAdapter.ProviderAdapterV2TurnInput["turnContext"];
 }
 
 export interface RunExecutionServiceV2Shape {
@@ -1647,6 +1649,7 @@ export const layer: Layer.Layer<
           message: input.message,
           modelSelection: input.modelSelection,
           runtimePolicy: input.runtimePolicy,
+          ...(input.turnContext === undefined ? {} : { turnContext: input.turnContext }),
           ...(appContext.length === 0 ? {} : { appContext }),
         };
         // Check after the context read: ingestion can settle the run while

@@ -1,5 +1,11 @@
 import type { V2TurnStartParams__AdditionalContextEntry } from "effect-codex-app-server/schema";
 import { buildRuntimeInstructions } from "@t3tools/provider-core/server/runtimeInstructions";
+import {
+  chunkTurnContextText,
+  orderedTurnContext,
+  TURN_CONTEXT_INSTRUCTION_CHUNK_BYTES,
+  type TurnContextEntry,
+} from "@t3tools/provider-core/server/turnContext";
 
 import {
   T3_CODE_BROWSER_TOOL_INSTRUCTIONS,
@@ -56,8 +62,33 @@ export function buildCodexAdditionalContext(
     ),
     t3_code_runtime: {
       kind: "application",
-      value: buildRuntimeInstructions({ harness: "Codex", ...runtime }),
+      value: buildRuntimeInstructions({
+        harness: "Codex",
+        ...runtime,
+      }),
     },
     ...(tools ? { t3_code_tools: { kind: "application", value: tools } } : {}),
   };
+}
+
+export function buildCodexTurnContext(
+  entries: ReadonlyArray<TurnContextEntry> | undefined,
+): Record<string, V2TurnStartParams__AdditionalContextEntry> {
+  return Object.fromEntries(
+    orderedTurnContext(entries).flatMap((entry) =>
+      chunkTurnContextText(entry.text, TURN_CONTEXT_INSTRUCTION_CHUNK_BYTES).map(
+        (chunk) =>
+          [
+            `${entry.key}_${String(chunk.index + 1).padStart(3, "0")}`,
+            {
+              kind:
+                entry.authority === "privileged"
+                  ? ("application" as const)
+                  : ("untrusted" as const),
+              value: chunk.text,
+            },
+          ] as const,
+      ),
+    ),
+  );
 }

@@ -73,36 +73,39 @@ const providerInstanceFor = (instanceId: ProviderInstanceId) =>
     },
   }) as ProviderInstance;
 
-const layerTest = RuntimePolicy.layerFromProjectStore.pipe(
-  Layer.provide(
-    Layer.succeed(ProviderInstanceRegistry.ProviderInstanceRegistry, {
-      getInstance: (instanceId) => Effect.succeed(providerInstanceFor(instanceId)),
-      listInstances: Effect.succeed([]),
-      listUnavailable: Effect.succeed([]),
-      streamChanges: Stream.empty,
-      subscribeChanges: Effect.never,
-    }),
-  ),
-  Layer.provide(
-    Layer.mock(ProjectStore.ProjectStoreV2)({
-      get: () =>
-        Effect.succeedSome({
-          projectId,
-          title: "Project",
-          workspaceRoot: "/project-root",
-          defaultModelSelection: null,
-          defaultThreadEnvMode: null,
-          autoPull: false,
-          faviconPath: null,
-          projectIcon: null,
-          scripts: [],
-          createdAt: "2026-06-21T00:00:00.000Z",
-          updatedAt: "2026-06-21T00:00:00.000Z",
-          deletedAt: null,
-        }),
-    }),
-  ),
-);
+const providePolicyDependencies = <A, E, R>(layer: Layer.Layer<A, E, R>) =>
+  layer.pipe(
+    Layer.provide(
+      Layer.succeed(ProviderInstanceRegistry.ProviderInstanceRegistry, {
+        getInstance: (instanceId) => Effect.succeed(providerInstanceFor(instanceId)),
+        listInstances: Effect.succeed([]),
+        listUnavailable: Effect.succeed([]),
+        streamChanges: Stream.empty,
+        subscribeChanges: Effect.never,
+      }),
+    ),
+    Layer.provide(
+      Layer.mock(ProjectStore.ProjectStoreV2)({
+        get: () =>
+          Effect.succeedSome({
+            projectId,
+            title: "Project",
+            workspaceRoot: "/project-root",
+            defaultModelSelection: null,
+            defaultThreadEnvMode: null,
+            autoPull: false,
+            faviconPath: null,
+            projectIcon: null,
+            scripts: [],
+            createdAt: "2026-06-21T00:00:00.000Z",
+            updatedAt: "2026-06-21T00:00:00.000Z",
+            deletedAt: null,
+          }),
+      }),
+    ),
+  );
+
+const layerTest = providePolicyDependencies(RuntimePolicy.layerFromProjectStore);
 
 it.layer(layerTest)("RuntimePolicyV2", (it) => {
   it.effect("runs a mode the provider does not offer in Supervised", () =>

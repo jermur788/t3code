@@ -1,3 +1,5 @@
+import { DEVELOPMENT_PROFILE_RPC_METHODS } from "./developmentProfilesRpc.ts";
+import { PROJECT_RUNTIME_RPC_METHODS } from "./projectRuntimeRpc.ts";
 import * as Schema from "effect/Schema";
 import { GitPreparePullRequestThreadInput, GitRunStackedActionInput } from "./git.ts";
 import {
@@ -14,6 +16,19 @@ import { WS_METHODS } from "./rpc.ts";
 
 /** Incremental client enforcement; the server still authorizes every request. */
 export const CLIENT_GUARDED_RPC_SCOPES = {
+  [DEVELOPMENT_PROFILE_RPC_METHODS.create]: AuthSettingsWriteScope,
+  [DEVELOPMENT_PROFILE_RPC_METHODS.update]: AuthSettingsWriteScope,
+  [DEVELOPMENT_PROFILE_RPC_METHODS.delete]: AuthSettingsWriteScope,
+  [DEVELOPMENT_PROFILE_RPC_METHODS.setAssignment]: AuthSettingsWriteScope,
+
+  [PROJECT_RUNTIME_RPC_METHODS.setEnabled]: AuthOrchestrationOperateScope,
+  [PROJECT_RUNTIME_RPC_METHODS.saveInstructions]: AuthOrchestrationOperateScope,
+  [PROJECT_RUNTIME_RPC_METHODS.createSource]: AuthOrchestrationOperateScope,
+  [PROJECT_RUNTIME_RPC_METHODS.updateSource]: AuthOrchestrationOperateScope,
+  [PROJECT_RUNTIME_RPC_METHODS.removeSource]: AuthOrchestrationOperateScope,
+  [PROJECT_RUNTIME_RPC_METHODS.createTask]: AuthOrchestrationOperateScope,
+  [PROJECT_RUNTIME_RPC_METHODS.updateTask]: AuthOrchestrationOperateScope,
+
   [WS_METHODS.previewClose]: AuthPreviewOperateScope,
   [WS_METHODS.serverRunStorageCleanup]: AuthSettingsWriteScope,
   [WS_METHODS.serverCheckOtlpEndpoint]: AuthSettingsWriteScope,

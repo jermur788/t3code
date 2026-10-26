@@ -15,6 +15,13 @@ import { formatThreadLink } from "@t3tools/shared/threadLinks";
 import { resolveRuntimeMode } from "../../OrchestratorMcpService.ts";
 import * as McpToolAccess from "../../McpToolAccess.ts";
 import { newCommandId, readCaller, resolveProjectId, unavailable } from "../../threadAccess.ts";
+import {
+  provenanceOf,
+  runtimeRead,
+  runtimeWrite,
+  withRuntime,
+  withSources,
+} from "./runtimeHandlers.ts";
 import { ProjectToolkit } from "./tools.ts";
 
 function projectFailure(error: Project.ProjectServiceError) {
@@ -300,5 +307,48 @@ export const layer = McpToolAccess.toLayer(ProjectToolkit, {
         ),
       );
     }),
+  ),
+  t3_project_context: McpToolAccess.reads(({ projectId }) =>
+    runtimeRead(projectId, (id) => withRuntime((runtime) => runtime.readContext(id))),
+  ),
+  t3_project_source_list: McpToolAccess.reads(({ projectId, ...input }) =>
+    runtimeRead(projectId, (id) => withSources((sources) => sources.list(id, input))),
+  ),
+  t3_project_source_search: McpToolAccess.reads(({ projectId, ...input }) =>
+    runtimeRead(projectId, (id) => withSources((sources) => sources.search(id, input))),
+  ),
+  t3_project_source_read: McpToolAccess.reads(({ projectId, ...input }) =>
+    runtimeRead(projectId, (id) => withSources((sources) => sources.read(id, input))),
+  ),
+  t3_project_task_list: McpToolAccess.reads(({ projectId, ...input }) =>
+    runtimeRead(projectId, (id) => withRuntime((runtime) => runtime.listTasks(id, input))),
+  ),
+  t3_project_task_read: McpToolAccess.reads(({ projectId, taskId }) =>
+    runtimeRead(projectId, (id) => withRuntime((runtime) => runtime.readTask(id, taskId))),
+  ),
+  t3_project_task_create: McpToolAccess.writesEnvironment(({ projectId, ...input }, check) =>
+    runtimeWrite(projectId, check, (id, context) =>
+      withRuntime((runtime) =>
+        runtime.createTask(id, input, { actor: provenanceOf(context).actor }),
+      ),
+    ),
+  ),
+  t3_project_task_update: McpToolAccess.writesEnvironment(({ projectId, ...input }, check) =>
+    runtimeWrite(projectId, check, (id, context) =>
+      withRuntime((runtime) =>
+        runtime.updateTask(id, input, { actor: provenanceOf(context).actor }),
+      ),
+    ),
+  ),
+  t3_project_handoff_append: McpToolAccess.writesEnvironment(({ projectId, ...input }, check) =>
+    runtimeWrite(projectId, check, (id, context) =>
+      withRuntime((runtime) => runtime.appendHandoff(id, input, provenanceOf(context))),
+    ),
+  ),
+  t3_project_handoff_list: McpToolAccess.reads(({ projectId, ...input }) =>
+    runtimeRead(projectId, (id) => withRuntime((runtime) => runtime.listHandoffs(id, input))),
+  ),
+  t3_project_handoff_read: McpToolAccess.reads(({ projectId, handoffId }) =>
+    runtimeRead(projectId, (id) => withRuntime((runtime) => runtime.readHandoff(id, handoffId))),
   ),
 });

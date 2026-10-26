@@ -48,6 +48,7 @@ import {
   t3McpServerName,
 } from "@t3tools/provider-opencode/testing";
 import { resolveAttachmentPath } from "../../attachmentStore.ts";
+import { projectInstructionsTurnContext } from "../../developmentProfiles/ProjectInstructions.ts";
 import { openCode2ReplayRuntime } from "./OpenCode2AdapterV2.testkit.ts";
 import {
   makeProviderReplayGate,
@@ -142,6 +143,7 @@ const noOpenRequests: ReadonlyArray<ProviderReplayEntry> = [
 
 const withInstructions = (
   entries: ReadonlyArray<ProviderReplayEntry>,
+  expectedInstructions = "<any>",
 ): ReadonlyArray<ProviderReplayEntry> => {
   const first = entries.findIndex(
     (entry) =>
@@ -174,7 +176,7 @@ const withInstructions = (
         out("session.instructions.entry.put", {
           sessionID: SESSION,
           key: "t3-code",
-          value: "<any>",
+          value: expectedInstructions,
         }),
         reply("session.instructions.entry.put", null),
         ...entries.slice(at),
@@ -314,25 +316,29 @@ const resumed = (
     readonly resolveExtractedTextPath?: (path: string) => Effect.Effect<string | undefined>;
     readonly fileSystem?: FileSystem.FileSystem;
     readonly onPrompt?: (input: unknown) => void;
+    readonly expectedInstructions?: string;
   },
 ) =>
   Effect.gen(function* () {
     const runtime = yield* openCode2ReplayRuntime(
-      withInstructions([
-        ...opening,
-        out("session.get", { sessionID: SESSION }),
-        replyData("session.get", sessionInfo()),
-        ...noOpenRequests,
-        ...(options?.supervised === true
-          ? [
-              out("agent.list", "<any>"),
-              reply("agent.list", agentList),
-              out("session.update", { sessionID: SESSION, permissions: supervisedRules }),
-              reply("session.update", null),
-            ]
-          : []),
-        ...entries,
-      ]),
+      withInstructions(
+        [
+          ...opening,
+          out("session.get", { sessionID: SESSION }),
+          replyData("session.get", sessionInfo()),
+          ...noOpenRequests,
+          ...(options?.supervised === true
+            ? [
+                out("agent.list", "<any>"),
+                reply("agent.list", agentList),
+                out("session.update", { sessionID: SESSION, permissions: supervisedRules }),
+                reply("session.update", null),
+              ]
+            : []),
+          ...entries,
+        ],
+        options?.expectedInstructions,
+      ),
       {
         ...(options?.fileSystem === undefined ? {} : { fileSystem: options.fileSystem }),
         ...(options?.onPrompt === undefined ? {} : { onPrompt: options.onPrompt }),
@@ -2363,6 +2369,52 @@ it.layer(McpProviderSessions.layer)("OpenCode2 adapter", (it) => {
       assert.equal(last?.type === "dynamic_tool" ? last.toolName : null, name);
       assert.deepEqual(last?.type === "dynamic_tool" ? last.input : null, input);
     }).pipe(Effect.scoped),
+  );
+
+  it.effect(
+    "delivers each turn's project instructions in the prompt and clears them for another project",
+    () =>
+      Effect.gen(function* () {
+        const revisionA = "PRT-AUTO-7c91-A";
+        const revisionB = "PRT-AUTO-7c91-B";
+        const revisions = [revisionA, revisionB, revisionB, undefined];
+        const prompts: Array<string> = [];
+        const turn = [
+          out("session.prompt", { sessionID: SESSION, text: "<any>" }),
+          promptAccepted,
+          event("session.execution.succeeded", { sessionID: SESSION }),
+        ];
+        const { runtime, thread } = yield* resumed(
+          revisions.flatMap(() => turn),
+          {
+            expectedInstructions: buildRuntimeInstructions({
+              harness: "OpenCode",
+              model: bigPickle.model,
+            }),
+            onPrompt: (input) => {
+              prompts.push(String((input as { readonly text?: unknown }).text ?? ""));
+            },
+          },
+        );
+        for (const projectInstructions of revisions) {
+          const terminal = yield* terminalOf(runtime).pipe(Effect.forkScoped);
+          const input = turnInput(thread);
+          yield* runtime.startTurn({
+            ...input,
+            ...(projectInstructions === undefined
+              ? {}
+              : { turnContext: projectInstructionsTurnContext(projectInstructions) }),
+          });
+          assert.equal((yield* Fiber.join(terminal))?.status, "completed");
+        }
+        assert.equal(prompts.length, revisions.length);
+        assert.include(prompts[0], revisionA);
+        assert.include(prompts[1], revisionB);
+        assert.notInclude(prompts[1], revisionA);
+        assert.include(prompts[2], revisionB);
+        assert.notInclude(prompts[3], revisionA);
+        assert.notInclude(prompts[3], revisionB);
+      }).pipe(Effect.scoped),
   );
 
   it.effect("re-registers T3 MCP each turn and drops its instructions when adding fails", () =>

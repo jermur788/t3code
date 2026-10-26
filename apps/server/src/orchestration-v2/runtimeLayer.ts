@@ -1,4 +1,6 @@
 import * as GuestShareService from "../guest/GuestShareService.ts";
+import * as DevelopmentProfileService from "../developmentProfiles/DevelopmentProfileService.ts";
+import * as ProjectInstructions from "../developmentProfiles/ProjectInstructions.ts";
 import * as UsageLimitRecoveryWorker from "./UsageLimitRecoveryWorker.ts";
 import * as Scheduler from "../scheduling/Scheduler.ts";
 import * as Layer from "effect/Layer";
@@ -64,6 +66,9 @@ export const layerEventInfrastructure = Layer.mergeAll(
 
 const layerRuntimePolicyProvided = RuntimePolicy.layerFromProjectStore.pipe(
   Layer.provide(ProjectStore.layer),
+);
+const layerProjectInstructionsProvided = ProjectInstructions.layerFromDevelopmentProfiles.pipe(
+  Layer.provide(DevelopmentProfileService.layer),
 );
 
 const layerEventStoreProvided = EventStore.layerFromOrchestrationEventStore.pipe(
@@ -175,6 +180,8 @@ const layerProviderTurnStartServiceProvided = ProviderTurnStartService.layer.pip
       layerProviderAuthServiceProvided,
       layerRunExecutionServiceProvided,
       layerRuntimePolicyProvided,
+      layerProjectInstructionsProvided,
+      ProjectStore.layer,
     ),
   ),
 );

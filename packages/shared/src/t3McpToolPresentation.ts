@@ -86,6 +86,29 @@ function tool(
 const T3_MCP_SERVER_ALIASES = new Set(["t3-code", "t3_code", "t3code"]);
 
 const T3_MCP_TOOLS: Readonly<Record<string, T3McpToolDefinition>> = {
+  t3_project_context: tool(["Read", "Reading", "Read", "Project Runtime context"], "project-read"),
+  t3_project_source_list: tool(["List", "Listing", "Listed", "Runtime sources"], "project-read"),
+  t3_project_source_search: tool(
+    ["Search", "Searching", "Searched", "Runtime sources"],
+    "project-read",
+  ),
+  t3_project_source_read: tool(["Read", "Reading", "Read", "a Runtime source"], "project-read"),
+  t3_project_task_list: tool(["List", "Listing", "Listed", "Runtime tasks"], "project-read"),
+  t3_project_task_read: tool(["Read", "Reading", "Read", "a Runtime task"], "project-read"),
+  t3_project_task_create: tool(
+    ["Create", "Creating", "Created", "a Runtime task"],
+    "project-update",
+  ),
+  t3_project_task_update: tool(
+    ["Update", "Updating", "Updated", "a Runtime task"],
+    "project-update",
+  ),
+  t3_project_handoff_append: tool(
+    ["Append", "Appending", "Appended", "a Runtime handoff"],
+    "project-update",
+  ),
+  t3_project_handoff_list: tool(["List", "Listing", "Listed", "Runtime handoffs"], "project-read"),
+  t3_project_handoff_read: tool(["Read", "Reading", "Read", "a Runtime handoff"], "project-read"),
   link_pull_request: tool(
     ["Link", "Linking", "Linked", "a pull request"],
     "link-pr",

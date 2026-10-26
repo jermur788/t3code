@@ -40,6 +40,7 @@ import * as Predicate from "effect/Predicate";
 import * as FileSystem from "effect/FileSystem";
 import { MCP_APP_OUTPUT_KEY, readMcpAppReference } from "@t3tools/shared/mcpApp";
 import { resolveAttachmentPathById } from "../../attachmentStore.ts";
+import { projectInstructionsTurnContext } from "../../developmentProfiles/ProjectInstructions.ts";
 import * as Fiber from "effect/Fiber";
 import * as Layer from "effect/Layer";
 import * as PubSub from "effect/PubSub";
@@ -204,6 +205,69 @@ describe("CodexAdapterV2 runtime policy", () => {
       assert.equal(fullAccess.approvalPolicy, "never");
       assert.equal(fullAccess.approvalsReviewer, "user");
       assert.equal(fullAccess.sandboxPolicy?.type, "dangerFullAccess");
+    }),
+  );
+
+  it.effect(
+    "delivers the current project snapshot as application context without requiring MCP",
+    () =>
+      Effect.gen(function* () {
+        for (const projectInstructions of ["PRT-AUTO-7c91-A", "PRT-AUTO-7c91-B", undefined]) {
+          const params = yield* CodexAdapterV2.buildCodexTurnStartParams({
+            nativeThreadId: "project-policy-test",
+            codexInput: [{ type: "text", text: "Hello" }],
+            runtimePolicy: {
+              runtimeMode: "full-access",
+              interactionMode: "default",
+              cwd: null,
+            },
+            modelSelection: { instanceId: ProviderInstanceId.make("codex"), model: "gpt-5.4" },
+            ...(projectInstructions === undefined
+              ? {}
+              : { turnContext: projectInstructionsTurnContext(projectInstructions) }),
+          });
+          const entries = Object.entries(params.additionalContext ?? {}).filter(([key]) =>
+            key.startsWith("t3_project_instructions_"),
+          );
+          if (projectInstructions === undefined) assert.isEmpty(entries);
+          else {
+            assert.isTrue(entries.every(([, entry]) => entry.kind === "application"));
+            assert.include(entries.map(([, entry]) => entry.value).join(""), projectInstructions);
+          }
+        }
+      }),
+  );
+
+  it.effect("maps privileged turn context to application and untrusted to untrusted", () =>
+    Effect.gen(function* () {
+      const privileged = projectInstructionsTurnContext("PRIVILEGED-TURN-CONTEXT")[0]!;
+      const params = yield* CodexAdapterV2.buildCodexTurnStartParams({
+        nativeThreadId: "turn-context-authority",
+        codexInput: [{ type: "text", text: "Hello" }],
+        runtimePolicy: {
+          runtimeMode: "full-access",
+          interactionMode: "default",
+          cwd: null,
+        },
+        modelSelection: { instanceId: ProviderInstanceId.make("codex"), model: "gpt-5.4" },
+        turnContext: [
+          privileged,
+          {
+            key: "untrusted-fixture",
+            text: "UNTRUSTED-TURN-CONTEXT",
+            authority: "untrusted",
+            ordering: "application",
+            order: 10,
+            provenance: "test",
+          },
+        ],
+      });
+      const entries = Object.entries(params.additionalContext ?? {});
+      const projectEntry = entries.find(([key]) => key.startsWith("t3_project_instructions_"));
+      const untrustedEntry = entries.find(([key]) => key === "untrusted-fixture_001");
+      assert.equal(projectEntry?.[1].kind, "application");
+      assert.equal(untrustedEntry?.[1].kind, "untrusted");
+      assert.notInclude(JSON.stringify(params.additionalContext), "Hello");
     }),
   );
 

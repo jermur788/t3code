@@ -44,6 +44,7 @@ import type {
   ProviderSelectionTransitionInput,
   ProviderSelectionTransitionPlan,
 } from "./selectionTransition.ts";
+import type { TurnContextEntry } from "./turnContext.ts";
 
 export const ProviderAdapterV2RuntimePolicy = Schema.Struct({
   runtimeMode: RuntimeMode,
@@ -427,6 +428,8 @@ export interface ProviderAdapterV2TurnInput {
   readonly message: ProviderAdapterV2TurnMessage;
   readonly modelSelection: ModelSelection;
   readonly runtimePolicy: ProviderAdapterV2RuntimePolicy;
+  /** Turn-scoped context. Never part of provider session identity. */
+  readonly turnContext?: ReadonlyArray<TurnContextEntry>;
   readonly appContext?: ReadonlyArray<{ readonly key: string; readonly text: string }>;
 }
 

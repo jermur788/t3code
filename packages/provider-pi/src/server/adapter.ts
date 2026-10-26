@@ -1,3 +1,4 @@
+import { promptWithTurnContext } from "@t3tools/provider-core/server/runtimeInstructions";
 import * as HostProcess from "@t3tools/shared/HostProcess";
 import { AgentScope } from "@t3tools/shared/AgentScope";
 import { getModelSelectionStringOptionValue } from "@t3tools/shared/model";
@@ -2419,13 +2420,17 @@ export const makePiAdapterV2 = Effect.fn("makePiAdapterV2")(function* (
               );
             }
             // Resolve attachments before turn installation so failures cannot strand activeTurn.
-            // Inject instructions through before_agent_start; wrapping user text breaks slash-command expansion.
+            // Static guidance uses the MCP extension hook; per-turn project guidance uses
+            // prompt context, preserving native slash-command expansion.
             const compactCommand = continuation
               ? null
               : parsePiCompactCommand(turnInput.message.text);
             const payload =
               !continuation && compactCommand === null
-                ? yield* resolvePromptPayload(turnInput.message.text, turnInput.message.attachments)
+                ? yield* resolvePromptPayload(
+                    promptWithTurnContext(turnInput.message.text, turnInput.turnContext),
+                    turnInput.message.attachments,
+                  )
                 : null;
             const startedAt = yield* DateTime.now;
             const syntheticNativeTurnId = `${state.providerThread.id}:attempt:${turnInput.attemptId}`;

@@ -10,6 +10,7 @@ import {
 import {
   ArchiveIcon,
   FlaskConicalIcon,
+  BookOpenIcon,
   BotIcon,
   createLucideIcon,
   CalendarClockIcon,
@@ -85,6 +86,7 @@ const SETTINGS_SECTION_ICONS: Readonly<
 > = {
   "/settings/general": Settings2Icon,
   "/settings/diagnostics": WrenchIcon,
+  "/settings/development-profiles": BookOpenIcon,
   "/settings/appearance": PaletteIcon,
   "/settings/chat": MessageSquareTextIcon,
   "/settings/diffs": FileDiffIcon,

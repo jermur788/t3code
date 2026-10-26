@@ -48,6 +48,8 @@ export * from "./threadTitle.ts";
 export * from "./t3ProjectFile.ts";
 export * from "./editor.ts";
 export * from "./project.ts";
+export * from "./projectRuntime.ts";
+export * from "./developmentProfiles.ts";
 export * from "./filesystem.ts";
 export * from "./agentSessions.ts";
 export * from "./assets.ts";
@@ -68,3 +70,6 @@ export * from "./rpc.ts";
 export * from "./worktreeSetup.ts";
 export * from "./secretRequest.ts";
 export * from "./clientRpcPermissions.ts";
+
+export * from "./projectRuntimeRpc.ts";
+export * from "./developmentProfilesRpc.ts";

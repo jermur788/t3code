@@ -1,3 +1,4 @@
+import { promptWithTurnContext } from "@t3tools/provider-core/server/runtimeInstructions";
 import type {
   AgentMessage,
   AgentOptions,
@@ -2209,19 +2210,22 @@ export const makeCursorAdapterV2 = Effect.fn("makeCursorAdapterV2")(function* (
                 .map((skill) => skill.name),
             );
           }
-          const userText = t3OrchestrationPromptForFirstRun({
-            prompt: yield* providerMessageTextWithAttachmentPaths({
-              text:
-                cursorSkillNames === undefined
-                  ? rawText
-                  : rewriteCursorSkillMentions(rawText, cursorSkillNames),
-              attachments: turnInput.message.attachments,
-              resolveAttachmentPath: host.resolveAttachmentPath,
-              resolveExtractedTextPath: host.resolveExtractedTextPath,
+          const userText = promptWithTurnContext(
+            t3OrchestrationPromptForFirstRun({
+              prompt: yield* providerMessageTextWithAttachmentPaths({
+                text:
+                  cursorSkillNames === undefined
+                    ? rawText
+                    : rewriteCursorSkillMentions(rawText, cursorSkillNames),
+                attachments: turnInput.message.attachments,
+                resolveAttachmentPath: host.resolveAttachmentPath,
+                resolveExtractedTextPath: host.resolveExtractedTextPath,
+              }),
+              runOrdinal: turnInput.runOrdinal,
+              hasT3Mcp: mcpServers !== undefined,
             }),
-            runOrdinal: turnInput.runOrdinal,
-            hasT3Mcp: mcpServers !== undefined,
-          });
+            turnInput.turnContext,
+          );
           const images = yield* Effect.forEach(
             turnInput.message.attachments.filter(isProviderNativeImageAttachment),
             (attachment: ChatAttachment) =>
