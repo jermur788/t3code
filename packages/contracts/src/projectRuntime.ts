@@ -30,14 +30,36 @@ export const PROJECT_RUNTIME_BOUNDS = {
   taskTitleMaxLength: 200,
   taskTextMaxLength: 20_000,
   taskNextActionMaxLength: 2_000,
-  taskBranchMaxLength: 256,
-  taskWorktreePathMaxLength: 4_096,
-  taskBaseShaMaxLength: 128,
+  taskObjectiveMaxLength: 4_000,
+  taskOutOfScopeMaxLength: 4_000,
+  taskVerificationPlanMaxLength: 4_000,
+  taskResultMaxLength: 8_000,
+  baseRepositoryMaxLength: 512,
+  baseBranchMaxLength: 256,
+  baseRevisionMaxLength: 128,
+  baseWorktreePathMaxLength: 4_096,
+  baseUpstreamRevisionMaxLength: 128,
+  baseNotesMaxLength: 2_000,
+  blockerSummaryMaxLength: 2_000,
+  blockerDetailMaxLength: 8_000,
+  criterionIdMaxLength: 64,
+  criterionTextMaxLength: 2_000,
+  criteriaMaxCount: 50,
+  evidenceIdMaxLength: 64,
+  evidenceCommandMaxLength: 1_024,
+  evidenceSummaryMaxLength: 1_024,
+  evidenceMaxCount: 50,
   handoffCheckpointMaxLength: 200,
   handoffSummaryMaxLength: 8_000,
+  handoffResultMaxLength: 2_000,
   handoffTextMaxLength: 8_000,
-  handoffEvidenceMaxCount: 20,
-  handoffEvidenceMaxLength: 1_024,
+  handoffFileMaxCount: 500,
+  handoffFileMaxLength: 512,
+  handoffTestMaxCount: 100,
+  handoffTestMaxLength: 1_024,
+  handoffDecisionMaxCount: 50,
+  handoffDecisionMaxLength: 2_000,
+  handoffStateMaxLength: 2_000,
   modelMaxLength: 200,
   listMaxLimit: 100,
   searchMaxLimit: 100,
@@ -86,6 +108,7 @@ export const ProjectRuntimeTaskStatus = Schema.Literals([
   "blocked",
   "review",
   "done",
+  "deferred",
   "cancelled",
 ]);
 export type ProjectRuntimeTaskStatus = typeof ProjectRuntimeTaskStatus.Type;
@@ -121,14 +144,57 @@ const TaskText = TrimmedString.check(Schema.isMaxLength(PROJECT_RUNTIME_BOUNDS.t
 const TaskNextAction = TrimmedNonEmptyString.check(
   Schema.isMaxLength(PROJECT_RUNTIME_BOUNDS.taskNextActionMaxLength),
 );
-const TaskBranch = TrimmedNonEmptyString.check(
-  Schema.isMaxLength(PROJECT_RUNTIME_BOUNDS.taskBranchMaxLength),
+const TaskObjective = TrimmedString.check(
+  Schema.isMaxLength(PROJECT_RUNTIME_BOUNDS.taskObjectiveMaxLength),
 );
-const TaskWorktreePath = TrimmedNonEmptyString.check(
-  Schema.isMaxLength(PROJECT_RUNTIME_BOUNDS.taskWorktreePathMaxLength),
+const TaskOutOfScope = TrimmedString.check(
+  Schema.isMaxLength(PROJECT_RUNTIME_BOUNDS.taskOutOfScopeMaxLength),
 );
-const TaskBaseSha = TrimmedNonEmptyString.check(
-  Schema.isMaxLength(PROJECT_RUNTIME_BOUNDS.taskBaseShaMaxLength),
+const TaskVerificationPlan = TrimmedString.check(
+  Schema.isMaxLength(PROJECT_RUNTIME_BOUNDS.taskVerificationPlanMaxLength),
+);
+const TaskResult = TrimmedString.check(
+  Schema.isMaxLength(PROJECT_RUNTIME_BOUNDS.taskResultMaxLength),
+);
+
+const BaseRepository = TrimmedNonEmptyString.check(
+  Schema.isMaxLength(PROJECT_RUNTIME_BOUNDS.baseRepositoryMaxLength),
+);
+const BaseBranch = TrimmedNonEmptyString.check(
+  Schema.isMaxLength(PROJECT_RUNTIME_BOUNDS.baseBranchMaxLength),
+);
+const BaseRevision = TrimmedNonEmptyString.check(
+  Schema.isMaxLength(PROJECT_RUNTIME_BOUNDS.baseRevisionMaxLength),
+);
+const BaseWorktreePath = TrimmedNonEmptyString.check(
+  Schema.isMaxLength(PROJECT_RUNTIME_BOUNDS.baseWorktreePathMaxLength),
+);
+const BaseUpstreamRevision = TrimmedNonEmptyString.check(
+  Schema.isMaxLength(PROJECT_RUNTIME_BOUNDS.baseUpstreamRevisionMaxLength),
+);
+const BaseNotes = TrimmedNonEmptyString.check(
+  Schema.isMaxLength(PROJECT_RUNTIME_BOUNDS.baseNotesMaxLength),
+);
+
+const BlockerSummary = TrimmedNonEmptyString.check(
+  Schema.isMaxLength(PROJECT_RUNTIME_BOUNDS.blockerSummaryMaxLength),
+);
+const BlockerDetail = TrimmedString.check(
+  Schema.isMaxLength(PROJECT_RUNTIME_BOUNDS.blockerDetailMaxLength),
+);
+
+const RecordKey = TrimmedNonEmptyString.check(
+  Schema.isMaxLength(PROJECT_RUNTIME_BOUNDS.criterionIdMaxLength),
+  Schema.isPattern(/^[A-Za-z0-9_-]+$/),
+);
+const CriterionText = TrimmedNonEmptyString.check(
+  Schema.isMaxLength(PROJECT_RUNTIME_BOUNDS.criterionTextMaxLength),
+);
+const EvidenceCommand = TrimmedNonEmptyString.check(
+  Schema.isMaxLength(PROJECT_RUNTIME_BOUNDS.evidenceCommandMaxLength),
+);
+const EvidenceSummary = TrimmedNonEmptyString.check(
+  Schema.isMaxLength(PROJECT_RUNTIME_BOUNDS.evidenceSummaryMaxLength),
 );
 
 const HandoffCheckpoint = TrimmedNonEmptyString.check(
@@ -137,11 +203,23 @@ const HandoffCheckpoint = TrimmedNonEmptyString.check(
 const HandoffSummary = TrimmedNonEmptyString.check(
   Schema.isMaxLength(PROJECT_RUNTIME_BOUNDS.handoffSummaryMaxLength),
 );
-const HandoffText = TrimmedNonEmptyString.check(
+const HandoffResult = TrimmedString.check(
+  Schema.isMaxLength(PROJECT_RUNTIME_BOUNDS.handoffResultMaxLength),
+);
+const HandoffText = TrimmedString.check(
   Schema.isMaxLength(PROJECT_RUNTIME_BOUNDS.handoffTextMaxLength),
 );
-const HandoffEvidence = TrimmedNonEmptyString.check(
-  Schema.isMaxLength(PROJECT_RUNTIME_BOUNDS.handoffEvidenceMaxLength),
+const HandoffFile = TrimmedNonEmptyString.check(
+  Schema.isMaxLength(PROJECT_RUNTIME_BOUNDS.handoffFileMaxLength),
+);
+const HandoffTest = TrimmedNonEmptyString.check(
+  Schema.isMaxLength(PROJECT_RUNTIME_BOUNDS.handoffTestMaxLength),
+);
+const HandoffDecision = TrimmedNonEmptyString.check(
+  Schema.isMaxLength(PROJECT_RUNTIME_BOUNDS.handoffDecisionMaxLength),
+);
+const HandoffState = TrimmedString.check(
+  Schema.isMaxLength(PROJECT_RUNTIME_BOUNDS.handoffStateMaxLength),
 );
 const HandoffModel = TrimmedNonEmptyString.check(
   Schema.isMaxLength(PROJECT_RUNTIME_BOUNDS.modelMaxLength),
@@ -297,18 +375,107 @@ export const ProjectRuntimeSourceRemoveInput = Schema.Struct({
 });
 export type ProjectRuntimeSourceRemoveInput = typeof ProjectRuntimeSourceRemoveInput.Type;
 
+export const ProjectRuntimeBlockerClassification = Schema.Literals([
+  "implementation-defect",
+  "verification-failure",
+  "operational-blocker",
+  "review-required",
+  "integration-conflict",
+  "upstream-compatibility",
+  "product-decision",
+]);
+export type ProjectRuntimeBlockerClassification = typeof ProjectRuntimeBlockerClassification.Type;
+
+export const ProjectRuntimeTaskBlocker = Schema.Struct({
+  classification: ProjectRuntimeBlockerClassification,
+  summary: BlockerSummary,
+  detail: Schema.optionalKey(BlockerDetail),
+  createdAt: IsoDateTime,
+});
+export type ProjectRuntimeTaskBlocker = typeof ProjectRuntimeTaskBlocker.Type;
+
+export const ProjectRuntimeTaskBlockerInput = Schema.Struct({
+  classification: ProjectRuntimeBlockerClassification,
+  summary: BlockerSummary,
+  detail: Schema.optionalKey(BlockerDetail),
+});
+export type ProjectRuntimeTaskBlockerInput = typeof ProjectRuntimeTaskBlockerInput.Type;
+
+export const ProjectRuntimeVerificationMilestone = Schema.Literals([
+  "none",
+  "implemented",
+  "static-pass",
+  "runtime-pass",
+  "review-pass",
+  "integrated",
+  "verified",
+]);
+export type ProjectRuntimeVerificationMilestone = typeof ProjectRuntimeVerificationMilestone.Type;
+
+export const ProjectRuntimeEvidenceResult = Schema.Literals(["pass", "fail", "inconclusive"]);
+export type ProjectRuntimeEvidenceResult = typeof ProjectRuntimeEvidenceResult.Type;
+
+export const ProjectRuntimeVerificationEvidence = Schema.Struct({
+  evidenceId: RecordKey,
+  command: Schema.optionalKey(EvidenceCommand),
+  result: ProjectRuntimeEvidenceResult,
+  summary: EvidenceSummary,
+  recordedAt: IsoDateTime,
+  criterionIds: Schema.optionalKey(
+    Schema.Array(RecordKey).check(Schema.isMaxLength(PROJECT_RUNTIME_BOUNDS.criteriaMaxCount)),
+  ),
+});
+export type ProjectRuntimeVerificationEvidence = typeof ProjectRuntimeVerificationEvidence.Type;
+
+/**
+ * Verification is evidence-backed and separate from the task lifecycle:
+ * `milestone` names the highest rung currently supported by `evidence`, and a
+ * later write may lower it when new evidence invalidates a claim.
+ */
+export const ProjectRuntimeTaskVerification = Schema.Struct({
+  milestone: ProjectRuntimeVerificationMilestone,
+  evidence: Schema.Array(ProjectRuntimeVerificationEvidence).check(
+    Schema.isMaxLength(PROJECT_RUNTIME_BOUNDS.evidenceMaxCount),
+  ),
+});
+export type ProjectRuntimeTaskVerification = typeof ProjectRuntimeTaskVerification.Type;
+
+export const ProjectRuntimeAcceptanceCriterion = Schema.Struct({
+  id: RecordKey,
+  text: CriterionText,
+});
+export type ProjectRuntimeAcceptanceCriterion = typeof ProjectRuntimeAcceptanceCriterion.Type;
+
+/** Descriptive development context only; it never creates or binds a worktree. */
+export const ProjectRuntimeTaskBase = Schema.Struct({
+  repository: Schema.optionalKey(BaseRepository),
+  branch: Schema.optionalKey(BaseBranch),
+  revision: Schema.optionalKey(BaseRevision),
+  worktreePath: Schema.optionalKey(BaseWorktreePath),
+  upstreamRevision: Schema.optionalKey(BaseUpstreamRevision),
+  notes: Schema.optionalKey(BaseNotes),
+});
+export type ProjectRuntimeTaskBase = typeof ProjectRuntimeTaskBase.Type;
+
 export const ProjectRuntimeTask = Schema.Struct({
   taskId: ProjectRuntimeTaskId,
   projectId: ProjectId,
   title: TaskTitle,
-  status: ProjectRuntimeTaskStatus,
+  objective: Schema.optionalKey(TaskObjective),
   scope: TaskText,
-  acceptanceCriteria: TaskText,
+  outOfScope: Schema.optionalKey(TaskOutOfScope),
+  owner: ProjectRuntimeActor,
+  base: Schema.optionalKey(ProjectRuntimeTaskBase),
+  acceptanceCriteria: Schema.Array(ProjectRuntimeAcceptanceCriterion).check(
+    Schema.isMaxLength(PROJECT_RUNTIME_BOUNDS.criteriaMaxCount),
+  ),
+  verificationPlan: Schema.optionalKey(TaskVerificationPlan),
+  status: ProjectRuntimeTaskStatus,
+  blocker: Schema.NullOr(ProjectRuntimeTaskBlocker),
+  result: Schema.optionalKey(TaskResult),
+  verification: ProjectRuntimeTaskVerification,
+  latestHandoffId: Schema.NullOr(ProjectRuntimeHandoffId),
   nextAction: Schema.optionalKey(TaskNextAction),
-  // Descriptive checkpoint metadata only; they never create, move, or bind a worktree.
-  branch: Schema.optionalKey(TaskBranch),
-  worktreePath: Schema.optionalKey(TaskWorktreePath),
-  baseSha: Schema.optionalKey(TaskBaseSha),
   revision: PositiveInt,
   createdAt: IsoDateTime,
   updatedAt: IsoDateTime,
@@ -339,13 +506,20 @@ export type ProjectRuntimeTaskReadInput = typeof ProjectRuntimeTaskReadInput.Typ
 
 export const ProjectRuntimeTaskCreateInput = Schema.Struct({
   title: TaskTitle,
-  status: Schema.optionalKey(ProjectRuntimeTaskStatus),
+  objective: Schema.optionalKey(TaskObjective),
   scope: TaskText,
-  acceptanceCriteria: TaskText,
+  outOfScope: Schema.optionalKey(TaskOutOfScope),
+  owner: Schema.optionalKey(ProjectRuntimeActor),
+  base: Schema.optionalKey(ProjectRuntimeTaskBase),
+  acceptanceCriteria: Schema.Array(ProjectRuntimeAcceptanceCriterion).check(
+    Schema.isMaxLength(PROJECT_RUNTIME_BOUNDS.criteriaMaxCount),
+  ),
+  verificationPlan: Schema.optionalKey(TaskVerificationPlan),
+  status: Schema.optionalKey(ProjectRuntimeTaskStatus),
+  blocker: Schema.optionalKey(ProjectRuntimeTaskBlockerInput),
+  result: Schema.optionalKey(TaskResult),
+  verification: Schema.optionalKey(ProjectRuntimeTaskVerification),
   nextAction: Schema.optionalKey(TaskNextAction),
-  branch: Schema.optionalKey(TaskBranch),
-  worktreePath: Schema.optionalKey(TaskWorktreePath),
-  baseSha: Schema.optionalKey(TaskBaseSha),
 });
 export type ProjectRuntimeTaskCreateInput = typeof ProjectRuntimeTaskCreateInput.Type;
 
@@ -354,14 +528,24 @@ export const ProjectRuntimeTaskUpdateInput = Schema.Struct({
   taskId: ProjectRuntimeTaskId,
   expectedRevision: PositiveInt,
   title: Schema.optionalKey(TaskTitle),
-  status: Schema.optionalKey(ProjectRuntimeTaskStatus),
+  objective: Schema.optionalKey(Schema.NullOr(TaskObjective)),
   scope: Schema.optionalKey(TaskText),
-  acceptanceCriteria: Schema.optionalKey(TaskText),
+  outOfScope: Schema.optionalKey(Schema.NullOr(TaskOutOfScope)),
+  owner: Schema.optionalKey(ProjectRuntimeActor),
+  base: Schema.optionalKey(Schema.NullOr(ProjectRuntimeTaskBase)),
+  acceptanceCriteria: Schema.optionalKey(
+    Schema.Array(ProjectRuntimeAcceptanceCriterion).check(
+      Schema.isMaxLength(PROJECT_RUNTIME_BOUNDS.criteriaMaxCount),
+    ),
+  ),
+  verificationPlan: Schema.optionalKey(Schema.NullOr(TaskVerificationPlan)),
+  status: Schema.optionalKey(ProjectRuntimeTaskStatus),
+  blocker: Schema.optionalKey(Schema.NullOr(ProjectRuntimeTaskBlockerInput)),
+  result: Schema.optionalKey(Schema.NullOr(TaskResult)),
+  // Null resets to the unverified default; an omitted key leaves it unchanged.
+  verification: Schema.optionalKey(Schema.NullOr(ProjectRuntimeTaskVerification)),
   // Null clears the optional metadata; an omitted key leaves it unchanged.
   nextAction: Schema.optionalKey(Schema.NullOr(TaskNextAction)),
-  branch: Schema.optionalKey(Schema.NullOr(TaskBranch)),
-  worktreePath: Schema.optionalKey(Schema.NullOr(TaskWorktreePath)),
-  baseSha: Schema.optionalKey(Schema.NullOr(TaskBaseSha)),
 });
 export type ProjectRuntimeTaskUpdateInput = typeof ProjectRuntimeTaskUpdateInput.Type;
 
@@ -371,15 +555,26 @@ export const ProjectRuntimeHandoff = Schema.Struct({
   taskId: ProjectRuntimeTaskId,
   checkpoint: HandoffCheckpoint,
   summary: HandoffSummary,
-  changes: Schema.optionalKey(HandoffText),
-  verification: Schema.optionalKey(HandoffText),
-  failuresOrBlockers: Schema.optionalKey(HandoffText),
-  nextAction: Schema.optionalKey(HandoffText),
-  evidenceRefs: Schema.optionalKey(
-    Schema.Array(HandoffEvidence).check(
-      Schema.isMaxLength(PROJECT_RUNTIME_BOUNDS.handoffEvidenceMaxCount),
+  result: Schema.optionalKey(HandoffResult),
+  filesChanged: Schema.Array(HandoffFile).check(
+    Schema.isMaxLength(PROJECT_RUNTIME_BOUNDS.handoffFileMaxCount),
+  ),
+  testsRun: Schema.optionalKey(
+    Schema.Array(HandoffTest).check(Schema.isMaxLength(PROJECT_RUNTIME_BOUNDS.handoffTestMaxCount)),
+  ),
+  testsNotRun: Schema.optionalKey(
+    Schema.Array(HandoffTest).check(Schema.isMaxLength(PROJECT_RUNTIME_BOUNDS.handoffTestMaxCount)),
+  ),
+  failuresRisks: Schema.optionalKey(HandoffText),
+  unresolvedDecisions: Schema.optionalKey(
+    Schema.Array(HandoffDecision).check(
+      Schema.isMaxLength(PROJECT_RUNTIME_BOUNDS.handoffDecisionMaxCount),
     ),
   ),
+  repositoryState: Schema.optionalKey(HandoffState),
+  integrationState: Schema.optionalKey(HandoffState),
+  verification: ProjectRuntimeTaskVerification,
+  nextAction: Schema.optionalKey(HandoffText),
   threadId: Schema.optionalKey(ThreadId),
   providerInstanceId: Schema.optionalKey(ProviderInstanceId),
   model: Schema.optionalKey(HandoffModel),
@@ -394,15 +589,26 @@ export const ProjectRuntimeHandoffAppendInput = Schema.Struct({
   taskId: ProjectRuntimeTaskId,
   checkpoint: HandoffCheckpoint,
   summary: HandoffSummary,
-  changes: Schema.optionalKey(HandoffText),
-  verification: Schema.optionalKey(HandoffText),
-  failuresOrBlockers: Schema.optionalKey(HandoffText),
-  nextAction: Schema.optionalKey(HandoffText),
-  evidenceRefs: Schema.optionalKey(
-    Schema.Array(HandoffEvidence).check(
-      Schema.isMaxLength(PROJECT_RUNTIME_BOUNDS.handoffEvidenceMaxCount),
+  result: Schema.optionalKey(HandoffResult),
+  filesChanged: Schema.optionalKey(
+    Schema.Array(HandoffFile).check(Schema.isMaxLength(PROJECT_RUNTIME_BOUNDS.handoffFileMaxCount)),
+  ),
+  testsRun: Schema.optionalKey(
+    Schema.Array(HandoffTest).check(Schema.isMaxLength(PROJECT_RUNTIME_BOUNDS.handoffTestMaxCount)),
+  ),
+  testsNotRun: Schema.optionalKey(
+    Schema.Array(HandoffTest).check(Schema.isMaxLength(PROJECT_RUNTIME_BOUNDS.handoffTestMaxCount)),
+  ),
+  failuresRisks: Schema.optionalKey(HandoffText),
+  unresolvedDecisions: Schema.optionalKey(
+    Schema.Array(HandoffDecision).check(
+      Schema.isMaxLength(PROJECT_RUNTIME_BOUNDS.handoffDecisionMaxCount),
     ),
   ),
+  repositoryState: Schema.optionalKey(HandoffState),
+  integrationState: Schema.optionalKey(HandoffState),
+  verification: Schema.optionalKey(ProjectRuntimeTaskVerification),
+  nextAction: Schema.optionalKey(HandoffText),
 });
 export type ProjectRuntimeHandoffAppendInput = typeof ProjectRuntimeHandoffAppendInput.Type;
 
@@ -497,6 +703,28 @@ export type ProjectRuntimeContext = typeof ProjectRuntimeContext.Type;
 
 export const ProjectRuntimeEntity = Schema.Literals(["instructions", "source", "task", "handoff"]);
 export type ProjectRuntimeEntity = typeof ProjectRuntimeEntity.Type;
+
+export const ProjectRuntimeTransitionViolation = Schema.Literals([
+  "blocked_requires_blocker",
+  "blocker_requires_blocked_status",
+  "done_requires_result",
+  "milestone_requires_passing_evidence",
+  "verified_forbids_failing_evidence",
+]);
+export type ProjectRuntimeTransitionViolation = typeof ProjectRuntimeTransitionViolation.Type;
+
+export class ProjectRuntimeInvalidTransitionError extends Schema.TaggedError<ProjectRuntimeInvalidTransitionError>()(
+  "ProjectRuntimeInvalidTransitionError",
+  {
+    projectId: ProjectId,
+    taskId: ProjectRuntimeTaskId,
+    violation: ProjectRuntimeTransitionViolation,
+  },
+) {
+  override get message(): string {
+    return `Project Runtime task ${this.taskId} cannot change state: ${this.violation.replace(/_/g, " ")}.`;
+  }
+}
 
 export class ProjectRuntimeDisabledError extends Schema.TaggedError<ProjectRuntimeDisabledError>()(
   "ProjectRuntimeDisabledError",
@@ -626,6 +854,7 @@ export const ProjectRuntimeError = Schema.Union([
   ProjectRuntimeNotFoundError,
   ProjectRuntimeProjectMismatchError,
   ProjectRuntimeConflictError,
+  ProjectRuntimeInvalidTransitionError,
   ProjectRuntimeSourceDisabledError,
   ProjectRuntimeSourceMissingError,
   ProjectRuntimeSourceUnsupportedError,

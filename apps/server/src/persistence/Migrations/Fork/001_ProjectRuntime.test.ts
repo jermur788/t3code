@@ -21,6 +21,7 @@ it.effect(
         [
           { migration_id: 1, name: "ProjectRuntime" },
           { migration_id: 2, name: "DevelopmentProfiles" },
+          { migration_id: 3, name: "TaskHandoffState" },
         ],
       );
       const projects = yield* sql<{

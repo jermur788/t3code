@@ -34,10 +34,12 @@ const sourceInput = {
 const taskInput = {
   title: "Implement",
   scope: "Service core",
-  acceptanceCriteria: "Tests pass",
-  branch: "descriptive-branch",
-  worktreePath: "/uncreated/worktree",
-  baseSha: "descriptive-sha",
+  acceptanceCriteria: [{ id: "c1", text: "Tests pass" }],
+  base: {
+    branch: "descriptive-branch",
+    worktreePath: "/uncreated/worktree",
+    revision: "descriptive-sha",
+  },
 };
 const seedProjects = Effect.gen(function* () {
   const sql = yield* SqlClient.SqlClient;
@@ -104,7 +106,17 @@ it.effect("preserves all domain records and revisions across disable/re-enable",
         taskId: task.taskId,
         checkpoint: "PRT-020",
         summary: "Persisted",
-        evidenceRefs: ["test:runtime"],
+        verification: {
+          milestone: "none" as const,
+          evidence: [
+            {
+              evidenceId: "e1",
+              result: "inconclusive" as const,
+              summary: "test:runtime",
+              recordedAt: "2026-10-23T00:00:00.000Z",
+            },
+          ],
+        },
       },
       {
         ...actor,
@@ -285,17 +297,13 @@ it.effect(
           taskId: task.taskId,
           expectedRevision: 1,
           status: "done",
-          branch: null,
-          worktreePath: null,
-          baseSha: null,
+          base: null,
         },
         otherActor,
       );
       assert.equal(updated.revision, 2);
       assert.equal(updated.status, "done");
-      assert.notProperty(updated, "branch");
-      assert.notProperty(updated, "worktreePath");
-      assert.notProperty(updated, "baseSha");
+      assert.notProperty(updated, "base");
       assert.equal(updated.createdBy, actor.actor);
       assert.equal(updated.updatedBy, otherActor.actor);
       assert.deepEqual((yield* service.listHandoffs(projectA, {})).handoffs, []);
@@ -359,7 +367,23 @@ it.effect(
           taskId: task.taskId,
           checkpoint: "one",
           summary: "First",
-          evidenceRefs: ["test:one", "file:report"],
+          verification: {
+            milestone: "none" as const,
+            evidence: [
+              {
+                evidenceId: "e1",
+                result: "inconclusive" as const,
+                summary: "test:one",
+                recordedAt: "2026-10-23T00:00:00.000Z",
+              },
+              {
+                evidenceId: "e2",
+                result: "inconclusive" as const,
+                summary: "file:report",
+                recordedAt: "2026-10-23T00:00:00.000Z",
+              },
+            ],
+          },
         },
         actor,
       );
@@ -519,7 +543,15 @@ it.effect("rejects invalid and oversized contract data before changing persisten
           taskId: task.taskId,
           checkpoint: "bounds",
           summary: "Rejected",
-          evidenceRefs: Array.from({ length: 21 }, () => "evidence"),
+          verification: {
+            milestone: "none" as const,
+            evidence: Array.from({ length: 51 }, (_, index) => ({
+              evidenceId: `e${index + 1}`,
+              result: "inconclusive" as const,
+              summary: "evidence",
+              recordedAt: "2026-10-23T00:00:00.000Z",
+            })),
+          },
         },
         actor,
       ),
@@ -529,7 +561,17 @@ it.effect("rejects invalid and oversized contract data before changing persisten
           taskId: task.taskId,
           checkpoint: "bounds",
           summary: "Rejected",
-          evidenceRefs: ["x".repeat(1025)],
+          verification: {
+            milestone: "none" as const,
+            evidence: [
+              {
+                evidenceId: "e1",
+                result: "inconclusive" as const,
+                summary: "x".repeat(1_025),
+                recordedAt: "2026-10-23T00:00:00.000Z",
+              },
+            ],
+          },
         },
         actor,
       ),

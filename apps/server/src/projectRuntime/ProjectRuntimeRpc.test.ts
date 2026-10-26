@@ -151,9 +151,8 @@ it.effect(
         projectId: a,
         title: "Task",
         scope: "Scope",
-        acceptanceCriteria: "Criteria",
-        branch: "descriptive",
-        worktreePath: "/metadata-only",
+        acceptanceCriteria: [{ id: "c1", text: "Criteria" }],
+        base: { branch: "descriptive", worktreePath: "/metadata-only" },
       });
       const updated = yield* client[M.updateTask]({
         projectId: a,
@@ -182,7 +181,7 @@ it.effect(
           taskId: task.taskId,
           checkpoint: "Checkpoint",
           summary: "Saved",
-          verification: "Checked",
+          verification: { milestone: "implemented", evidence: [] },
         },
         { actor: "user:maintainer" },
       );
@@ -207,9 +206,9 @@ it.effect(
         },
         before,
       );
-      assert.equal(
+      assert.deepEqual(
         (yield* client[M.readHandoff]({ projectId: a, handoffId: handoff.handoffId })).verification,
-        "Checked",
+        { milestone: "implemented", evidence: [] },
       );
       assert.isEmpty((yield* client[M.listTasks]({ projectId: b })).tasks);
       assert.isEmpty((yield* client[M.listSources]({ projectId: b })).sources);
@@ -265,7 +264,7 @@ it.effect(
           projectId: a,
           title: "Denied",
           scope: "",
-          acceptanceCriteria: "",
+          acceptanceCriteria: [],
         }),
         readonly[M.updateTask]({
           projectId: a,

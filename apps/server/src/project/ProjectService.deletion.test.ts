@@ -544,7 +544,7 @@ const seedRuntime = Effect.fn("ProjectDeletionTest.seedRuntime")(function* (proj
   );
   const task = yield* runtime.createTask(
     projectId,
-    { title: "Task", scope: "Runtime", acceptanceCriteria: "Persistence" },
+    { title: "Task", scope: "Runtime", acceptanceCriteria: [{ id: "c1", text: "Persistence" }] },
     context,
   );
   const handoff = yield* runtime.appendHandoff(

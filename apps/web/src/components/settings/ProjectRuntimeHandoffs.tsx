@@ -70,9 +70,14 @@ function HandoffPage({
                   </p>
                   {(
                     [
-                      ["Changes", handoff.changes],
-                      ["Verification", handoff.verification],
-                      ["Failures / blockers", handoff.failuresOrBlockers],
+                      ["Files changed", handoff.filesChanged.join("\n")],
+                      [
+                        "Verification",
+                        handoff.verification.milestone === "none"
+                          ? ""
+                          : handoff.verification.milestone,
+                      ],
+                      ["Failures / blockers", handoff.failuresRisks],
                       ["Next action", handoff.nextAction],
                       ["Thread", handoff.threadId],
                       ["Provider", handoff.providerInstanceId],
@@ -88,13 +93,13 @@ function HandoffPage({
                       </div>
                     ) : null,
                   )}
-                  {handoff.evidenceRefs?.length ? (
+                  {handoff.verification.evidence.length ? (
                     <div>
-                      <h5 className="text-xs font-medium">Evidence references</h5>
+                      <h5 className="text-xs font-medium">Evidence</h5>
                       <ul className="list-inside list-disc text-sm text-muted-foreground">
-                        {[...new Set(handoff.evidenceRefs)].map((reference) => (
-                          <li key={reference} className="break-all">
-                            {reference}
+                        {handoff.verification.evidence.map((entry) => (
+                          <li key={entry.evidenceId} className="break-all">
+                            {entry.summary}
                           </li>
                         ))}
                       </ul>

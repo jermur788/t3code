@@ -143,33 +143,46 @@ function TaskEditor({
   const [title, setTitle] = useState(saved?.title ?? "");
   const [status, setStatus] = useState<ProjectRuntimeTaskStatus>(saved?.status ?? "planned");
   const [scope, setScope] = useState(saved?.scope ?? "");
-  const [criteria, setCriteria] = useState(saved?.acceptanceCriteria ?? "");
+  const [criteria, setCriteria] = useState(
+    saved?.acceptanceCriteria.map((c) => c.text).join("\n") ?? "",
+  );
   const [next, setNext] = useState(saved?.nextAction ?? "");
-  const [branch, setBranch] = useState(saved?.branch ?? "");
-  const [worktree, setWorktree] = useState(saved?.worktreePath ?? "");
-  const [sha, setSha] = useState(saved?.baseSha ?? "");
+  const [branch, setBranch] = useState(saved?.base?.branch ?? "");
+  const [worktree, setWorktree] = useState(saved?.base?.worktreePath ?? "");
+  const [sha, setSha] = useState(saved?.base?.revision ?? "");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [conflict, setConflict] = useState(false);
   const save = async () => {
     setBusy(true);
-    const fields = { title, status, scope, acceptanceCriteria: criteria };
+    const fields = {
+      title,
+      status,
+      scope,
+      // The textarea keeps one criterion for now; T4 owns per-criterion editing.
+      acceptanceCriteria: criteria.trim()
+        ? [{ id: saved?.acceptanceCriteria[0]?.id ?? "c1", text: criteria }]
+        : [],
+    };
+    const base = { ...saved?.base };
+    if (branch.trim()) base.branch = branch.trim();
+    else delete base.branch;
+    if (worktree.trim()) base.worktreePath = worktree.trim();
+    else delete base.worktreePath;
+    if (sha.trim()) base.revision = sha.trim();
+    else delete base.revision;
     const result = saved
       ? await api.updateTask({
           ...fields,
           taskId: saved.taskId,
           expectedRevision: saved.revision,
           nextAction: next.trim() || null,
-          branch: branch.trim() || null,
-          worktreePath: worktree.trim() || null,
-          baseSha: sha.trim() || null,
+          base: Object.keys(base).length > 0 ? base : null,
         })
       : await api.createTask({
           ...fields,
           ...(next.trim() ? { nextAction: next } : {}),
-          ...(branch.trim() ? { branch } : {}),
-          ...(worktree.trim() ? { worktreePath: worktree } : {}),
-          ...(sha.trim() ? { baseSha: sha } : {}),
+          ...(Object.keys(base).length > 0 ? { base } : {}),
         });
     setBusy(false);
     if (result.ok) savedTask();
@@ -230,19 +243,19 @@ function TaskEditor({
               label="Descriptive branch"
               value={branch}
               onChange={setBranch}
-              maxLength={B.taskBranchMaxLength}
+              maxLength={B.baseBranchMaxLength}
             />
             <RuntimeText
               label="Descriptive worktree path"
               value={worktree}
               onChange={setWorktree}
-              maxLength={B.taskWorktreePathMaxLength}
+              maxLength={B.baseWorktreePathMaxLength}
             />
             <RuntimeText
               label="Descriptive base SHA"
               value={sha}
               onChange={setSha}
-              maxLength={B.taskBaseShaMaxLength}
+              maxLength={B.baseRevisionMaxLength}
             />
           </div>
         </details>

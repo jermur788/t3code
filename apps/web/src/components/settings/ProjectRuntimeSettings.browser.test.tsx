@@ -73,14 +73,18 @@ function setup({ enabled = true, canEdit = true }: { enabled?: boolean; canEdit?
     projectId: a.id,
     title: "Review work",
     scope: "Scope",
-    acceptanceCriteria: "Criteria",
+    acceptanceCriteria: [{ id: "c1", text: "Criteria" }],
+    owner: "user:maintainer",
     status: "active",
+    blocker: null,
+    verification: { milestone: "none", evidence: [] },
+    latestHandoffId: null,
     revision: 1,
     createdAt: time,
     updatedAt: time,
     createdBy: "user:maintainer",
     updatedBy: "user:maintainer",
-    worktreePath: "/metadata-only",
+    base: { worktreePath: "/metadata-only" },
   };
   const conflict = () => ({
     ok: false as const,
@@ -145,9 +149,7 @@ function setup({ enabled = true, canEdit = true }: { enabled?: boolean; canEdit?
         ...task,
         ...input,
         nextAction: input.nextAction ?? undefined,
-        branch: input.branch ?? undefined,
-        worktreePath: input.worktreePath ?? undefined,
-        baseSha: input.baseSha ?? undefined,
+        base: input.base ?? undefined,
         revision: 2,
       };
       project.tasks = [updated];
@@ -394,13 +396,29 @@ it("creates tasks, saves a status change with its revision, and exposes immutabl
       taskId: t.task.taskId,
       checkpoint: "PRT fixture",
       summary: "Work continued",
+      filesChanged: [],
+      verification: {
+        milestone: "static-pass",
+        evidence: [
+          {
+            evidenceId: "e1",
+            result: "pass",
+            summary: "Focused tests passed",
+            recordedAt: time,
+          },
+          {
+            evidenceId: "e2",
+            result: "inconclusive",
+            summary: "notes.md:2",
+            recordedAt: time,
+          },
+        ],
+      },
       taskRevision: 1,
       runtimeRevision: 1,
       createdAt: time,
       createdBy: "thread:previous",
-      verification: "Focused tests passed",
-      failuresOrBlockers: "None",
-      evidenceRefs: ["notes.md:2"],
+      failuresRisks: "None",
     },
   ];
   await using screen = await render(<ProjectRuntimeSettings members={[a]} />);

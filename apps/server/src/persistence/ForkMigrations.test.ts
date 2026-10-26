@@ -80,14 +80,14 @@ const seedLegacyForkHome = Effect.gen(function* () {
       (task_id, project_id, status, revision, created_at, payload_json)
     VALUES
       ('legacy-task', 'legacy-project', 'active', 5, '2026-10-24T00:20:00.000Z',
-       '{"taskId":"legacy-task","projectId":"legacy-project","title":"Ship migration","status":"active","scope":"Preserve data","acceptanceCriteria":"Rows survive","nextAction":"Run tests","revision":5,"createdAt":"2026-10-24T00:20:00.000Z","updatedAt":"2026-10-24T00:20:00.000Z","createdBy":"user:maintainer","updatedBy":"user:maintainer"}')
+       '{"taskId":"legacy-task","projectId":"legacy-project","title":"Ship migration","scope":"Preserve data","owner":"user:maintainer","acceptanceCriteria":[{"id":"c1","text":"Rows survive"}],"status":"active","blocker":null,"verification":{"milestone":"none","evidence":[]},"latestHandoffId":"legacy-handoff","nextAction":"Run tests","revision":5,"createdAt":"2026-10-24T00:20:00.000Z","updatedAt":"2026-10-24T00:20:00.000Z","createdBy":"user:maintainer","updatedBy":"user:maintainer"}')
   `;
   yield* sql`
     INSERT INTO project_runtime_handoffs
       (handoff_id, project_id, task_id, created_at, payload_json)
     VALUES
       ('legacy-handoff', 'legacy-project', 'legacy-task', '2026-10-24T00:40:00.000Z',
-       '{"handoffId":"legacy-handoff","projectId":"legacy-project","taskId":"legacy-task","checkpoint":"before-upgrade","summary":"Wrote the migration","runtimeRevision":9,"taskRevision":5,"createdAt":"2026-10-24T00:40:00.000Z","createdBy":"user:maintainer"}')
+       '{"handoffId":"legacy-handoff","projectId":"legacy-project","taskId":"legacy-task","checkpoint":"before-upgrade","summary":"Wrote the migration","filesChanged":[],"verification":{"milestone":"none","evidence":[]},"runtimeRevision":9,"taskRevision":5,"createdAt":"2026-10-24T00:40:00.000Z","createdBy":"user:maintainer"}')
   `;
 });
 
@@ -189,17 +189,33 @@ describe("fork migration namespace", () => {
         ],
       );
       assert.deepStrictEqual(
-        yield* sql`SELECT migration_id, name, created_at FROM ${sql(FORK_MIGRATION_TABLE)}
+        yield* sql`SELECT migration_id, name FROM ${sql(FORK_MIGRATION_TABLE)}
           ORDER BY migration_id`,
         [
           {
             migration_id: 1,
             name: "ProjectRuntime",
-            created_at: "2026-10-23 10:00:00",
           },
           {
             migration_id: 2,
             name: "DevelopmentProfiles",
+          },
+          {
+            migration_id: 3,
+            name: "TaskHandoffState",
+          },
+        ],
+      );
+      assert.deepStrictEqual(
+        yield* sql`SELECT migration_id, created_at FROM ${sql(FORK_MIGRATION_TABLE)}
+          WHERE migration_id <= 2 ORDER BY migration_id`,
+        [
+          {
+            migration_id: 1,
+            created_at: "2026-10-23 10:00:00",
+          },
+          {
+            migration_id: 2,
             created_at: "2026-10-24 11:00:00",
           },
         ],

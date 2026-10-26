@@ -230,7 +230,12 @@ const setup = Effect.gen(function* () {
   const task = (projectId: ProjectId, title: string, status?: ProjectRuntimeTask["status"]) =>
     runtime.createTask(
       projectId,
-      { title, scope: "Scope", acceptanceCriteria: "Criteria", ...(status ? { status } : {}) },
+      {
+        title,
+        scope: "Scope",
+        acceptanceCriteria: [{ id: "c1", text: "Criteria" }],
+        ...(status ? { status } : {}),
+      },
       maintainer,
     );
   return { fileSystem, sql, runtime, roots, write, register, task };
@@ -447,7 +452,7 @@ it.effect("budgets the dynamic context by UTF-8 bytes, not characters", () =>
                 title: `wide ${index}`,
                 status: "active",
                 scope: "Scope",
-                acceptanceCriteria: "Criteria",
+                acceptanceCriteria: [{ id: "c1", text: "Criteria" }],
                 nextAction: "日".repeat(2_000),
               },
               maintainer,
@@ -476,7 +481,12 @@ it.effect("budgets the dynamic context by UTF-8 bytes, not characters", () =>
         Effect.andThen(
           t.runtime.createTask(
             projectB,
-            { title: `big ${index}`, status: "active", scope: "S", acceptanceCriteria: "C" },
+            {
+              title: `big ${index}`,
+              status: "active",
+              scope: "S",
+              acceptanceCriteria: [{ id: "c1", text: "C" }],
+            },
             maintainer,
           ),
         ),
@@ -629,10 +639,12 @@ it.effect("creates, reads, lists and updates tasks with server-derived provenanc
       yield* invoke(scope, "t3_project_task_create", {
         title: "Ship tools",
         scope: "MCP",
-        acceptanceCriteria: "Tests",
-        branch: "descriptive-branch",
-        worktreePath: "/never/created",
-        baseSha: "abc123",
+        acceptanceCriteria: [{ id: "c1", text: "Tests" }],
+        base: {
+          branch: "descriptive-branch",
+          worktreePath: "/never/created",
+          revision: "abc123",
+        },
         // None of these are parameters; they must not become provenance.
         createdBy: "user:spoofed",
         updatedBy: "user:spoofed",
@@ -643,8 +655,8 @@ it.effect("creates, reads, lists and updates tasks with server-derived provenanc
     assert.equal(created.updatedBy, `thread:${threadA}`);
     assert.equal(created.status, "planned");
     assert.equal(created.revision, 1);
-    assert.equal(created.branch, "descriptive-branch");
-    assert.equal(created.worktreePath, "/never/created");
+    assert.equal(created.base?.branch, "descriptive-branch");
+    assert.equal(created.base?.worktreePath, "/never/created");
 
     const read = succeeded(
       ProjectRuntimeTask,
@@ -659,15 +671,14 @@ it.effect("creates, reads, lists and updates tasks with server-derived provenanc
         expectedRevision: 1,
         status: "active",
         nextAction: "Write tests",
-        worktreePath: null,
-        branch: "other-branch",
+        base: { branch: "other-branch", revision: "abc123" },
       }),
     );
     assert.equal(updated.revision, 2);
     assert.equal(updated.status, "active");
-    assert.equal(updated.branch, "other-branch");
-    assert.isUndefined(updated.worktreePath);
-    assert.equal(updated.baseSha, "abc123");
+    assert.equal(updated.base?.branch, "other-branch");
+    assert.isUndefined(updated.base?.worktreePath);
+    assert.equal(updated.base?.revision, "abc123");
 
     const active = succeeded(
       ProjectRuntimeTaskListResult,
@@ -742,7 +753,7 @@ it.effect("appends immutable handoffs with provenance derived from the invocatio
         taskId: task.taskId,
         checkpoint: "PRT-040",
         summary: "Done",
-        evidenceRefs: ["commit abc"],
+        filesChanged: ["commit abc"],
         // Provenance is never accepted from the caller.
         threadId: "thread-spoofed",
         providerInstanceId: "claudeAgent",
@@ -757,7 +768,7 @@ it.effect("appends immutable handoffs with provenance derived from the invocatio
     assert.equal(appended.model, "gpt-5");
     assert.equal(appended.createdBy, `thread:${threadA}`);
     assert.equal(appended.taskRevision, task.revision);
-    assert.deepEqual(appended.evidenceRefs, ["commit abc"]);
+    assert.deepEqual(appended.filesChanged, ["commit abc"]);
 
     // A client with no thread carries no thread, provider or model, and a stable session actor.
     yield* TestClock.adjust(1000);
@@ -864,7 +875,10 @@ it.effect("keeps a thread's agent inside its own project", () =>
       ["t3_project_task_read", { taskId: foreignTask.taskId }],
       ["t3_project_handoff_list", {}],
       ["t3_project_handoff_read", { handoffId: foreignHandoff.handoffId }],
-      ["t3_project_task_create", { title: "x", scope: "s", acceptanceCriteria: "c" }],
+      [
+        "t3_project_task_create",
+        { title: "x", scope: "s", acceptanceCriteria: [{ id: "c1", text: "c" }] },
+      ],
       ["t3_project_task_update", { taskId: foreignTask.taskId, expectedRevision: 1 }],
       ["t3_project_handoff_append", { taskId: foreignTask.taskId, checkpoint: "c", summary: "s" }],
     ] as const) {
@@ -976,7 +990,7 @@ it.effect("makes a client outside a thread name the project and keeps its access
 
     // Writes keep the environment-write rules: read-only clients, supervised threads, and
     // credentials without orchestration are refused, while reads stay available to the first two.
-    const create = { title: "x", scope: "s", acceptanceCriteria: "c" };
+    const create = { title: "x", scope: "s", acceptanceCriteria: [{ id: "c1", text: "c" }] };
     assert.equal(
       failedWith(
         yield* invoke(clientScope("read-only"), "t3_project_task_create", {
