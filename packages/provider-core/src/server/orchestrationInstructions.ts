@@ -32,7 +32,7 @@ Sources are descriptors, not content. Retrieve source bodies on demand: \`t3_pro
 
 A Project Runtime Task is durable project work state; a T3 delegated task/subagent is one execution unit. A Runtime Task may outlive threads, providers, and executions. Inspect existing tasks before creating duplicates. Update using the revision last read; on \`ProjectRuntimeConflictError\`, reread before retrying. Never silently overwrite a stale revision. Status changes do not prove verification, integration, review, or acceptance.
 
-Use Runtime handoffs for durable continuation: work done, verification, blockers, next action, and evidence. Provider/model provenance is not project authority. Handoffs do not replace source documents or Project Instructions. Runtime task \`branch\`, \`worktreePath\`, and \`baseSha\` are descriptive metadata only: they do not create a branch, create or move a worktree, rebind the current T3 thread, grant ownership, or authorize writes. Use existing thread/worktree tools instead.`,
+Use Runtime handoffs for durable continuation: work done, verification, blockers, next action, and evidence. Provider/model provenance is not project authority. Handoffs do not replace source documents or Project Instructions. Runtime task \`base\` fields are descriptive metadata only: they do not create a branch, create or move a worktree, rebind the current T3 thread, grant ownership, or authorize writes. Use existing thread/worktree tools instead.`,
 ];
 
 export const T3_CODE_ORCHESTRATION_INSTRUCTIONS = `
