@@ -14,9 +14,12 @@ import {
   isSettingsSearchScopeAvailable,
   movedSettingsPath,
   searchSettings,
+  SETTINGS_NAV_GROUPS,
   SETTINGS_SEARCH_ITEMS,
+  SETTINGS_SECTION_LABELS,
   sourceControlHostSearchItems,
   sourceControlHostSettingsSearchId,
+  type SettingsPath,
   type SettingsSearchItem,
 } from "./settingsSearch";
 
@@ -147,6 +150,16 @@ describe("searchSettings", () => {
   it("keeps catalog result ids unique", () => {
     const ids = SETTINGS_SEARCH_ITEMS.map((item) => item.id);
     expect(new Set(ids).size).toBe(ids.length);
+  });
+});
+
+describe("SETTINGS_NAV_GROUPS", () => {
+  it("lists every settings page once, except the diagnostics detail page", () => {
+    const listed = SETTINGS_NAV_GROUPS.flatMap((group) => group.paths);
+    const pages = (Object.keys(SETTINGS_SECTION_LABELS) as SettingsPath[]).filter(
+      (path) => path !== "/settings/diagnostics",
+    );
+    expect(listed.toSorted()).toEqual(pages.toSorted());
   });
 });
 
