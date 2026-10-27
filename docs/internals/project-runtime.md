@@ -25,7 +25,7 @@ provider, or worktree.
 | [Provider bootstrap](../../packages/provider-core/src/server/orchestrationInstructions.ts) | The shared, provider-neutral `Project Runtime` instruction section.                                                                                         |
 | [Turn context](../../packages/provider-core/src/server/turnContext.ts)                     | Authority, ordering, bounds, and chunking for turn-scoped context that never enters provider session identity.                                              |
 | [Transport and UI](../../apps/server/src/projectRuntime/ProjectRuntimeRpc.ts)              | WebSocket handlers; the web client lives under [settings](../../apps/web/src/components/settings/ProjectRuntimeSettings.tsx).                               |
-| [Fork migrations](../../apps/server/src/persistence/ForkMigrations.ts)                     | The isolated fork ledger, historical reconciliation, and the two Runtime/Profile migrations.                                                                |
+| [Fork migrations](../../apps/server/src/persistence/ForkMigrations.ts)                     | The isolated fork ledger, historical reconciliation, and the three Runtime, Profile, and Task/Handoff migrations.                                           |
 
 ## Persistence and deletion
 
@@ -61,6 +61,55 @@ it serializes Runtime reads against command and event writes. That is a known
 contention and convention gap, not a measured performance result. A later change
 should use the shared read-only connection where possible, while preserving writer
 visibility for reads made inside write transactions; it is deferred post-V1.
+
+## Task and handoff state
+
+Task and handoff payloads use the v1 shape. Fork migration `3_TaskHandoffState`, the
+third fork migration, rewrites pre-v1 rows in place, preserving revisions and
+timestamps. It is shape-aware, so rerunning it leaves v1 rows byte for
+byte unchanged. Legacy data is never upgraded into stronger claims than it made: a
+flat `baseSha` becomes `base.revision`, free-text acceptance criteria become numbered
+criteria, a missing owner takes the task's `createdBy`, and prose verification becomes
+`inconclusive` evidence at milestone `none`, never `pass`. `latestHandoffId` is
+backfilled in the service's handoff order (`created_at`, `handoff_id`).
+
+A task carries a lifecycle `status` (`planned`, `ready`, `active`, `blocked`,
+`review`, `done`, `deferred`, `cancelled`), an `owner` (the acting actor on create
+when omitted), acceptance criteria with stable ids, an optional `result` and
+`nextAction`, a `blocker`, a `verification` record, and `latestHandoffId`. The nested
+`base` (repository, branch, revision, worktree path, upstream revision, notes)
+describes where the work started; like the rest of the task it is data, not a
+binding. The service enforces these invariants on every write:
+
+- `blocked` requires a `blocker`, and a `blocker` requires `blocked`.
+- `done` requires a non-empty `result`.
+- Any passing milestone (`static-pass`, `runtime-pass`, `review-pass`, `integrated`,
+  `verified`) needs at least one `pass` evidence entry, and `verified` forbids `fail`
+  entries. `inconclusive` evidence supports no milestone.
+
+Violations return `ProjectRuntimeInvalidTransitionError` with the violated rule. On
+update, an omitted key leaves a field unchanged and `null` clears an optional field;
+`blocker: null` clears the blocker and `verification: null` resets it to `none`.
+Verification is separate from lifecycle: moving a task to `done` or `review` neither
+raises the milestone nor counts as acceptance, and a later write may lower a
+milestone. The rules apply to the task a write would produce, so a migrated task
+that is invalid under them (a legacy `blocked` task has no blocker) stays readable,
+appears in context without a blocker summary, and is repaired by its first valid
+write: supply a blocker or change the status, in an update or in an append's
+`taskState`.
+
+`handoff_append` is compare-and-set on `expectedTaskRevision`, with an optional
+`taskState` (status, result, blocker, verification) applied in the same transaction:
+the handoff row, the task update, and `latestHandoffId` commit together or not at
+all. A stale revision appends nothing and changes nothing, and an invalid
+`taskState` rejects the whole append. The handoff snapshots the Runtime and task
+revisions it was written against, and the server records the thread, provider
+instance, model, and actor from the invocation.
+
+A handoff is context, not proof. Its `verification` and `repositoryState` are the
+author's claims at that point; they do not raise the task's milestone by
+themselves and do not replace checking the repository. A continuing agent
+reconciles the handoff against Git and tests before relying on it.
 
 ## Authority and trust
 
@@ -119,11 +168,18 @@ Development Profile resolver supplies the profile and enabled Runtime instructio
 layers; it reads their persisted records without depending on Runtime service
 construction. Context includes assigned profile metadata and effective instructions
 alongside status, the full project instructions, descriptors for enabled sources, and summaries of active,
-blocked, and review tasks with each task's latest handoff reference. Project instructions and canonical effective instructions keep their own bounds
+blocked, and review tasks (in that order). A task summary is a projection of the task
+record: status, verification milestone, a blocker summary clipped to 200 characters,
+the next action, and a reference to the handoff named by `latestHandoffId`, which is
+the only authority for which handoff is latest. Project instructions and canonical
+effective instructions keep their own bounds
 outside the variable byte budget and are never truncated by packing; descriptors and
-task summaries are packed greedily within the count and byte caps, and a
-one-past-the-cap read tells the packer to report truncation. It never includes source
-bodies or chat history. A disabled Runtime returns `enabled: false` with empty
+task summaries are packed greedily within 50 sources, 50 tasks, and a 65,536-byte
+serialized budget, and a one-past-the-cap read tells the packer to report truncation.
+A task whose handoff reference does not fit keeps its milestone and blocker summary
+and sets `truncated.handoffs`. Context is built only from persisted Runtime and
+Profile records. It never includes source bodies, verification evidence, a handoff
+beyond that reference, or any thread's messages. A disabled Runtime returns `enabled: false` with empty
 Runtime collections and no project instructions. An assigned Development Profile
 still applies and remains in context; disabling Runtime must not become a way to
 disable inherited policy. The other Runtime data operations return the disabled
@@ -173,9 +229,9 @@ path so Runtime cleanup stays atomic with the event sink.
 ## Boundaries and deferred work
 
 Runtime does not own Git branches, worktree creation or binding, orchestration,
-delegated execution, or portable T3 thread handoffs. Task `branch`, `worktreePath`,
-and `baseSha` are descriptive JSON only; the UI labels them as notes. Runtime has no
-VCS imports and never rebinds a thread.
+delegated execution, or portable T3 thread handoffs. Task `base` fields are
+descriptive JSON only; the UI labels them as notes. Runtime has no VCS imports and
+never rebinds a thread.
 
 Native mobile Runtime settings and dedicated Runtime CLI commands do not exist. Web
 and desktop share the settings UI; mobile and the CLI are not V1 Runtime surfaces.

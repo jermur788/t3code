@@ -1,17 +1,18 @@
 # Project Runtime release and verification
 
 Maintainer runbook for Project Runtime and Development Profiles. The pinned V1
-evidence below is historical. The current tree is the pre-publish integration
-candidate, rebased onto upstream and qualified by the pre-publish hardening gates.
+evidence below is historical. The current tree is the Task/Handoff State V1
+integration, rebased onto upstream after the pre-publish hardening gates.
 
 ## Baseline
 
-- Integration branch: `integration/pre-publish-hardening`
+- Integration branch: `t6/task-handoff-v1-finalize`
 - Original fork checkpoint: `60685b713f1432fd00ef9a72b617e21bb2ffdfba`
 - Fork implementation baseline: `9bdcaa6399127908640c2cb53a344584c99743f6` (seven
   commits from `bfbd607a0b` through `9bdcaa6399`)
-- Current upstream base: `5b35402623d7d1d88eaa472807272a6c2e78012a` (2026-10-25)
-- Previous upstream base: `f9c1d023f1dad68360e19a8db89c9c485e2da410`
+- Current upstream base: `e9236274a3a6e0c731a7df4092db1e686f039068` (2026-10-27)
+- Previous upstream bases: `560ddb14d9` (Task/Handoff V1 development),
+  `5b35402623` (2026-10-25 hardening), `f9c1d023f1`
 
 The current tree is a rebase onto upstream, not a pinned fork candidate. Do not
 describe it as upstream T3 Code: it still carries fork-owned Runtime, Profiles, and
@@ -81,25 +82,28 @@ records rather than a replacement for them.
 
 Fork-owned schema has its own ledger, `t3_fork_migrations`, and its own registry in
 `apps/server/src/persistence/ForkMigrations.ts`. Upstream's `effect_sql_migrations`
-stays upstream-pure. The fork migrations are `1_ProjectRuntime` and
-`2_DevelopmentProfiles` under `Migrations/Fork/`. They add objects and may reference
-upstream tables; they never alter or drop upstream objects.
+stays upstream-pure. The fork migrations are `1_ProjectRuntime`,
+`2_DevelopmentProfiles`, and `3_TaskHandoffState` under `Migrations/Fork/`. The
+first two add objects and may reference upstream tables; none alters or drops upstream
+objects. The third keeps the same tables and rewrites Runtime task and handoff
+payloads to the v1 shape (see [Project Runtime](../internals/project-runtime.md)).
 
 On a full boot, the server reconciles only the exact historical fork ledger at
 `(68, ProjectRuntime)` and `(69, DevelopmentProfiles)`. It validates the existing
 objects against the shipped definitions, moves the recorded timestamps into the fork
 ledger, writes an audit row to `t3_fork_migration_reconciliations`, and removes only
-those two upstream rows. Then upstream's real 68/69 run, and the fork ledger is
-verified. A malformed, partial, or ambiguous history fails closed without writing.
+those two upstream rows. Then upstream's real 68/69 run, `3_TaskHandoffState` runs
+as an ordinary fork migration, and the fork ledger is verified. A malformed, partial,
+or ambiguous history fails closed without writing.
 
 Supported transitions:
 
-| Origin               | Result                                                                        |
-| -------------------- | ----------------------------------------------------------------------------- |
-| Fresh home           | Full upstream schema, then fork Runtime and Profiles                          |
-| Upstream-origin home | Adds fork schema; upstream history is unchanged                               |
-| Old fork home        | Preserves Runtime/Profile rows, applies upstream 68/69, moves ledger identity |
-| Integrated fork home | No-op, then normal future migrations                                          |
+| Origin               | Result                                                                                                             |
+| -------------------- | ------------------------------------------------------------------------------------------------------------------ |
+| Fresh home           | Full upstream schema, then fork Runtime, Profiles, and Task/Handoff state                                          |
+| Upstream-origin home | Adds fork schema; upstream history is unchanged                                                                    |
+| Old fork home        | Preserves Runtime/Profile rows, applies upstream 68/69, moves ledger identity, then upgrades Task/Handoff payloads |
+| Integrated fork home | No-op, then normal future migrations                                                                               |
 
 `migrate-dev-db` uses the same path and verifies both ledgers, including audit rows.
 Do not run an upstream build against an adopted home as part of a round trip; that
@@ -118,6 +122,15 @@ case. Take an offline backup before upgrading any home.
 - Central registries are likely to churn again: `server.ts`, `ws.ts`,
   `RpcAuthorization.ts`, `RpcInstrumentation.ts`, `packages/contracts/src/rpc.ts`,
   and the Claude read-only allowlist.
+- The upstream agent-context budget (`apps/server/src/provider/agentContextBudget.json`,
+  enforced by `AgentContextBudget.test.ts` and CI) measures the Runtime tools and
+  instructions, so any change to their text moves it. Upstream CI rejects a PR that
+  raises it without the `agent-context-increase` label. The test builds the Project
+  toolkit with mocked services, so a new Runtime service dependency needs a mock there.
+- Settings navigation (`settingsSearch.ts`, `SettingsSidebarNav.tsx`) and the shared MCP
+  tool presentation table (`t3McpToolPresentation.ts`) take one fork entry each and
+  conflict whenever upstream edits the neighboring lines. `routeTree.gen.ts` is
+  generated: take upstream's and regenerate rather than merging by hand.
 - The workspace range read and the shared search truncation flag are shared changes,
   not Runtime-private ones. Re-run the workspace tests after any rebase.
 - A textual `git merge-tree` result is not a compiled or tested integration.
@@ -155,7 +168,8 @@ case. Take an offline backup before upgrading any home.
 ## Pre-publish hardening evidence
 
 The integrated branch was rebased onto upstream `5b35402623` and qualified on
-2026-10-25.
+2026-10-25. That evidence predates fork migration `3_TaskHandoffState`, which runs
+after the two migrations listed in its migration rows.
 
 | Check                               | Result                                                                                                                          |
 | ----------------------------------- | ------------------------------------------------------------------------------------------------------------------------------- |

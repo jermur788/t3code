@@ -141,7 +141,9 @@ deleted. Each also records the task and Runtime revisions it was written against
 
 When an agent appends a handoff, T3 Code records the author, thread, provider, and
 model from the invocation. That provenance shows who produced the note; it is not
-project authority and does not make the note correct.
+project authority and does not make the note correct. A handoff is context for the
+next worker, not proof: its test results and repository state are claims to check, and
+it does not change the task's verification unless the same save records evidence for it.
 
 ## Agents and providers
 
