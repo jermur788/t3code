@@ -1,9 +1,12 @@
 name: Setup APT mirrors
-description: Configure Ubuntu package downloads with automatic mirror failover.
+description: Configure Blacksmith runner APT mirror failover.
 runs:
   using: composite
   steps:
+    # Blacksmith-runner optimization. GitHub-hosted runners keep their standard
+    # Ubuntu sources instead of rewriting them to this mirror list.
     - shell: bash
+      if: runner.environment == 'self-hosted'
       run: |
         # Replace the existing Blacksmith mirror list as well as direct sources.
         printf '%s\tpriority:%s\n' \
