@@ -665,7 +665,7 @@ it("renders a legacy blocked task without a blocker and lets the user repair it"
   );
 });
 
-it("maps acceptance criteria lines to stable positional ids", async () => {
+it("keeps acceptance criteria ids stable while editing", async () => {
   const t = setup();
   t.project.tasks = [
     {
@@ -691,6 +691,68 @@ it("maps acceptance criteria lines to stable positional ids", async () => {
       ],
     }),
   );
+});
+
+it("drops evidence links to removed criteria when criteria change", async () => {
+  const t = setup();
+  t.project.tasks = [
+    {
+      ...t.task,
+      acceptanceCriteria: [
+        { id: "c1", text: "First criterion" },
+        { id: "c2", text: "Second criterion" },
+      ],
+      verification: {
+        milestone: "runtime-pass",
+        evidence: [
+          {
+            evidenceId: "e1",
+            result: "pass",
+            summary: "Focused tests passed",
+            recordedAt: time,
+            criterionIds: ["c1", "c2"],
+          },
+        ],
+      },
+    },
+  ];
+  await using screen = await render(<ProjectRuntimeSettings members={[a]} />);
+  await userEvent.click(screen.getByRole("button", { name: "Edit task", exact: true }));
+  const criteria = screen.getByRole("textbox", { name: "Acceptance criteria", exact: true });
+  await userEvent.clear(criteria);
+  await userEvent.type(criteria, "Second criterion");
+  await userEvent.click(screen.getByRole("button", { name: "Save task", exact: true }));
+  expect(t.api.updateTask).toHaveBeenLastCalledWith(
+    expect.objectContaining({
+      acceptanceCriteria: [{ id: "c2", text: "Second criterion" }],
+      verification: expect.objectContaining({
+        evidence: [expect.objectContaining({ evidenceId: "e1", criterionIds: ["c2"] })],
+      }),
+    }),
+  );
+});
+
+it("does not resend criteria when another field changes", async () => {
+  const t = setup();
+  t.project.tasks = [
+    {
+      ...t.task,
+      acceptanceCriteria: [
+        { id: "c1", text: "Line A\nLine B" },
+        { id: "c2", text: "Second criterion" },
+      ],
+    },
+  ];
+  await using screen = await render(<ProjectRuntimeSettings members={[a]} />);
+  await userEvent.click(screen.getByRole("button", { name: "Edit task", exact: true }));
+  const title = screen.getByRole("textbox", { name: "Task title", exact: true });
+  await userEvent.clear(title);
+  await userEvent.type(title, "Updated title");
+  await userEvent.click(screen.getByRole("button", { name: "Save task", exact: true }));
+  const call = vi.mocked(t.api.updateTask).mock.calls.at(-1)?.[0];
+  expect(call).toBeDefined();
+  expect(call).not.toHaveProperty("acceptanceCriteria");
+  expect(call).toMatchObject({ title: "Updated title" });
 });
 
 it("edits recorded base metadata without implying live Git control", async () => {

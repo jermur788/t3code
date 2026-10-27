@@ -237,9 +237,10 @@ function TaskEditor({
     saved?.verification.milestone ?? "none",
   );
   const [evidence, setEvidence] = useState<TaskEvidenceDraft[]>(() => evidenceDrafts(saved));
-  const [criteria, setCriteria] = useState(
-    saved?.acceptanceCriteria.map((criterion) => criterion.text).join("\n") ?? "",
-  );
+  const initialCriteria =
+    saved?.acceptanceCriteria.map((criterion) => criterion.text).join("\n") ?? "";
+  const [criteria, setCriteria] = useState(initialCriteria);
+  const [criteriaDirty, setCriteriaDirty] = useState(false);
   const [repository, setRepository] = useState(saved?.base?.repository ?? "");
   const [branch, setBranch] = useState(saved?.base?.branch ?? "");
   const [revision, setRevision] = useState(saved?.base?.revision ?? "");
@@ -278,13 +279,20 @@ function TaskEditor({
   const clearsSavedBlocker = saved?.blocker != null && status !== "blocked";
   const save = async () => {
     if (busy) return;
-    const criteriaMapping = mapAcceptanceCriteria(criteria, saved?.acceptanceCriteria ?? []);
-    const evidenceMapping = mapVerificationEvidence(evidence);
+    const criteriaChanged = saved === null || criteriaDirty;
+    const criteriaMapping = criteriaChanged
+      ? mapAcceptanceCriteria(criteria, saved?.acceptanceCriteria ?? [])
+      : null;
+    const acceptedCriterionIds =
+      criteriaMapping === null
+        ? undefined
+        : new Set(criteriaMapping.criteria.map((criterion) => criterion.id));
+    const evidenceMapping = mapVerificationEvidence(evidence, acceptedCriterionIds);
     const validationError = taskDraftIssue({
       status,
       blockerSummary,
       result,
-      criteriaError: criteriaMapping.error,
+      criteriaError: criteriaMapping?.error ?? null,
       verificationError:
         evidenceMapping.error ?? verificationIssue(milestone, evidenceMapping.evidence),
     });
@@ -310,13 +318,15 @@ function TaskEditor({
     const shared = {
       title: title.trim(),
       scope,
-      acceptanceCriteria: [...criteriaMapping.criteria],
       status,
       verification: { milestone, evidence: [...evidenceMapping.evidence] },
     };
     const response = saved
       ? await api.updateTask({
           ...shared,
+          ...(criteriaMapping === null
+            ? {}
+            : { acceptanceCriteria: [...criteriaMapping.criteria] }),
           blocker,
           taskId: saved.taskId,
           expectedRevision: saved.revision,
@@ -330,6 +340,7 @@ function TaskEditor({
         })
       : await api.createTask({
           ...shared,
+          acceptanceCriteria: [...(criteriaMapping?.criteria ?? [])],
           ...(blocker === null ? {} : { blocker }),
           ...(nullableText(objective) === null ? {} : { objective: objective.trim() }),
           ...(nullableText(outOfScope) === null ? {} : { outOfScope: outOfScope.trim() }),
@@ -457,11 +468,15 @@ function TaskEditor({
           label="Acceptance criteria"
           multiline
           value={criteria}
-          onChange={setCriteria}
+          onChange={(value) => {
+            setCriteria(value);
+            setCriteriaDirty(value !== initialCriteria);
+          }}
           maxLength={B.taskTextMaxLength}
         />
         <p className="text-xs text-muted-foreground">
-          One criterion per line. Existing criteria keep their position and identity.
+          One criterion per line. Existing criteria keep their identity by text; a new line gets a
+          fresh id.
         </p>
         <RuntimeText
           label="Verification plan"

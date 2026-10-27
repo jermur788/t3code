@@ -19,7 +19,7 @@ describe("acceptance criteria mapping", () => {
     ]);
   });
 
-  it("keeps existing ids by position and gives added criteria fresh unique ids", () => {
+  it("matches ids by text, then falls back to position for an edited line", () => {
     const mapping = mapAcceptanceCriteria("Edited first\nSecond\nThird", [
       { id: "c7", text: "First" },
       { id: "c9", text: "Second" },
@@ -32,12 +32,23 @@ describe("acceptance criteria mapping", () => {
     ]);
   });
 
+  it("keeps ids on their criteria when lines are reordered", () => {
+    const mapping = mapAcceptanceCriteria("Second\nFirst", [
+      { id: "c1", text: "First" },
+      { id: "c2", text: "Second" },
+    ]);
+    expect(mapping.criteria).toEqual([
+      { id: "c2", text: "Second" },
+      { id: "c1", text: "First" },
+    ]);
+  });
+
   it("does not reuse an id after a criterion is removed", () => {
     const mapping = mapAcceptanceCriteria("Second\nThird", [
       { id: "c1", text: "First" },
       { id: "c2", text: "Second" },
     ]);
-    expect(mapping.criteria.map((criterion) => criterion.id)).toEqual(["c1", "c2"]);
+    expect(mapping.criteria.map((criterion) => criterion.id)).toEqual(["c2", "c3"]);
     expect(new Set(mapping.criteria.map((criterion) => criterion.id)).size).toBe(2);
   });
 
@@ -100,6 +111,19 @@ describe("verification evidence mapping", () => {
       }),
     ]);
     expect(mapping.error).toContain("Evidence 1");
+  });
+
+  it("drops criterion links that no longer exist when criteria change", () => {
+    const mapping = mapVerificationEvidence(
+      [evidenceDraft({ criterionIds: ["c1", "c2"] })],
+      new Set(["c2"]),
+    );
+    expect(mapping.evidence[0]?.criterionIds).toEqual(["c2"]);
+  });
+
+  it("keeps criterion links when criteria did not change", () => {
+    const mapping = mapVerificationEvidence([evidenceDraft({ criterionIds: ["c1"] })]);
+    expect(mapping.evidence[0]?.criterionIds).toEqual(["c1"]);
   });
 });
 

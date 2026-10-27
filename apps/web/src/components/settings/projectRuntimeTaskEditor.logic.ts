@@ -66,8 +66,9 @@ export interface AcceptanceCriteriaMapping {
 }
 
 /**
- * One non-empty line maps to one criterion. Existing ids carry over by position
- * so evidence links survive an edit; fresh ids skip anything already in use.
+ * One non-empty line maps to one criterion. Text matches keep an id on the same
+ * criterion when lines are inserted, removed, or reordered; an edited line falls
+ * back to its position, and fresh ids never reuse a removed criterion's id.
  */
 export function mapAcceptanceCriteria(
   text: string,
@@ -93,24 +94,53 @@ export function mapAcceptanceCriteria(
     };
   }
   const used = new Set<string>();
+  const seenExisting = new Set<string>();
+  const taken = new Set<string>();
+  const byText = new Map<string, string[]>();
+  for (const criterion of existing) {
+    if (
+      !isRecordKey(criterion.id, PROJECT_RUNTIME_BOUNDS.criterionIdMaxLength) ||
+      seenExisting.has(criterion.id)
+    ) {
+      continue;
+    }
+    seenExisting.add(criterion.id);
+    taken.add(criterion.id);
+    const ids = byText.get(criterion.text);
+    if (ids === undefined) byText.set(criterion.text, [criterion.id]);
+    else ids.push(criterion.id);
+  }
+  const ids: Array<string | undefined> = Array.from({ length: lines.length });
+  lines.forEach((line, index) => {
+    const id = byText.get(line)?.shift();
+    if (id === undefined) return;
+    ids[index] = id;
+    used.add(id);
+  });
   let ordinal = 1;
-  const criteria = lines.map((line, index) => {
+  lines.forEach((_line, index) => {
+    if (ids[index] !== undefined) return;
     const inherited = existing[index]?.id;
     if (
       inherited !== undefined &&
       isRecordKey(inherited, PROJECT_RUNTIME_BOUNDS.criterionIdMaxLength) &&
       !used.has(inherited)
     ) {
+      ids[index] = inherited;
       used.add(inherited);
-      return { id: inherited, text: line };
+      return;
     }
-    while (used.has(`c${ordinal}`)) ordinal += 1;
+    while (used.has(`c${ordinal}`) || taken.has(`c${ordinal}`)) ordinal += 1;
     const id = `c${ordinal}`;
     ordinal += 1;
+    taken.add(id);
     used.add(id);
-    return { id, text: line };
+    ids[index] = id;
   });
-  return { criteria, error: null };
+  return {
+    criteria: lines.map((line, index) => ({ id: ids[index]!, text: line })),
+    error: null,
+  };
 }
 
 export interface TaskEvidenceDraft {
@@ -128,8 +158,14 @@ export interface EvidenceMapping {
   readonly error: string | null;
 }
 
-/** Blank draft rows are treated as removals; ids stay unique and positional. */
-export function mapVerificationEvidence(drafts: readonly TaskEvidenceDraft[]): EvidenceMapping {
+/**
+ * Blank draft rows are treated as removals; ids stay unique and positional.
+ * When criteria changed, links to criteria that no longer exist are dropped.
+ */
+export function mapVerificationEvidence(
+  drafts: readonly TaskEvidenceDraft[],
+  acceptedCriterionIds?: ReadonlySet<string>,
+): EvidenceMapping {
   const kept = drafts.filter((draft) => draft.summary.trim() !== "");
   if (kept.length > PROJECT_RUNTIME_BOUNDS.evidenceMaxCount) {
     return {
@@ -161,15 +197,21 @@ export function mapVerificationEvidence(drafts: readonly TaskEvidenceDraft[]): E
     }
     used.add(evidenceId);
     const command = draft.command.trim();
+    const criterionIds =
+      draft.criterionIds === undefined
+        ? undefined
+        : acceptedCriterionIds === undefined
+          ? draft.criterionIds
+          : draft.criterionIds.filter((id) => acceptedCriterionIds.has(id));
     return {
       evidenceId,
       ...(command === "" ? {} : { command }),
       result: draft.result,
       summary: draft.summary.trim(),
       recordedAt: draft.recordedAt,
-      ...(draft.criterionIds === undefined || draft.criterionIds.length === 0
+      ...(criterionIds === undefined || criterionIds.length === 0
         ? {}
-        : { criterionIds: [...draft.criterionIds] }),
+        : { criterionIds: [...criterionIds] }),
     };
   });
   return { evidence, error: null };
