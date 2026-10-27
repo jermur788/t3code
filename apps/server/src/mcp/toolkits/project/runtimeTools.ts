@@ -54,12 +54,12 @@ const projectId = Schema.optional(
 );
 
 const worktreeMetadataNote =
-  "branch, worktreePath, and baseSha are descriptive only; they do not create, move, bind, or authorize a worktree or change the thread workspace.";
+  "base.branch, base.worktreePath, and base.revision are descriptive only; they do not create, move, bind, or authorize a worktree or change the thread workspace.";
 
 export const ProjectContextTool = Tool.make("t3_project_context", {
   ...shared,
   description:
-    "Read saved Project Runtime context: status, instructions, enabled source descriptors, and active/blocked/review task summaries. Never source bodies. `enabled:false` means Runtime is off; profiles still apply. `truncated` means a limit cut something.",
+    "Read saved Project Runtime context: status, instructions, enabled source descriptors, and active/blocked/review task summaries. Summaries include each task's verification milestone and, when blocked, a bounded blocker summary. Never source bodies. `enabled:false` means Runtime is off; profiles still apply. `truncated` means a limit cut something.",
   parameters: Schema.Struct({ projectId }),
   success: ProjectRuntimeContext,
 })
@@ -128,7 +128,7 @@ export const ProjectTaskReadTool = Tool.make("t3_project_task_read", {
 
 export const ProjectTaskCreateTool = Tool.make("t3_project_task_create", {
   ...shared,
-  description: `Create a Runtime task. The server records the author. ${worktreeMetadataNote}`,
+  description: `Create a Runtime task. The server records the author. A blocker requires \`status:"blocked"\`, \`status:"blocked"\` requires a blocker, and \`status:"done"\` requires \`result\`. Verification milestones above \`implemented\` require passing evidence, and \`verified\` cannot coexist with failing evidence. ${worktreeMetadataNote}`,
   parameters: Schema.Struct({ projectId, ...ProjectRuntimeTaskCreateInput.fields }),
   success: ProjectRuntimeTask,
 })
@@ -137,7 +137,7 @@ export const ProjectTaskCreateTool = Tool.make("t3_project_task_create", {
 
 export const ProjectTaskUpdateTool = Tool.make("t3_project_task_update", {
   ...shared,
-  description: `Update a Runtime task. Pass the revision last read as \`expectedRevision\`; on \`ProjectRuntimeConflictError\`, reread and retry. Omitted fields stay; null clears optional metadata. ${worktreeMetadataNote}`,
+  description: `Update a Runtime task using compare-and-set: pass the revision last read as \`expectedRevision\`; a stale value returns \`ProjectRuntimeConflictError\`, so reread and retry. Omitted fields stay unchanged; null clears optional metadata. \`blocker:null\` clears the blocker, a blocker requires \`status:"blocked"\`, and \`status:"blocked"\` requires a blocker. \`status:"done"\` requires \`result\`. \`verification:null\` resets to milestone \`none\` with no evidence; milestones above \`implemented\` require passing evidence, and \`verified\` cannot coexist with failing evidence. ${worktreeMetadataNote}`,
   parameters: Schema.Struct({ projectId, ...ProjectRuntimeTaskUpdateInput.fields }),
   success: ProjectRuntimeTask,
 }).annotate(Tool.OpenWorld, false);
@@ -145,7 +145,7 @@ export const ProjectTaskUpdateTool = Tool.make("t3_project_task_update", {
 export const ProjectHandoffAppendTool = Tool.make("t3_project_handoff_append", {
   ...shared,
   description:
-    "Append an immutable handoff to a Runtime task: a checkpoint for the next worker. The server records author, thread, provider, and model. Cannot be edited or deleted.",
+    "Append an immutable handoff to a Runtime task: a checkpoint for the next worker. `expectedTaskRevision` is required; a stale revision appends nothing and returns `ProjectRuntimeConflictError`. Optional `taskState` applies status/result/blocker/verification atomically with the append, and the task's latest-handoff pointer advances atomically. Handoffs are append-only and cannot be edited or deleted. The server records author, thread, provider, and model; caller-supplied provenance is ignored. Verification claims must satisfy the evidence rules.",
   parameters: Schema.Struct({ projectId, ...ProjectRuntimeHandoffAppendInput.fields }),
   success: ProjectRuntimeHandoff,
 })

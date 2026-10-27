@@ -1397,9 +1397,63 @@ it.effect("reads context from enabled sources and open tasks with each latest ha
       taskRevision: latest.taskRevision,
       createdAt: latest.createdAt,
     });
+    assert.equal(context.tasks[0]?.verificationMilestone, "none");
+    assert.notProperty(context.tasks[0]!, "blockerSummary");
+    assert.equal(context.tasks[1]?.verificationMilestone, "none");
+    assert.equal(context.tasks[1]?.blockerSummary, "Waiting on a dependency");
     assert.isNull(context.tasks[1]?.latestHandoff);
     assert.deepEqual(context.truncated, { sources: false, tasks: false, handoffs: false });
     assert.notInclude(JSON.stringify(context), "Other project");
+  }).pipe(Effect.provide(layerTest)),
+);
+
+it.effect("resolves context handoffs through the task pointer and fails closed", () =>
+  Effect.gen(function* () {
+    const service = yield* setup;
+    const sql = yield* SqlClient.SqlClient;
+    const task = yield* service.createTask(projectA, { ...taskInput, status: "active" }, actor);
+    const first = yield* service.appendHandoff(
+      projectA,
+      {
+        taskId: task.taskId,
+        expectedTaskRevision: task.revision,
+        checkpoint: "first",
+        summary: "First",
+      },
+      actor,
+    );
+    yield* TestClock.adjust(1000);
+    const second = yield* service.appendHandoff(
+      projectA,
+      {
+        taskId: task.taskId,
+        expectedTaskRevision: (yield* service.readTask(projectA, task.taskId)).revision,
+        checkpoint: "second",
+        summary: "Second",
+      },
+      actor,
+    );
+    assert.equal(
+      (yield* service.readContext(projectA)).tasks[0]?.latestHandoff?.handoffId,
+      second.handoffId,
+    );
+
+    // The pointer, not creation order, decides which handoff the context exposes.
+    yield* sql`UPDATE project_runtime_tasks SET payload_json = json_set(payload_json, '$.latestHandoffId', ${first.handoffId})
+      WHERE project_id = ${projectA} AND task_id = ${task.taskId}`;
+    assert.equal(
+      (yield* service.readContext(projectA)).tasks[0]?.latestHandoff?.handoffId,
+      first.handoffId,
+    );
+
+    // A pointer to missing state is an error, not a reason to fall back to the newest row.
+    yield* sql`DELETE FROM project_runtime_handoffs WHERE project_id = ${projectA} AND handoff_id = ${first.handoffId}`;
+    assert.deepInclude(yield* service.readContext(projectA).pipe(Effect.flip), {
+      _tag: "ProjectRuntimeNotFoundError",
+      projectId: projectA,
+      entity: "handoff",
+      entityId: first.handoffId,
+    });
   }).pipe(Effect.provide(layerTest)),
 );
 

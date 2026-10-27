@@ -33,6 +33,15 @@ const toReference = (handoff: ProjectRuntimeHandoff): ProjectRuntimeHandoffRefer
   createdAt: handoff.createdAt,
 });
 
+// A summary is a projection, so a long blocker is clipped rather than copied in full.
+// The surrogate check keeps the clip on a character boundary.
+const clipBlockerSummary = (summary: string): string => {
+  const maxLength = PROJECT_RUNTIME_BOUNDS.taskSummaryBlockerMaxLength;
+  if (summary.length <= maxLength) return summary;
+  const last = summary.charCodeAt(maxLength - 1);
+  return summary.slice(0, last >= 0xd800 && last <= 0xdbff ? maxLength - 1 : maxLength).trimEnd();
+};
+
 const toSummary = (
   task: ProjectRuntimeTask,
   latestHandoff: ProjectRuntimeHandoffReference | null,
@@ -40,6 +49,8 @@ const toSummary = (
   taskId: task.taskId,
   title: task.title,
   status: task.status,
+  verificationMilestone: task.verification.milestone,
+  ...(task.blocker === null ? {} : { blockerSummary: clipBlockerSummary(task.blocker.summary) }),
   ...(task.nextAction === undefined ? {} : { nextAction: task.nextAction }),
   updatedAt: task.updatedAt,
   latestHandoff,
@@ -70,10 +81,10 @@ export const disabledContext = (
   truncated: { sources: false, tasks: false, handoffs: false },
 });
 
-// contextMaxBytes bounds only variable collections (sources, task summaries,
-// handoff refs) as serialized JSON. Project Instructions keep their own bound
-// and are never truncated. Packing is greedy: sources, then tasks; a task whose
-// handoff does not fit stays without it, and one that does not fit ends the list.
+// contextMaxBytes bounds variable collections as serialized JSON; Project Instructions keep
+// their own bound. Packing is greedy: sources, then tasks; a task whose handoff does not fit
+// stays without it, and one that fits in no form ends the list. Milestone and blocker summary
+// stay with a task either way.
 export const packContext = (
   candidates: ProjectRuntimeContextCandidates,
   maxBytes: number = PROJECT_RUNTIME_BOUNDS.contextMaxBytes,

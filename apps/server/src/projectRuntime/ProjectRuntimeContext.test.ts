@@ -31,7 +31,7 @@ const source = (index: number, title = `Source ${index}`): ProjectRuntimeSource 
   updatedBy: "user:maintainer",
 });
 
-const task = (index: number): ProjectRuntimeTask => ({
+const task = (index: number, overrides: Partial<ProjectRuntimeTask> = {}): ProjectRuntimeTask => ({
   taskId: ProjectRuntimeTaskId.make(`task-${index}`),
   projectId,
   title: `Task ${index}`,
@@ -47,6 +47,7 @@ const task = (index: number): ProjectRuntimeTask => ({
   updatedAt: timestamp,
   createdBy: "user:maintainer",
   updatedBy: "user:maintainer",
+  ...overrides,
 });
 
 const handoff = (index: number, summary: string): ProjectRuntimeHandoff => ({
@@ -223,4 +224,135 @@ it("stops at the first task that fits in no form", () => {
     ["task-0"],
   );
   assert.deepEqual(packed.truncated, { sources: false, tasks: true, handoffs: false });
+});
+
+const blocker = (summary: string): ProjectRuntimeTask["blocker"] => ({
+  classification: "review-required",
+  summary,
+  createdAt: timestamp,
+});
+
+it("projects verification milestone and blocker summary from the task", () => {
+  const summary = packContext(
+    candidates({
+      tasks: [
+        {
+          task: task(0, {
+            status: "blocked",
+            blocker: blocker("Awaiting review"),
+            verification: {
+              milestone: "static-pass",
+              evidence: [
+                {
+                  evidenceId: "e1",
+                  result: "pass",
+                  summary: "EVIDENCE-MARKER",
+                  recordedAt: timestamp,
+                },
+              ],
+            },
+          }),
+          latestHandoff: null,
+        },
+      ],
+    }),
+  ).tasks[0]!;
+  assert.equal(summary.verificationMilestone, "static-pass");
+  assert.equal(summary.blockerSummary, "Awaiting review");
+  // Evidence stays on the task; the summary carries only the milestone.
+  assert.notProperty(summary, "verification");
+  assert.notProperty(summary, "blocker");
+  assert.notInclude(JSON.stringify(summary), "EVIDENCE-MARKER");
+});
+
+it("does not invent a blocker summary for legacy blocked state", () => {
+  const summary = packContext(
+    candidates({
+      tasks: [{ task: task(0, { status: "blocked", blocker: null }), latestHandoff: null }],
+    }),
+  ).tasks[0]!;
+  assert.equal(summary.status, "blocked");
+  assert.notProperty(summary, "blockerSummary");
+});
+
+it("bounds blocker summaries without splitting surrogate pairs", () => {
+  const summary = packContext(
+    candidates({
+      tasks: [
+        {
+          task: task(0, { status: "blocked", blocker: blocker("😀".repeat(300)) }),
+          latestHandoff: null,
+        },
+      ],
+    }),
+  ).tasks[0]!;
+  assert.equal(
+    summary.blockerSummary,
+    "😀".repeat(PROJECT_RUNTIME_BOUNDS.taskSummaryBlockerMaxLength / 2),
+  );
+  assert.isAtMost(
+    summary.blockerSummary!.length,
+    PROJECT_RUNTIME_BOUNDS.taskSummaryBlockerMaxLength,
+  );
+});
+
+it("keeps coordination state when the handoff reference is dropped", () => {
+  const long = "日".repeat(2_000);
+  const tasks = [
+    {
+      task: task(0, {
+        status: "blocked",
+        blocker: blocker("Still blocked"),
+        verification: {
+          milestone: "runtime-pass",
+          evidence: [
+            { evidenceId: "e1", result: "pass", summary: "Runtime", recordedAt: timestamp },
+          ],
+        },
+      }),
+      latestHandoff: handoff(0, long),
+    },
+  ];
+  const full = packContext(candidates({ tasks })).tasks[0]!;
+  const packed = packContext(candidates({ tasks }), utf8({ ...full, latestHandoff: null }));
+  assert.isNull(packed.tasks[0]?.latestHandoff);
+  assert.equal(packed.tasks[0]?.verificationMilestone, "runtime-pass");
+  assert.equal(packed.tasks[0]?.blockerSummary, "Still blocked");
+  assert.deepEqual(packed.truncated, { sources: false, tasks: false, handoffs: true });
+});
+
+it("packs multiple tasks with coordination state deterministically", () => {
+  const tasks = [0, 1, 2].map((index) => ({
+    task: task(
+      index,
+      index === 1
+        ? {
+            status: "blocked",
+            blocker: blocker("Blocked"),
+            verification: {
+              milestone: "review-pass",
+              evidence: [
+                { evidenceId: "e1", result: "pass", summary: "Review", recordedAt: timestamp },
+              ],
+            },
+          }
+        : {},
+    ),
+    latestHandoff: handoff(index, `summary ${index}`),
+  }));
+  const first = packContext(candidates({ tasks }));
+  const second = packContext(candidates({ tasks }));
+  assert.deepEqual(first, second);
+  assert.deepEqual(
+    first.tasks.map(({ taskId, verificationMilestone, blockerSummary }) => [
+      taskId,
+      verificationMilestone,
+      blockerSummary ?? null,
+    ]),
+    [
+      ["task-0", "none", null],
+      ["task-1", "review-pass", "Blocked"],
+      ["task-2", "none", null],
+    ],
+  );
 });

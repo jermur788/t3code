@@ -42,6 +42,7 @@ export const PROJECT_RUNTIME_BOUNDS = {
   baseNotesMaxLength: 2_000,
   blockerSummaryMaxLength: 2_000,
   blockerDetailMaxLength: 8_000,
+  taskSummaryBlockerMaxLength: 200,
   criterionIdMaxLength: 64,
   criterionTextMaxLength: 2_000,
   criteriaMaxCount: 50,
@@ -181,6 +182,9 @@ const BlockerSummary = TrimmedNonEmptyString.check(
 );
 const BlockerDetail = TrimmedString.check(
   Schema.isMaxLength(PROJECT_RUNTIME_BOUNDS.blockerDetailMaxLength),
+);
+const TaskSummaryBlocker = TrimmedNonEmptyString.check(
+  Schema.isMaxLength(PROJECT_RUNTIME_BOUNDS.taskSummaryBlockerMaxLength),
 );
 
 const RecordKey = TrimmedNonEmptyString.check(
@@ -673,6 +677,9 @@ export const ProjectRuntimeTaskSummary = Schema.Struct({
   taskId: ProjectRuntimeTaskId,
   title: TaskTitle,
   status: ProjectRuntimeTaskStatus,
+  // Projections of the task record, never independently authoritative state.
+  verificationMilestone: ProjectRuntimeVerificationMilestone,
+  blockerSummary: Schema.optionalKey(TaskSummaryBlocker),
   nextAction: Schema.optionalKey(TaskNextAction),
   updatedAt: IsoDateTime,
   latestHandoff: Schema.NullOr(ProjectRuntimeHandoffReference),

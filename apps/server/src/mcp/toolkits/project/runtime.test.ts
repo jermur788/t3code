@@ -49,6 +49,11 @@ import * as McpHttpServer from "../../McpHttpServer.ts";
 import * as McpInvocationContext from "../../McpInvocationContext.ts";
 import { liveThreadShell } from "../../McpToolAccess.testkit.ts";
 import { provenanceOf } from "./runtimeHandlers.ts";
+import {
+  ProjectHandoffAppendTool,
+  ProjectTaskCreateTool,
+  ProjectTaskUpdateTool,
+} from "./runtimeTools.ts";
 import { ProjectToolkit } from "./tools.ts";
 
 const projectA = ProjectId.make("mcp-runtime-a");
@@ -317,6 +322,52 @@ it.effect("exposes exactly the eleven Runtime tools and no authority-changing to
   }).pipe(Effect.provide(layerTest)),
 );
 
+it("describes the v1 write contract for task updates and handoff appends", () => {
+  const appendSchema = Tool.getJsonSchema(ProjectHandoffAppendTool) as {
+    readonly required: ReadonlyArray<string>;
+    readonly properties: Record<string, unknown>;
+  };
+  assert.include(appendSchema.required, "expectedTaskRevision");
+  assert.property(appendSchema.properties, "taskState");
+  assert.notInclude(appendSchema.required, "taskState");
+  const appendDescription = Tool.getDescription(ProjectHandoffAppendTool) ?? "";
+  for (const phrase of [
+    "expectedTaskRevision",
+    "stale",
+    "appends nothing",
+    "taskState",
+    "atomically",
+    "append-only",
+    "server records",
+    "evidence",
+  ]) {
+    assert.include(appendDescription, phrase);
+  }
+
+  const updateSchema = Tool.getJsonSchema(ProjectTaskUpdateTool) as {
+    readonly required: ReadonlyArray<string>;
+  };
+  assert.include(updateSchema.required, "expectedRevision");
+  const updateDescription = Tool.getDescription(ProjectTaskUpdateTool) ?? "";
+  for (const phrase of [
+    "expectedRevision",
+    "blocker:null",
+    'status:"blocked"',
+    'status:"done"',
+    "verification:null",
+    "verified",
+    "evidence",
+  ]) {
+    assert.include(updateDescription, phrase);
+  }
+  assert.notInclude(updateDescription, "baseSha");
+
+  const createDescription = Tool.getDescription(ProjectTaskCreateTool) ?? "";
+  for (const phrase of ['status:"blocked"', 'status:"done"', "evidence"]) {
+    assert.include(createDescription, phrase);
+  }
+});
+
 it.effect("returns a valid disabled context for a project whose Runtime is not enabled", () =>
   Effect.gen(function* () {
     yield* setup;
@@ -427,6 +478,48 @@ it.effect("builds the enabled context from saved state only, without source bodi
     assert.notInclude(serialized, BODY_MARKER);
     assert.notInclude(serialized, "Foreign");
     assert.notInclude(serialized, "foreign active");
+  }).pipe(Effect.scoped, Effect.provide(layerTest)),
+);
+
+it.effect("projects verification milestones and bounded blocker summaries into context", () =>
+  Effect.gen(function* () {
+    const t = yield* setup;
+    yield* t.runtime.createTask(
+      projectA,
+      {
+        title: "Blocked task",
+        scope: "Scope",
+        acceptanceCriteria: [{ id: "c1", text: "Criteria" }],
+        status: "blocked",
+        blocker: {
+          classification: "review-required",
+          summary: "😀".repeat(150),
+        },
+        verification: {
+          milestone: "static-pass",
+          evidence: [
+            {
+              evidenceId: "e1",
+              result: "pass",
+              summary: "EVIDENCE-MARKER",
+              recordedAt: "2026-10-23T00:00:00.000Z",
+            },
+          ],
+        },
+      },
+      maintainer,
+    );
+
+    const outcome = yield* invoke(threadScope(threadA), "t3_project_context");
+    const context = succeeded(ProjectRuntimeContext, outcome);
+    const summary = context.tasks[0]!;
+    assert.equal(summary.status, "blocked");
+    assert.equal(summary.verificationMilestone, "static-pass");
+    assert.equal(
+      summary.blockerSummary,
+      "😀".repeat(PROJECT_RUNTIME_BOUNDS.taskSummaryBlockerMaxLength / 2),
+    );
+    assert.notInclude(JSON.stringify(outcome), "EVIDENCE-MARKER");
   }).pipe(Effect.scoped, Effect.provide(layerTest)),
 );
 
@@ -876,6 +969,42 @@ it.effect("appends immutable handoffs with provenance derived from the invocatio
 
     // Appending moved the task's revision only through the Runtime, and the stored handoff is intact.
     assert.deepEqual(yield* t.runtime.readHandoff(projectA, appended.handoffId), appended);
+  }).pipe(Effect.scoped, Effect.provide(layerTest)),
+);
+
+it.effect("rejects an invalid atomic taskState without appending a handoff", () =>
+  Effect.gen(function* () {
+    const t = yield* setup;
+    const task = yield* t.task(projectA, "Invalid transition", "active");
+    const scope = threadScope(threadA);
+    const before = yield* t.runtime.listHandoffs(projectA, { taskId: task.taskId });
+
+    assert.deepEqual(
+      failedWith(
+        yield* invoke(scope, "t3_project_handoff_append", {
+          taskId: task.taskId,
+          expectedTaskRevision: task.revision,
+          taskState: { status: "blocked" },
+          checkpoint: "invalid",
+          summary: "Should not persist",
+        }),
+      ),
+      {
+        _tag: "ProjectRuntimeInvalidTransitionError",
+        projectId: projectA,
+        taskId: task.taskId,
+        violation: "blocked_requires_blocker",
+      },
+    );
+
+    // The append and taskState are one transaction: neither side moved.
+    assert.lengthOf(
+      (yield* t.runtime.listHandoffs(projectA, { taskId: task.taskId })).handoffs,
+      before.handoffs.length,
+    );
+    const after = yield* t.runtime.readTask(projectA, task.taskId);
+    assert.equal(after.revision, task.revision);
+    assert.isNull(after.latestHandoffId);
   }).pipe(Effect.scoped, Effect.provide(layerTest)),
 );
 

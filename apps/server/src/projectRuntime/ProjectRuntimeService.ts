@@ -56,6 +56,10 @@ const HandoffContext = Schema.Struct({
   model: ProjectRuntimeHandoff.fields.model,
 });
 type HandoffContext = typeof HandoffContext.Type;
+type ContextTaskCandidate = {
+  readonly task: ProjectRuntimeTask;
+  readonly latestHandoff: ProjectRuntimeHandoff | null;
+};
 class ProjectRuntimeIdGenerationError extends Schema.TaggedError<ProjectRuntimeIdGenerationError>()(
   "ProjectRuntimeIdGenerationError",
   { cause: Schema.Defect() },
@@ -821,20 +825,34 @@ const make = Effect.gen(function* () {
       LIMIT ${PROJECT_RUNTIME_BOUNDS.contextMaxTasks + 1}`;
       const sources = yield* Effect.forEach(sourceRows, (row) => decodeSource(row.payload_json));
       const tasks = yield* Effect.forEach(taskRows, (row) => decodeTask(row.payload_json));
-      // Newest handoff per task, from the (project, task, created_at, handoff_id) index; the
-      // order is the reverse of listHandoffs, so "latest" is the last entry it would return.
+      // The task's latestHandoffId is the authoritative pointer. A pointer that does not
+      // resolve to a handoff of this task fails closed instead of falling back to order.
       const withHandoffs = yield* Effect.forEach(
         tasks.slice(0, PROJECT_RUNTIME_BOUNDS.contextMaxTasks),
-        (task) =>
-          sql<{
-            readonly payload_json: string;
-          }>`SELECT payload_json FROM project_runtime_handoffs WHERE project_id = ${projectId}
-          AND task_id = ${task.taskId} ORDER BY created_at DESC, handoff_id DESC LIMIT 1`.pipe(
-            Effect.flatMap((rows) =>
-              rows[0] === undefined ? Effect.succeed(null) : decodeHandoff(rows[0].payload_json),
+        (
+          task,
+        ): Effect.Effect<
+          ContextTaskCandidate,
+          ProjectRuntimeNotFoundError | Schema.SchemaError | SqlError
+        > => {
+          const latestHandoffId = task.latestHandoffId;
+          if (latestHandoffId === null) {
+            return Effect.succeed({ task, latestHandoff: null });
+          }
+          return find(projectId, "handoff", latestHandoffId, decodeHandoff).pipe(
+            Effect.flatMap((latestHandoff) =>
+              latestHandoff.taskId === task.taskId
+                ? Effect.succeed({ task, latestHandoff })
+                : Effect.fail(
+                    new ProjectRuntimeNotFoundError({
+                      projectId,
+                      entity: "handoff",
+                      entityId: latestHandoffId,
+                    }),
+                  ),
             ),
-            Effect.map((latestHandoff) => ({ task, latestHandoff })),
-          ),
+          );
+        },
       );
       return {
         ...packContext({

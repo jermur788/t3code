@@ -38,6 +38,7 @@ import {
   ProjectRuntimeTaskCreateInput,
   ProjectRuntimeTaskId,
   ProjectRuntimeTaskStatus,
+  ProjectRuntimeTaskSummary,
   ProjectRuntimeTaskUpdateInput,
   ProjectRuntimeVerificationMilestone,
 } from "./projectRuntime.ts";
@@ -60,6 +61,7 @@ const decodeSourceMatch = Schema.decodeUnknownSync(ProjectRuntimeSourceMatch);
 const decodeSourceUpdateInput = Schema.decodeUnknownSync(ProjectRuntimeSourceUpdateInput);
 const decodeTaskCreateInput = Schema.decodeUnknownSync(ProjectRuntimeTaskCreateInput);
 const decodeTaskUpdateInput = Schema.decodeUnknownSync(ProjectRuntimeTaskUpdateInput);
+const decodeTaskSummary = Schema.decodeUnknownSync(ProjectRuntimeTaskSummary);
 const decodeHandoffAppendInput = Schema.decodeUnknownSync(ProjectRuntimeHandoffAppendInput);
 const decodeInstructionsSaveInput = Schema.decodeUnknownSync(ProjectRuntimeInstructionsSaveInput);
 const decodeSourceRole = Schema.decodeUnknownSync(ProjectRuntimeSourceRole);
@@ -823,6 +825,7 @@ describe("Project Runtime bounds", () => {
       taskId,
       title: "Implement Project Runtime",
       status: "active" as const,
+      verificationMilestone: "none" as const,
       updatedAt: iso,
       latestHandoff: null,
     };
@@ -853,6 +856,52 @@ describe("Project Runtime bounds", () => {
         status: { ...context.status, version: 2 },
       }),
     ).toThrow();
+  });
+
+  it("projects coordination state into task summaries without carrying evidence", () => {
+    const summary = {
+      taskId,
+      title: "Implement Project Runtime",
+      status: "blocked" as const,
+      verificationMilestone: "static-pass" as const,
+      blockerSummary: "Waiting on review",
+      updatedAt: iso,
+      latestHandoff: null,
+      // Summary consumers read the milestone; full evidence stays on the task.
+      verification: { milestone: "static-pass", evidence: [evidence] },
+    };
+    expect(decodeTaskSummary(summary)).toEqual({
+      taskId,
+      title: "Implement Project Runtime",
+      status: "blocked",
+      verificationMilestone: "static-pass",
+      blockerSummary: "Waiting on review",
+      updatedAt: iso,
+      latestHandoff: null,
+    });
+    expect(() => decodeTaskSummary({ ...summary, verificationMilestone: "done" })).toThrow();
+    expect(() =>
+      decodeTaskSummary({
+        ...summary,
+        blockerSummary: "x".repeat(PROJECT_RUNTIME_BOUNDS.taskSummaryBlockerMaxLength + 1),
+      }),
+    ).toThrow();
+    expect(
+      decodeTaskSummary({
+        ...summary,
+        blockerSummary: "x".repeat(PROJECT_RUNTIME_BOUNDS.taskSummaryBlockerMaxLength),
+      }).blockerSummary,
+    ).toHaveLength(PROJECT_RUNTIME_BOUNDS.taskSummaryBlockerMaxLength);
+    expect(
+      decodeTaskSummary({
+        taskId,
+        title: "Implement Project Runtime",
+        status: "active",
+        verificationMilestone: "none",
+        updatedAt: iso,
+        latestHandoff: null,
+      }),
+    ).not.toHaveProperty("blockerSummary");
   });
 });
 
