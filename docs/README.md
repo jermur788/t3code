@@ -69,3 +69,4 @@ source alone does not explain. Most code changes do not need an internal documen
 - [Relay observability](./operations/relay-observability.md)
 - [Mobile app store screenshots](./operations/mobile-app-store-screenshots.md)
 - [Project Runtime V1 release and verification](./operations/project-runtime-v1.md)
+- [Personal-fork CI compatibility](./operations/fork-ci-compatibility.md)
