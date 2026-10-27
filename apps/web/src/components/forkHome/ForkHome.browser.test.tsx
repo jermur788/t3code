@@ -284,9 +284,8 @@ it("shows blocker, owner, verification, next action, and the pointed handoff on 
   });
 
   await expect.element(screen.getByText("Finish the fork home", { exact: true })).toBeVisible();
-  await expect
-    .element(screen.getByText("Owner user:owner · Verification static-pass", { exact: true }))
-    .toBeVisible();
+  await expect.element(screen.getByText("Owner user:owner", { exact: true })).toBeVisible();
+  await expect.element(screen.getByText("Verification static-pass", { exact: true })).toBeVisible();
   await expect
     .element(screen.getByText("Blocker: Waiting on an upstream tag", { exact: true }))
     .toBeVisible();
@@ -308,9 +307,8 @@ it("omits a blocker line when the task has no blocker", async () => {
     router: "/home",
   });
 
-  await expect
-    .element(screen.getByText("Owner user:maintainer · Verification none", { exact: true }))
-    .toBeVisible();
+  await expect.element(screen.getByText("Owner user:maintainer", { exact: true })).toBeVisible();
+  await expect.element(screen.getByText("Verification none", { exact: true })).toBeVisible();
   await expect.element(screen.getByText("Blocker:", { exact: false })).not.toBeInTheDocument();
 });
 

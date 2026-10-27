@@ -708,8 +708,9 @@ function ProjectStateSummaryView({ summary }: { readonly summary: ForkTaskSummar
                 {card.status}
               </Badge>
             </div>
-            <p className="truncate text-xs text-muted-foreground">
-              Owner {card.owner} · Verification {card.verificationMilestone}
+            <p className="flex min-w-0 items-center gap-2 text-xs text-muted-foreground">
+              <span className="min-w-0 truncate">Owner {card.owner}</span>
+              <span className="shrink-0">Verification {card.verificationMilestone}</span>
             </p>
             {card.blockerSummary ? (
               <p className="line-clamp-2 break-words text-xs text-warning-foreground">
