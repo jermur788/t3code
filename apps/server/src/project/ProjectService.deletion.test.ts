@@ -549,10 +549,15 @@ const seedRuntime = Effect.fn("ProjectDeletionTest.seedRuntime")(function* (proj
   );
   const handoff = yield* runtime.appendHandoff(
     projectId,
-    { taskId: task.taskId, checkpoint: "PRT-020", summary: "Persisted" },
+    {
+      taskId: task.taskId,
+      expectedTaskRevision: task.revision,
+      checkpoint: "PRT-020",
+      summary: "Persisted",
+    },
     { ...context, threadId: ThreadId.make("runtime:thread-provenance") },
   );
-  return { source, task, handoff };
+  return { source, task: yield* runtime.readTask(projectId, task.taskId), handoff };
 });
 
 it.effect(

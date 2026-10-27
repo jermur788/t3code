@@ -235,6 +235,15 @@ const setup = Effect.gen(function* () {
         scope: "Scope",
         acceptanceCriteria: [{ id: "c1", text: "Criteria" }],
         ...(status ? { status } : {}),
+        ...(status === "blocked"
+          ? {
+              blocker: {
+                classification: "operational-blocker" as const,
+                summary: "Waiting on a dependency",
+              },
+            }
+          : {}),
+        ...(status === "done" ? { result: "Completed" } : {}),
       },
       maintainer,
     );
@@ -368,13 +377,23 @@ it.effect("builds the enabled context from saved state only, without source bodi
     const active = yield* t.task(projectA, "active", "active");
     yield* t.runtime.appendHandoff(
       projectA,
-      { taskId: active.taskId, checkpoint: "older", summary: "Older handoff" },
+      {
+        taskId: active.taskId,
+        expectedTaskRevision: active.revision,
+        checkpoint: "older",
+        summary: "Older handoff",
+      },
       maintainer,
     );
     yield* TestClock.adjust(1000);
     const latest = yield* t.runtime.appendHandoff(
       projectA,
-      { taskId: active.taskId, checkpoint: "latest", summary: "Latest handoff" },
+      {
+        taskId: active.taskId,
+        expectedTaskRevision: (yield* t.runtime.readTask(projectA, active.taskId)).revision,
+        checkpoint: "latest",
+        summary: "Latest handoff",
+      },
       maintainer,
     );
 
@@ -493,7 +512,12 @@ it.effect("budgets the dynamic context by UTF-8 bytes, not characters", () =>
         Effect.flatMap((task) =>
           t.runtime.appendHandoff(
             projectB,
-            { taskId: task.taskId, checkpoint: `c${index}`, summary: "日".repeat(8_000) },
+            {
+              taskId: task.taskId,
+              expectedTaskRevision: task.revision,
+              checkpoint: `c${index}`,
+              summary: "日".repeat(8_000),
+            },
             maintainer,
           ),
         ),
@@ -731,6 +755,21 @@ it.effect("requires expectedRevision and reports a stale write as a structured c
       },
     );
     assert.equal((yield* t.runtime.readTask(projectA, task.taskId)).title, "First writer");
+    assert.deepEqual(
+      failedWith(
+        yield* invoke(scope, "t3_project_task_update", {
+          taskId: task.taskId,
+          expectedRevision: 2,
+          status: "done",
+        }),
+      ),
+      {
+        _tag: "ProjectRuntimeInvalidTransitionError",
+        projectId: projectA,
+        taskId: task.taskId,
+        violation: "done_requires_result",
+      },
+    );
 
     const withoutRevision = yield* invoke(scope, "t3_project_task_update", {
       taskId: task.taskId,
@@ -751,6 +790,8 @@ it.effect("appends immutable handoffs with provenance derived from the invocatio
       ProjectRuntimeHandoff,
       yield* invoke(scope, "t3_project_handoff_append", {
         taskId: task.taskId,
+        expectedTaskRevision: task.revision,
+        taskState: { status: "review" },
         checkpoint: "PRT-040",
         summary: "Done",
         filesChanged: ["commit abc"],
@@ -769,6 +810,32 @@ it.effect("appends immutable handoffs with provenance derived from the invocatio
     assert.equal(appended.createdBy, `thread:${threadA}`);
     assert.equal(appended.taskRevision, task.revision);
     assert.deepEqual(appended.filesChanged, ["commit abc"]);
+    const afterAppend = yield* t.runtime.readTask(projectA, task.taskId);
+    assert.equal(afterAppend.status, "review");
+    assert.equal(afterAppend.revision, 2);
+    assert.equal(afterAppend.latestHandoffId, appended.handoffId);
+    assert.deepInclude(
+      failedWith(
+        yield* invoke(scope, "t3_project_handoff_append", {
+          taskId: task.taskId,
+          expectedTaskRevision: task.revision,
+          checkpoint: "stale",
+          summary: "Stale append",
+        }),
+      ),
+      {
+        _tag: "ProjectRuntimeConflictError",
+        expectedRevision: task.revision,
+        currentRevision: 2,
+      },
+    );
+    assert.lengthOf(
+      succeeded(
+        ProjectRuntimeHandoffListResult,
+        yield* invoke(scope, "t3_project_handoff_list", { taskId: task.taskId }),
+      ).handoffs,
+      1,
+    );
 
     // A client with no thread carries no thread, provider or model, and a stable session actor.
     yield* TestClock.adjust(1000);
@@ -777,6 +844,7 @@ it.effect("appends immutable handoffs with provenance derived from the invocatio
       yield* invoke(clientScope(), "t3_project_handoff_append", {
         projectId: projectA,
         taskId: task.taskId,
+        expectedTaskRevision: afterAppend.revision,
         checkpoint: "external",
         summary: "From outside",
       }),
@@ -785,6 +853,10 @@ it.effect("appends immutable handoffs with provenance derived from the invocatio
     assert.isUndefined(external.threadId);
     assert.isUndefined(external.providerInstanceId);
     assert.isUndefined(external.model);
+    assert.equal(
+      (yield* t.runtime.readTask(projectA, task.taskId)).latestHandoffId,
+      external.handoffId,
+    );
 
     const listed = succeeded(
       ProjectRuntimeHandoffListResult,
@@ -853,7 +925,12 @@ it.effect("keeps a thread's agent inside its own project", () =>
     const foreignTask = yield* t.task(projectB, "B task", "active");
     const foreignHandoff = yield* t.runtime.appendHandoff(
       projectB,
-      { taskId: foreignTask.taskId, checkpoint: "b", summary: "B handoff" },
+      {
+        taskId: foreignTask.taskId,
+        expectedTaskRevision: foreignTask.revision,
+        checkpoint: "b",
+        summary: "B handoff",
+      },
       maintainer,
     );
     const ownTask = yield* t.task(projectA, "A task", "active");
@@ -880,7 +957,15 @@ it.effect("keeps a thread's agent inside its own project", () =>
         { title: "x", scope: "s", acceptanceCriteria: [{ id: "c1", text: "c" }] },
       ],
       ["t3_project_task_update", { taskId: foreignTask.taskId, expectedRevision: 1 }],
-      ["t3_project_handoff_append", { taskId: foreignTask.taskId, checkpoint: "c", summary: "s" }],
+      [
+        "t3_project_handoff_append",
+        {
+          taskId: foreignTask.taskId,
+          expectedTaskRevision: foreignTask.revision,
+          checkpoint: "c",
+          summary: "s",
+        },
+      ],
     ] as const) {
       assert.deepEqual(
         failedWith(yield* invoke(scope, name, { ...args, projectId: projectB })),
@@ -934,6 +1019,7 @@ it.effect("keeps a thread's agent inside its own project", () =>
       failedWith(
         yield* invoke(scope, "t3_project_handoff_append", {
           taskId: foreignTask.taskId,
+          expectedTaskRevision: foreignTask.revision,
           checkpoint: "x",
           summary: "Cross-project",
         }),

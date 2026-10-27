@@ -885,6 +885,7 @@ describe("Project Runtime inputs", () => {
     expect(
       decodeHandoffAppendInput({
         taskId,
+        expectedTaskRevision: 2,
         checkpoint: "PRT-010",
         summary: "Contracts added.",
         filesChanged: ["packages/contracts/src/projectRuntime.ts"],
@@ -892,17 +893,24 @@ describe("Project Runtime inputs", () => {
       }),
     ).toEqual({
       taskId,
+      expectedTaskRevision: 2,
       checkpoint: "PRT-010",
       summary: "Contracts added.",
       filesChanged: ["packages/contracts/src/projectRuntime.ts"],
       verification: { milestone: "implemented", evidence: [] },
     });
     expect(() =>
-      decodeHandoffAppendInput({ taskId, checkpoint: "PRT-010", summary: "" }),
+      decodeHandoffAppendInput({
+        taskId,
+        expectedTaskRevision: 2,
+        checkpoint: "PRT-010",
+        summary: "",
+      }),
     ).toThrow();
     expect(() =>
       decodeHandoffAppendInput({
         taskId,
+        expectedTaskRevision: 2,
         checkpoint: "PRT-010",
         summary: "s",
         verification: "1184/1184 pass",
@@ -913,6 +921,54 @@ describe("Project Runtime inputs", () => {
       decodeInstructionsSaveInput({ instructions: "Follow the rules.", expectedRevision: 1 }),
     ).toEqual({ instructions: "Follow the rules.", expectedRevision: 1 });
     expect(decodeInstructionsSaveInput({ instructions: "" })).toEqual({ instructions: "" });
+  });
+
+  it("requires a task revision and decodes atomic task state for handoff append", () => {
+    expect(() =>
+      decodeHandoffAppendInput({ taskId, checkpoint: "PRT-010", summary: "No revision" }),
+    ).toThrow();
+    expect(() =>
+      decodeHandoffAppendInput({
+        taskId,
+        expectedTaskRevision: 0,
+        checkpoint: "PRT-010",
+        summary: "Invalid revision",
+      }),
+    ).toThrow();
+    expect(
+      decodeHandoffAppendInput({
+        taskId,
+        expectedTaskRevision: 3,
+        taskState: {
+          status: "done",
+          result: "Shipped",
+          blocker: null,
+          verification: null,
+        },
+        checkpoint: "PRT-010",
+        summary: "Atomic append",
+      }),
+    ).toEqual({
+      taskId,
+      expectedTaskRevision: 3,
+      taskState: {
+        status: "done",
+        result: "Shipped",
+        blocker: null,
+        verification: null,
+      },
+      checkpoint: "PRT-010",
+      summary: "Atomic append",
+    });
+    expect(() =>
+      decodeHandoffAppendInput({
+        taskId,
+        expectedTaskRevision: 3,
+        taskState: { status: "unknown" },
+        checkpoint: "PRT-010",
+        summary: "Invalid status",
+      }),
+    ).toThrow();
   });
 });
 

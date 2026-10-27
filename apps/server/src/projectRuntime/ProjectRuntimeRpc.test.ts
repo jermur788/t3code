@@ -66,6 +66,7 @@ it.effect(
   () =>
     Effect.gen(function* () {
       const { client, fs, root, runtime } = yield* setup;
+      assert.notInclude(Object.values(M), "projectRuntime.appendHandoff");
       assert.isFalse((yield* client[M.status]({ projectId: a })).enabled);
       yield* client[M.setEnabled]({ projectId: a, enabled: true });
       yield* client[M.setEnabled]({ projectId: b, enabled: true });
@@ -175,10 +176,29 @@ it.effect(
         (yield* client[M.readTask]({ projectId: b, taskId: task.taskId }).pipe(Effect.flip))._tag,
         "ProjectRuntimeNotFoundError",
       );
+      assert.deepInclude(
+        yield* client[M.updateTask]({
+          projectId: a,
+          taskId: task.taskId,
+          expectedRevision: updated.revision,
+          status: "blocked",
+        }).pipe(Effect.flip),
+        {
+          _tag: "ProjectRuntimeInvalidTransitionError",
+          projectId: a,
+          taskId: task.taskId,
+          violation: "blocked_requires_blocker",
+        },
+      );
+      assert.equal(
+        (yield* client[M.readTask]({ projectId: a, taskId: task.taskId })).status,
+        "review",
+      );
       const handoff = yield* runtime.appendHandoff(
         a,
         {
           taskId: task.taskId,
+          expectedTaskRevision: updated.revision,
           checkpoint: "Checkpoint",
           summary: "Saved",
           verification: { milestone: "implemented", evidence: [] },

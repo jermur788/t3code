@@ -6,7 +6,9 @@ import {
   ProjectId,
   ProjectRuntimeConflictError,
   ProjectRuntimeDisabledError,
+  ProjectRuntimeInvalidTransitionError,
   ProjectRuntimeNotFoundError,
+  type ProjectRuntimeTaskCreateInput,
   ProviderInstanceId,
   ThreadId,
 } from "@t3tools/contracts";
@@ -40,6 +42,27 @@ const taskInput = {
     worktreePath: "/uncreated/worktree",
     revision: "descriptive-sha",
   },
+};
+const recordedAt = "2026-10-23T00:00:00.000Z";
+const passEvidence = {
+  evidenceId: "e1",
+  command: "vp test run ProjectRuntimeService.test.ts",
+  result: "pass" as const,
+  summary: "Focused suite passed",
+  recordedAt,
+  criterionIds: ["c1"],
+};
+const failEvidence = {
+  evidenceId: "e2",
+  result: "fail" as const,
+  summary: "Runtime check failed",
+  recordedAt,
+};
+const inconclusiveEvidence = {
+  evidenceId: "e3",
+  result: "inconclusive" as const,
+  summary: "Not reproduced",
+  recordedAt,
 };
 const seedProjects = Effect.gen(function* () {
   const sql = yield* SqlClient.SqlClient;
@@ -104,6 +127,7 @@ it.effect("preserves all domain records and revisions across disable/re-enable",
       projectA,
       {
         taskId: task.taskId,
+        expectedTaskRevision: task.revision,
         checkpoint: "PRT-020",
         summary: "Persisted",
         verification: {
@@ -127,6 +151,9 @@ it.effect("preserves all domain records and revisions across disable/re-enable",
     );
     assert.equal(handoff.runtimeRevision, checkpoint.revision);
     assert.equal(handoff.taskRevision, 1);
+    const storedTask = yield* service.readTask(projectA, task.taskId);
+    assert.equal(storedTask.revision, 2);
+    assert.equal(storedTask.latestHandoffId, handoff.handoffId);
     const disabled = yield* service.setEnabled(projectA, { enabled: false });
     assert.isFalse(disabled.enabled);
     assert.instanceOf(
@@ -159,7 +186,7 @@ it.effect("preserves all domain records and revisions across disable/re-enable",
     assert.equal(enabled.revision, disabled.revision + 1);
     assert.deepEqual(yield* service.readInstructions(projectA), instructions);
     assert.deepEqual(yield* service.readSource(projectA, source.sourceId), source);
-    assert.deepEqual(yield* service.readTask(projectA, task.taskId), task);
+    assert.deepEqual(yield* service.readTask(projectA, task.taskId), storedTask);
     assert.deepEqual(yield* service.readHandoff(projectA, handoff.handoffId), handoff);
   }).pipe(Effect.provide(layerTest)),
 );
@@ -297,12 +324,15 @@ it.effect(
           taskId: task.taskId,
           expectedRevision: 1,
           status: "done",
+          result: "Implemented and reviewed",
           base: null,
         },
         otherActor,
       );
       assert.equal(updated.revision, 2);
       assert.equal(updated.status, "done");
+      assert.equal(updated.result, "Implemented and reviewed");
+      assert.deepEqual(updated.verification, { milestone: "none", evidence: [] });
       assert.notProperty(updated, "base");
       assert.equal(updated.createdBy, actor.actor);
       assert.equal(updated.updatedBy, otherActor.actor);
@@ -322,6 +352,537 @@ it.effect(
       assert.deepEqual(yield* service.getStatus(projectA), before);
       assert.deepEqual(yield* service.readTask(projectA, task.taskId), updated);
     }).pipe(Effect.provide(layerTest)),
+);
+
+it.effect("creates a fully valid v1 task with explicit defaults and structured state", () =>
+  Effect.gen(function* () {
+    const service = yield* setup;
+    const minimal = yield* service.createTask(projectA, taskInput, actor);
+    assert.equal(minimal.owner, actor.actor);
+    assert.equal(minimal.status, "planned");
+    assert.isNull(minimal.blocker);
+    assert.deepEqual(minimal.verification, { milestone: "none", evidence: [] });
+    assert.isNull(minimal.latestHandoffId);
+    assert.equal(minimal.revision, 1);
+    assert.equal(minimal.createdAt, minimal.updatedAt);
+    assert.equal(minimal.createdBy, actor.actor);
+    assert.equal(minimal.updatedBy, actor.actor);
+    assert.deepEqual(minimal.base, taskInput.base);
+    assert.deepEqual(minimal.acceptanceCriteria, taskInput.acceptanceCriteria);
+
+    const full = yield* service.createTask(
+      projectA,
+      {
+        title: "Full task",
+        objective: "Ship the service",
+        scope: "Service and RPC",
+        outOfScope: "UI redesign",
+        owner: "worker",
+        base: {
+          repository: "github.com/jermur788/t3code",
+          branch: "t2/service",
+          revision: "abc123",
+          worktreePath: "/work/t2",
+          upstreamRevision: "def456",
+          notes: "Descriptive context only",
+        },
+        acceptanceCriteria: [
+          { id: "c1", text: "Create persists" },
+          { id: "c2", text: "Update compares and sets" },
+        ],
+        verificationPlan: "Run the focused suites",
+        status: "blocked",
+        blocker: {
+          classification: "review-required",
+          summary: "Awaiting review",
+          detail: "Needs a second pass",
+        },
+        result: "Implementation complete",
+        verification: { milestone: "static-pass", evidence: [passEvidence] },
+        nextAction: "Request review",
+      },
+      actor,
+    );
+    assert.equal(full.owner, "worker");
+    assert.equal(full.status, "blocked");
+    assert.equal(full.objective, "Ship the service");
+    assert.equal(full.outOfScope, "UI redesign");
+    assert.equal(full.verificationPlan, "Run the focused suites");
+    assert.deepEqual(full.base, {
+      repository: "github.com/jermur788/t3code",
+      branch: "t2/service",
+      revision: "abc123",
+      worktreePath: "/work/t2",
+      upstreamRevision: "def456",
+      notes: "Descriptive context only",
+    });
+    assert.deepEqual(full.acceptanceCriteria, [
+      { id: "c1", text: "Create persists" },
+      { id: "c2", text: "Update compares and sets" },
+    ]);
+    assert.equal(full.blocker?.classification, "review-required");
+    assert.equal(full.blocker?.summary, "Awaiting review");
+    assert.equal(full.blocker?.detail, "Needs a second pass");
+    assert.equal(full.blocker?.createdAt, full.createdAt);
+    assert.equal(full.result, "Implementation complete");
+    assert.deepEqual(full.verification, { milestone: "static-pass", evidence: [passEvidence] });
+    assert.equal(full.nextAction, "Request review");
+    assert.equal(full.createdBy, actor.actor);
+    assert.deepEqual(yield* service.readTask(projectA, full.taskId), full);
+  }).pipe(Effect.provide(layerTest)),
+);
+
+it.effect(
+  "task updates preserve untouched fields, persist blocker null, and reset verification",
+  () =>
+    Effect.gen(function* () {
+      const service = yield* setup;
+      const sql = yield* SqlClient.SqlClient;
+      const task = yield* service.createTask(
+        projectA,
+        {
+          ...taskInput,
+          objective: "Objective",
+          outOfScope: "Other work",
+          verificationPlan: "Run tests",
+          verification: { milestone: "static-pass", evidence: [passEvidence] },
+        },
+        actor,
+      );
+      const clearedBlocker = yield* service.updateTask(
+        projectA,
+        { taskId: task.taskId, expectedRevision: 1, blocker: null },
+        otherActor,
+      );
+      assert.equal(clearedBlocker.revision, 2);
+      assert.property(clearedBlocker, "blocker");
+      assert.isNull(clearedBlocker.blocker);
+      assert.equal(clearedBlocker.objective, "Objective");
+      assert.equal(clearedBlocker.outOfScope, "Other work");
+      assert.equal(clearedBlocker.verificationPlan, "Run tests");
+      assert.deepEqual(clearedBlocker.base, taskInput.base);
+      assert.deepEqual(clearedBlocker.verification, {
+        milestone: "static-pass",
+        evidence: [passEvidence],
+      });
+      assert.equal(clearedBlocker.updatedBy, otherActor.actor);
+      const raw = yield* sql<{
+        readonly payload_json: string;
+      }>`SELECT payload_json FROM project_runtime_tasks WHERE task_id = ${task.taskId}`;
+      const payload = JSON.parse(raw[0]!.payload_json) as Record<string, unknown>;
+      assert.property(payload, "blocker");
+      assert.isNull(payload.blocker);
+
+      const resetVerification = yield* service.updateTask(
+        projectA,
+        { taskId: task.taskId, expectedRevision: 2, verification: null },
+        actor,
+      );
+      assert.equal(resetVerification.revision, 3);
+      assert.deepEqual(resetVerification.verification, { milestone: "none", evidence: [] });
+      assert.deepEqual(resetVerification.base, taskInput.base);
+      assert.equal(resetVerification.objective, "Objective");
+
+      const clearedOptional = yield* service.updateTask(
+        projectA,
+        {
+          taskId: task.taskId,
+          expectedRevision: 3,
+          objective: null,
+          outOfScope: null,
+          verificationPlan: null,
+          base: null,
+        },
+        actor,
+      );
+      assert.notProperty(clearedOptional, "objective");
+      assert.notProperty(clearedOptional, "outOfScope");
+      assert.notProperty(clearedOptional, "verificationPlan");
+      assert.notProperty(clearedOptional, "base");
+      assert.equal(clearedOptional.revision, 4);
+      assert.deepEqual(yield* service.readTask(projectA, task.taskId), clearedOptional);
+
+      const blocked = yield* service.createTask(
+        projectA,
+        {
+          ...taskInput,
+          status: "blocked",
+          blocker: { classification: "verification-failure", summary: "Suite failed" },
+        },
+        actor,
+      );
+      const clearedBlocked = yield* service.updateTask(
+        projectA,
+        {
+          taskId: blocked.taskId,
+          expectedRevision: blocked.revision,
+          status: "active",
+          blocker: null,
+        },
+        actor,
+      );
+      assert.equal(clearedBlocked.status, "active");
+      assert.property(clearedBlocked, "blocker");
+      assert.isNull(clearedBlocked.blocker);
+      assert.equal(clearedBlocked.revision, 2);
+    }).pipe(Effect.provide(layerTest)),
+);
+
+it.effect("enforces every task transition invariant with a distinguishable violation", () =>
+  Effect.gen(function* () {
+    const service = yield* setup;
+    const create = (patch: Partial<ProjectRuntimeTaskCreateInput>) =>
+      service.createTask(projectA, { ...taskInput, ...patch }, actor);
+    const expectViolation = (failure: unknown, expected: string) => {
+      assert.instanceOf(failure, ProjectRuntimeInvalidTransitionError);
+      if (failure._tag === "ProjectRuntimeInvalidTransitionError") {
+        assert.equal(failure.violation, expected);
+      }
+    };
+
+    expectViolation(
+      yield* create({ status: "blocked" }).pipe(Effect.flip),
+      "blocked_requires_blocker",
+    );
+    expectViolation(
+      yield* create({
+        status: "planned",
+        blocker: { classification: "review-required", summary: "Review" },
+      }).pipe(Effect.flip),
+      "blocker_requires_blocked_status",
+    );
+    expectViolation(yield* create({ status: "done" }).pipe(Effect.flip), "done_requires_result");
+    expectViolation(
+      yield* create({
+        verification: { milestone: "static-pass", evidence: [inconclusiveEvidence] },
+      }).pipe(Effect.flip),
+      "milestone_requires_passing_evidence",
+    );
+    expectViolation(
+      yield* create({
+        verification: { milestone: "verified", evidence: [passEvidence, failEvidence] },
+      }).pipe(Effect.flip),
+      "verified_forbids_failing_evidence",
+    );
+    assert.deepEqual((yield* service.listTasks(projectA, {})).tasks, []);
+
+    const valid = yield* service.createTask(projectA, taskInput, actor);
+    expectViolation(
+      yield* service
+        .updateTask(projectA, { taskId: valid.taskId, expectedRevision: 1, status: "done" }, actor)
+        .pipe(Effect.flip),
+      "done_requires_result",
+    );
+    const unchanged = yield* service.readTask(projectA, valid.taskId);
+    assert.equal(unchanged.revision, 1);
+    assert.equal(unchanged.status, "planned");
+  }).pipe(Effect.provide(layerTest)),
+);
+
+it.effect("reads migrated blocked tasks with no blocker and repairs them under CAS", () =>
+  Effect.gen(function* () {
+    const service = yield* setup;
+    const sql = yield* SqlClient.SqlClient;
+    const task = yield* service.createTask(projectA, taskInput, actor);
+    const rows = yield* sql<{
+      readonly payload_json: string;
+    }>`SELECT payload_json FROM project_runtime_tasks WHERE task_id = ${task.taskId}`;
+    const payload = JSON.parse(rows[0]!.payload_json) as Record<string, unknown>;
+    payload.status = "blocked";
+    payload.blocker = null;
+    yield* sql`UPDATE project_runtime_tasks SET status = 'blocked', payload_json = ${JSON.stringify(payload)} WHERE task_id = ${task.taskId}`;
+
+    const legacy = yield* service.readTask(projectA, task.taskId);
+    assert.equal(legacy.status, "blocked");
+    assert.isNull(legacy.blocker);
+    assert.deepEqual(
+      (yield* service.listTasks(projectA, { status: "blocked" })).tasks.map(
+        (entry) => entry.taskId,
+      ),
+      [task.taskId],
+    );
+    const invalidEdit = yield* service
+      .updateTask(
+        projectA,
+        { taskId: task.taskId, expectedRevision: legacy.revision, title: "Unrelated edit" },
+        actor,
+      )
+      .pipe(Effect.flip);
+    assert.instanceOf(invalidEdit, ProjectRuntimeInvalidTransitionError);
+    if (invalidEdit._tag === "ProjectRuntimeInvalidTransitionError") {
+      assert.equal(invalidEdit.violation, "blocked_requires_blocker");
+    }
+    const repaired = yield* service.updateTask(
+      projectA,
+      { taskId: task.taskId, expectedRevision: legacy.revision, status: "active" },
+      actor,
+    );
+    assert.equal(repaired.status, "active");
+    assert.isNull(repaired.blocker);
+    assert.equal(repaired.revision, legacy.revision + 1);
+    assert.deepEqual(yield* service.readTask(projectA, task.taskId), repaired);
+  }).pipe(Effect.provide(layerTest)),
+);
+
+it.effect("validates milestones against evidence and round-trips structured evidence", () =>
+  Effect.gen(function* () {
+    const service = yield* setup;
+    const task = yield* service.createTask(
+      projectA,
+      {
+        ...taskInput,
+        verification: { milestone: "static-pass", evidence: [passEvidence] },
+      },
+      actor,
+    );
+    assert.deepEqual((yield* service.readTask(projectA, task.taskId)).verification, {
+      milestone: "static-pass",
+      evidence: [passEvidence],
+    });
+    const verified = yield* service.updateTask(
+      projectA,
+      {
+        taskId: task.taskId,
+        expectedRevision: 1,
+        verification: { milestone: "verified", evidence: [passEvidence] },
+      },
+      actor,
+    );
+    assert.deepEqual(verified.verification, { milestone: "verified", evidence: [passEvidence] });
+
+    const inconclusive = yield* service
+      .updateTask(
+        projectA,
+        {
+          taskId: task.taskId,
+          expectedRevision: 2,
+          verification: { milestone: "static-pass", evidence: [inconclusiveEvidence] },
+        },
+        actor,
+      )
+      .pipe(Effect.flip);
+    assert.instanceOf(inconclusive, ProjectRuntimeInvalidTransitionError);
+    if (inconclusive._tag === "ProjectRuntimeInvalidTransitionError") {
+      assert.equal(inconclusive.violation, "milestone_requires_passing_evidence");
+    }
+    const failing = yield* service
+      .updateTask(
+        projectA,
+        {
+          taskId: task.taskId,
+          expectedRevision: 2,
+          verification: {
+            milestone: "verified",
+            evidence: [passEvidence, failEvidence],
+          },
+        },
+        actor,
+      )
+      .pipe(Effect.flip);
+    assert.instanceOf(failing, ProjectRuntimeInvalidTransitionError);
+    if (failing._tag === "ProjectRuntimeInvalidTransitionError") {
+      assert.equal(failing.violation, "verified_forbids_failing_evidence");
+    }
+    assert.deepEqual((yield* service.readTask(projectA, task.taskId)).verification, {
+      milestone: "verified",
+      evidence: [passEvidence],
+    });
+
+    const invalidAppend = yield* service
+      .appendHandoff(
+        projectA,
+        {
+          taskId: task.taskId,
+          expectedTaskRevision: 2,
+          checkpoint: "invalid-evidence",
+          summary: "Claimed runtime pass",
+          verification: { milestone: "runtime-pass", evidence: [inconclusiveEvidence] },
+        },
+        actor,
+      )
+      .pipe(Effect.flip);
+    assert.instanceOf(invalidAppend, ProjectRuntimeInvalidTransitionError);
+    if (invalidAppend._tag === "ProjectRuntimeInvalidTransitionError") {
+      assert.equal(invalidAppend.violation, "milestone_requires_passing_evidence");
+    }
+    assert.deepEqual((yield* service.listHandoffs(projectA, {})).handoffs, []);
+
+    const appended = yield* service.appendHandoff(
+      projectA,
+      {
+        taskId: task.taskId,
+        expectedTaskRevision: 2,
+        checkpoint: "valid-evidence",
+        summary: "Runtime pass recorded",
+        verification: { milestone: "runtime-pass", evidence: [passEvidence] },
+      },
+      actor,
+    );
+    assert.deepEqual(appended.verification, {
+      milestone: "runtime-pass",
+      evidence: [passEvidence],
+    });
+    assert.deepEqual(
+      (yield* service.readHandoff(projectA, appended.handoffId)).verification.evidence,
+      [passEvidence],
+    );
+  }).pipe(Effect.provide(layerTest)),
+);
+
+it.effect(
+  "appends atomically with expected task revision, task state, latest pointer, and snapshots",
+  () =>
+    Effect.gen(function* () {
+      const service = yield* setup;
+      const task = yield* service.createTask(projectA, taskInput, actor);
+      const before = yield* service.getStatus(projectA);
+      const handoff = yield* service.appendHandoff(
+        projectA,
+        {
+          taskId: task.taskId,
+          expectedTaskRevision: task.revision,
+          taskState: {
+            status: "done",
+            result: "Shipped",
+            verification: { milestone: "static-pass", evidence: [passEvidence] },
+          },
+          checkpoint: "t2-atomic",
+          summary: "Handoff summary",
+          result: "Outcome claim",
+          filesChanged: ["apps/server/src/projectRuntime/ProjectRuntimeService.ts"],
+          testsRun: ["vp test run ProjectRuntimeService.test.ts"],
+          testsNotRun: ["Live multi-provider smoke"],
+          failuresRisks: "None known",
+          unresolvedDecisions: ["Task summaries belong to T3"],
+          repositoryState: "Branch clean at abc123",
+          integrationState: "Not yet merged",
+          verification: { milestone: "static-pass", evidence: [passEvidence] },
+          nextAction: "Integrate T3",
+        },
+        {
+          ...actor,
+          threadId: ThreadId.make("thread-t2-append"),
+          providerInstanceId: ProviderInstanceId.make("codex"),
+          model: "gpt-6.1-sol",
+        },
+      );
+      assert.equal(handoff.taskRevision, task.revision);
+      assert.equal(handoff.runtimeRevision, before.revision);
+      assert.equal(handoff.createdBy, actor.actor);
+      assert.equal(handoff.threadId, ThreadId.make("thread-t2-append"));
+      assert.equal(handoff.providerInstanceId, ProviderInstanceId.make("codex"));
+      assert.equal(handoff.model, "gpt-6.1-sol");
+      assert.deepEqual(handoff.filesChanged, [
+        "apps/server/src/projectRuntime/ProjectRuntimeService.ts",
+      ]);
+      assert.deepEqual(handoff.testsRun, ["vp test run ProjectRuntimeService.test.ts"]);
+      assert.deepEqual(handoff.testsNotRun, ["Live multi-provider smoke"]);
+      assert.equal(handoff.failuresRisks, "None known");
+      assert.deepEqual(handoff.unresolvedDecisions, ["Task summaries belong to T3"]);
+      assert.equal(handoff.repositoryState, "Branch clean at abc123");
+      assert.equal(handoff.integrationState, "Not yet merged");
+      assert.equal(handoff.result, "Outcome claim");
+      assert.equal(handoff.nextAction, "Integrate T3");
+      assert.deepEqual(handoff.verification, {
+        milestone: "static-pass",
+        evidence: [passEvidence],
+      });
+
+      const stored = yield* service.readTask(projectA, task.taskId);
+      assert.equal(stored.status, "done");
+      assert.equal(stored.result, "Shipped");
+      assert.deepEqual(stored.verification, {
+        milestone: "static-pass",
+        evidence: [passEvidence],
+      });
+      assert.equal(stored.latestHandoffId, handoff.handoffId);
+      assert.equal(stored.revision, task.revision + 1);
+      assert.equal(stored.updatedBy, actor.actor);
+      assert.equal((yield* service.getStatus(projectA)).revision, before.revision + 1);
+      assert.deepEqual(yield* service.readHandoff(projectA, handoff.handoffId), handoff);
+      assert.deepEqual((yield* service.listHandoffs(projectA, {})).handoffs, [handoff]);
+
+      const second = yield* service.appendHandoff(
+        projectA,
+        {
+          taskId: task.taskId,
+          expectedTaskRevision: stored.revision,
+          checkpoint: "t2-follow-up",
+          summary: "Second handoff",
+        },
+        actor,
+      );
+      assert.equal(second.taskRevision, stored.revision);
+      const final = yield* service.readTask(projectA, task.taskId);
+      assert.equal(final.revision, stored.revision + 1);
+      assert.equal(final.latestHandoffId, second.handoffId);
+      assert.equal(final.status, "done");
+      assert.equal(final.result, "Shipped");
+    }).pipe(Effect.provide(layerTest)),
+);
+
+it.effect("stale or invalid appends leave no handoff and no partial task write", () =>
+  Effect.gen(function* () {
+    const service = yield* setup;
+    const task = yield* service.createTask(projectA, taskInput, actor);
+    const first = yield* service.appendHandoff(
+      projectA,
+      {
+        taskId: task.taskId,
+        expectedTaskRevision: task.revision,
+        checkpoint: "first",
+        summary: "First handoff",
+      },
+      actor,
+    );
+    const afterFirst = yield* service.readTask(projectA, task.taskId);
+    const statusAfterFirst = yield* service.getStatus(projectA);
+
+    const stale = yield* service
+      .appendHandoff(
+        projectA,
+        {
+          taskId: task.taskId,
+          expectedTaskRevision: task.revision,
+          taskState: { status: "review" },
+          checkpoint: "stale",
+          summary: "Stale append",
+        },
+        actor,
+      )
+      .pipe(Effect.flip);
+    assert.instanceOf(stale, ProjectRuntimeConflictError);
+    if (stale._tag === "ProjectRuntimeConflictError") {
+      assert.deepInclude(stale, {
+        expectedRevision: task.revision,
+        currentRevision: afterFirst.revision,
+      });
+    }
+    assert.deepEqual(yield* service.readTask(projectA, task.taskId), afterFirst);
+    assert.deepEqual(yield* service.getStatus(projectA), statusAfterFirst);
+    assert.deepEqual((yield* service.listHandoffs(projectA, {})).handoffs, [first]);
+
+    const invalid = yield* service
+      .appendHandoff(
+        projectA,
+        {
+          taskId: task.taskId,
+          expectedTaskRevision: afterFirst.revision,
+          taskState: { status: "done" },
+          checkpoint: "invalid",
+          summary: "Invalid task state",
+        },
+        actor,
+      )
+      .pipe(Effect.flip);
+    assert.instanceOf(invalid, ProjectRuntimeInvalidTransitionError);
+    if (invalid._tag === "ProjectRuntimeInvalidTransitionError") {
+      assert.equal(invalid.violation, "done_requires_result");
+    }
+    assert.deepEqual(yield* service.readTask(projectA, task.taskId), afterFirst);
+    assert.deepEqual(yield* service.getStatus(projectA), statusAfterFirst);
+    assert.deepEqual((yield* service.listHandoffs(projectA, {})).handoffs, [first]);
+  }).pipe(Effect.provide(layerTest)),
 );
 
 it.effect("exactly one simultaneous task writer succeeds for the same expected revision", () =>
@@ -365,6 +926,7 @@ it.effect(
         projectA,
         {
           taskId: task.taskId,
+          expectedTaskRevision: task.revision,
           checkpoint: "one",
           summary: "First",
           verification: {
@@ -387,19 +949,29 @@ it.effect(
         },
         actor,
       );
+      const afterFirst = yield* service.readTask(projectA, task.taskId);
+      assert.equal(afterFirst.latestHandoffId, first.handoffId);
       const updated = yield* service.updateTask(
         projectA,
-        { taskId: task.taskId, expectedRevision: 1, title: "Updated" },
+        { taskId: task.taskId, expectedRevision: afterFirst.revision, title: "Updated" },
         actor,
       );
       const runtime = yield* service.getStatus(projectA);
       const second = yield* service.appendHandoff(
         projectA,
-        { taskId: task.taskId, checkpoint: "two", summary: "Second" },
+        {
+          taskId: task.taskId,
+          expectedTaskRevision: updated.revision,
+          checkpoint: "two",
+          summary: "Second",
+        },
         actor,
       );
       assert.equal(second.taskRevision, updated.revision);
       assert.equal(second.runtimeRevision, runtime.revision);
+      const afterSecond = yield* service.readTask(projectA, task.taskId);
+      assert.equal(afterSecond.latestHandoffId, second.handoffId);
+      assert.equal(afterSecond.revision, updated.revision + 1);
       assert.deepEqual(yield* service.readHandoff(projectA, first.handoffId), first);
       const expected = [first, second].sort(
         (a, b) => a.createdAt.localeCompare(b.createdAt) || a.handoffId.localeCompare(b.handoffId),
@@ -428,7 +1000,12 @@ it.effect("two projects cannot read, list, update, remove, or link each other's 
     const task = yield* service.createTask(projectA, taskInput, actor);
     const handoff = yield* service.appendHandoff(
       projectA,
-      { taskId: task.taskId, checkpoint: "isolation", summary: "A only" },
+      {
+        taskId: task.taskId,
+        expectedTaskRevision: task.revision,
+        checkpoint: "isolation",
+        summary: "A only",
+      },
       actor,
     );
     const failures = yield* Effect.all([
@@ -449,7 +1026,12 @@ it.effect("two projects cannot read, list, update, remove, or link each other's 
       service
         .appendHandoff(
           projectB,
-          { taskId: task.taskId, checkpoint: "wrong", summary: "Wrong project" },
+          {
+            taskId: task.taskId,
+            expectedTaskRevision: task.revision,
+            checkpoint: "wrong",
+            summary: "Wrong project",
+          },
           actor,
         )
         .pipe(Effect.flip),
@@ -460,7 +1042,9 @@ it.effect("two projects cannot read, list, update, remove, or link each other's 
     assert.deepEqual((yield* service.listTasks(projectB, {})).tasks, []);
     assert.deepEqual((yield* service.listHandoffs(projectB, {})).handoffs, []);
     assert.deepEqual(yield* service.readSource(projectA, source.sourceId), source);
-    assert.deepEqual(yield* service.readTask(projectA, task.taskId), task);
+    const storedTask = yield* service.readTask(projectA, task.taskId);
+    assert.equal(storedTask.latestHandoffId, handoff.handoffId);
+    assert.equal(storedTask.revision, task.revision + 1);
     assert.deepEqual(yield* service.readHandoff(projectA, handoff.handoffId), handoff);
   }).pipe(Effect.provide(layerTest)),
 );
@@ -532,6 +1116,7 @@ it.effect("rejects invalid and oversized contract data before changing persisten
         projectA,
         {
           taskId: task.taskId,
+          expectedTaskRevision: task.revision,
           checkpoint: "bounds",
           summary: "x".repeat(PROJECT_RUNTIME_BOUNDS.handoffSummaryMaxLength + 1),
         },
@@ -541,6 +1126,7 @@ it.effect("rejects invalid and oversized contract data before changing persisten
         projectA,
         {
           taskId: task.taskId,
+          expectedTaskRevision: task.revision,
           checkpoint: "bounds",
           summary: "Rejected",
           verification: {
@@ -559,6 +1145,7 @@ it.effect("rejects invalid and oversized contract data before changing persisten
         projectA,
         {
           taskId: task.taskId,
+          expectedTaskRevision: task.revision,
           checkpoint: "bounds",
           summary: "Rejected",
           verification: {
@@ -659,13 +1246,18 @@ it.effect("reopens the database with the same Runtime state and domain records",
           const task = yield* service.createTask(projectA, taskInput, actor);
           const handoff = yield* service.appendHandoff(
             projectA,
-            { taskId: task.taskId, checkpoint: "reopen", summary: "Durable" },
+            {
+              taskId: task.taskId,
+              expectedTaskRevision: task.revision,
+              checkpoint: "reopen",
+              summary: "Durable",
+            },
             actor,
           );
           return {
             instructions,
             source,
-            task,
+            task: yield* service.readTask(projectA, task.taskId),
             handoff,
             status: yield* service.getStatus(projectA),
           };
@@ -725,7 +1317,24 @@ it.effect("reads context from enabled sources and open tasks with each latest ha
     yield* service.createSource(projectA, { ...sourceInput, enabled: false }, actor);
     yield* service.createSource(projectB, sourceInput, actor);
     const create = (title: string, status: "planned" | "active" | "blocked" | "review" | "done") =>
-      service.createTask(projectA, { ...taskInput, title, status }, actor);
+      service.createTask(
+        projectA,
+        {
+          ...taskInput,
+          title,
+          status,
+          ...(status === "blocked"
+            ? {
+                blocker: {
+                  classification: "operational-blocker" as const,
+                  summary: "Waiting on a dependency",
+                },
+              }
+            : {}),
+          ...(status === "done" ? { result: "Completed" } : {}),
+        },
+        actor,
+      );
     // Registered in the reverse of the packing order, one second apart.
     const review = yield* create("review", "review");
     yield* TestClock.adjust(1000);
@@ -737,19 +1346,31 @@ it.effect("reads context from enabled sources and open tasks with each latest ha
     yield* TestClock.adjust(1000);
     const first = yield* service.appendHandoff(
       projectA,
-      { taskId: active.taskId, checkpoint: "one", summary: "First" },
+      {
+        taskId: active.taskId,
+        expectedTaskRevision: active.revision,
+        checkpoint: "one",
+        summary: "First",
+      },
       actor,
     );
     yield* TestClock.adjust(1000);
     const latest = yield* service.appendHandoff(
       projectA,
-      { taskId: active.taskId, checkpoint: "two", summary: "Second" },
+      {
+        taskId: active.taskId,
+        expectedTaskRevision: (yield* service.readTask(projectA, active.taskId)).revision,
+        checkpoint: "two",
+        summary: "Second",
+      },
       actor,
     );
+    const other = yield* service.createTask(projectB, taskInput, actor);
     yield* service.appendHandoff(
       projectB,
       {
-        taskId: (yield* service.createTask(projectB, taskInput, actor)).taskId,
+        taskId: other.taskId,
+        expectedTaskRevision: other.revision,
         checkpoint: "other",
         summary: "Other project",
       },

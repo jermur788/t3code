@@ -549,6 +549,18 @@ export const ProjectRuntimeTaskUpdateInput = Schema.Struct({
 });
 export type ProjectRuntimeTaskUpdateInput = typeof ProjectRuntimeTaskUpdateInput.Type;
 
+/**
+ * The task fields an atomic handoff append may advance. It mirrors the
+ * corresponding task update fields, including null clearing.
+ */
+export const ProjectRuntimeHandoffTaskState = Schema.Struct({
+  status: Schema.optionalKey(ProjectRuntimeTaskStatus),
+  result: Schema.optionalKey(Schema.NullOr(TaskResult)),
+  blocker: Schema.optionalKey(Schema.NullOr(ProjectRuntimeTaskBlockerInput)),
+  verification: Schema.optionalKey(Schema.NullOr(ProjectRuntimeTaskVerification)),
+});
+export type ProjectRuntimeHandoffTaskState = typeof ProjectRuntimeHandoffTaskState.Type;
+
 export const ProjectRuntimeHandoff = Schema.Struct({
   handoffId: ProjectRuntimeHandoffId,
   projectId: ProjectId,
@@ -587,6 +599,9 @@ export type ProjectRuntimeHandoff = typeof ProjectRuntimeHandoff.Type;
 
 export const ProjectRuntimeHandoffAppendInput = Schema.Struct({
   taskId: ProjectRuntimeTaskId,
+  // The append is compare-and-set against this task revision.
+  expectedTaskRevision: PositiveInt,
+  taskState: Schema.optionalKey(ProjectRuntimeHandoffTaskState),
   checkpoint: HandoffCheckpoint,
   summary: HandoffSummary,
   result: Schema.optionalKey(HandoffResult),

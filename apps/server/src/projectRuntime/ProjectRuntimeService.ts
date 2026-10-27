@@ -13,6 +13,7 @@ import {
   type ProjectRuntimeHandoffListResult,
   ProjectRuntimeInstructions,
   ProjectRuntimeInstructionsSaveInput,
+  ProjectRuntimeInvalidTransitionError,
   ProjectRuntimeNotFoundError,
   ProjectRuntimeSetEnabledInput,
   ProjectRuntimeSource,
@@ -24,10 +25,12 @@ import {
   ProjectRuntimeSourceUpdateInput,
   type ProjectRuntimeStatus,
   ProjectRuntimeTask,
+  type ProjectRuntimeTaskBlockerInput,
   ProjectRuntimeTaskCreateInput,
   ProjectRuntimeTaskId,
   ProjectRuntimeTaskListInput,
   type ProjectRuntimeTaskListResult,
+  type ProjectRuntimeTaskVerification,
   ProjectRuntimeTaskUpdateInput,
   type ProjectRuntimeError,
 } from "@t3tools/contracts";
@@ -211,6 +214,128 @@ function patchRecord<A extends object>(record: A, patch: object) {
   }
   return result;
 }
+
+type TaskPatch = Omit<ProjectRuntimeTaskUpdateInput, "taskId" | "expectedRevision">;
+
+const unverifiedVerification = (): ProjectRuntimeTaskVerification => ({
+  milestone: "none",
+  evidence: [],
+});
+
+const PASSING_MILESTONES: ReadonlySet<ProjectRuntimeTaskVerification["milestone"]> = new Set([
+  "static-pass",
+  "runtime-pass",
+  "review-pass",
+  "integrated",
+  "verified",
+]);
+
+/**
+ * Tasks differ from optional-metadata records: `blocker` and `verification` are
+ * required fields, so null persists `blocker: null` and resets verification.
+ */
+function applyTaskPatch(
+  existing: ProjectRuntimeTask,
+  patch: TaskPatch,
+  timestamp: string,
+): ProjectRuntimeTask {
+  const result = { ...existing };
+  if (patch.title !== undefined) result.title = patch.title;
+  if (patch.objective !== undefined) {
+    if (patch.objective === null) delete result.objective;
+    else result.objective = patch.objective;
+  }
+  if (patch.scope !== undefined) result.scope = patch.scope;
+  if (patch.outOfScope !== undefined) {
+    if (patch.outOfScope === null) delete result.outOfScope;
+    else result.outOfScope = patch.outOfScope;
+  }
+  if (patch.owner !== undefined) result.owner = patch.owner;
+  if (patch.base !== undefined) {
+    if (patch.base === null) delete result.base;
+    else result.base = patch.base;
+  }
+  if (patch.acceptanceCriteria !== undefined) {
+    result.acceptanceCriteria = patch.acceptanceCriteria;
+  }
+  if (patch.verificationPlan !== undefined) {
+    if (patch.verificationPlan === null) delete result.verificationPlan;
+    else result.verificationPlan = patch.verificationPlan;
+  }
+  if (patch.status !== undefined) result.status = patch.status;
+  if (patch.blocker !== undefined) {
+    const blocker: ProjectRuntimeTaskBlockerInput | null = patch.blocker;
+    result.blocker = blocker === null ? null : { ...blocker, createdAt: timestamp };
+  }
+  if (patch.result !== undefined) {
+    if (patch.result === null) delete result.result;
+    else result.result = patch.result;
+  }
+  if (patch.verification !== undefined) {
+    result.verification =
+      patch.verification === null ? unverifiedVerification() : patch.verification;
+  }
+  if (patch.nextAction !== undefined) {
+    if (patch.nextAction === null) delete result.nextAction;
+    else result.nextAction = patch.nextAction;
+  }
+  return result;
+}
+
+const validateVerification = Effect.fn("ProjectRuntimeService.validateVerification")(function* (
+  projectId: ProjectId,
+  taskId: ProjectRuntimeTaskId,
+  verification: ProjectRuntimeTaskVerification,
+) {
+  if (
+    PASSING_MILESTONES.has(verification.milestone) &&
+    !verification.evidence.some((entry) => entry.result === "pass")
+  ) {
+    return yield* new ProjectRuntimeInvalidTransitionError({
+      projectId,
+      taskId,
+      violation: "milestone_requires_passing_evidence",
+    });
+  }
+  if (
+    verification.milestone === "verified" &&
+    verification.evidence.some((entry) => entry.result === "fail")
+  ) {
+    return yield* new ProjectRuntimeInvalidTransitionError({
+      projectId,
+      taskId,
+      violation: "verified_forbids_failing_evidence",
+    });
+  }
+});
+
+const validateTask = Effect.fn("ProjectRuntimeService.validateTask")(function* (
+  projectId: ProjectId,
+  task: ProjectRuntimeTask,
+) {
+  if (task.status === "blocked" && task.blocker === null) {
+    return yield* new ProjectRuntimeInvalidTransitionError({
+      projectId,
+      taskId: task.taskId,
+      violation: "blocked_requires_blocker",
+    });
+  }
+  if (task.status !== "blocked" && task.blocker !== null) {
+    return yield* new ProjectRuntimeInvalidTransitionError({
+      projectId,
+      taskId: task.taskId,
+      violation: "blocker_requires_blocked_status",
+    });
+  }
+  if (task.status === "done" && (task.result === undefined || task.result.trim() === "")) {
+    return yield* new ProjectRuntimeInvalidTransitionError({
+      projectId,
+      taskId: task.taskId,
+      violation: "done_requires_result",
+    });
+  }
+  yield* validateVerification(projectId, task.taskId, task.verification);
+});
 
 const make = Effect.gen(function* () {
   const sql = yield* SqlClient.SqlClient;
@@ -459,14 +584,14 @@ const make = Effect.gen(function* () {
       const { actor } = yield* decodeWriteContext(context);
       yield* requireEnabled(projectId);
       const timestamp = yield* now;
-      const record = {
+      const record: ProjectRuntimeTask = {
         ...data,
         projectId,
         taskId: ProjectRuntimeTaskId.make(yield* newId),
         owner: data.owner ?? actor,
         status: data.status ?? "planned",
         blocker: data.blocker === undefined ? null : { ...data.blocker, createdAt: timestamp },
-        verification: data.verification ?? { milestone: "none" as const, evidence: [] },
+        verification: data.verification ?? unverifiedVerification(),
         latestHandoffId: null,
         revision: 1,
         createdAt: timestamp,
@@ -474,6 +599,7 @@ const make = Effect.gen(function* () {
         createdBy: actor,
         updatedBy: actor,
       };
+      yield* validateTask(projectId, record);
       const payload = yield* encodeTask(record);
       yield* sql`INSERT INTO project_runtime_tasks (task_id, project_id, status, revision, created_at, payload_json) VALUES (${record.taskId}, ${projectId}, ${record.status}, 1, ${timestamp}, ${payload})`;
       yield* bump(projectId);
@@ -501,12 +627,14 @@ const make = Effect.gen(function* () {
       const { actor } = yield* decodeWriteContext(context);
       const existing = yield* readTask(projectId, taskId);
       yield* checkRevision(projectId, "task", existing.revision, expectedRevision, taskId);
-      const record = {
-        ...patchRecord(existing, patch),
+      const timestamp = yield* now;
+      const record: ProjectRuntimeTask = {
+        ...applyTaskPatch(existing, patch, timestamp),
         revision: existing.revision + 1,
-        updatedAt: yield* now,
+        updatedAt: timestamp,
         updatedBy: actor,
       };
+      yield* validateTask(projectId, record);
       const payload = yield* encodeTask(record);
       // BEGIN IMMEDIATE holds the writer lock across read, CAS and aggregate bump.
       // Keep the conditional write as well: no caller can silently overwrite a revision.
@@ -556,20 +684,65 @@ const make = Effect.gen(function* () {
       const { actor, ...provenance } = yield* decodeHandoffContext(context);
       const runtime = yield* requireEnabled(projectId);
       const task = yield* readTask(projectId, data.taskId);
-      const record = {
-        ...data,
+      if (task.revision !== data.expectedTaskRevision) {
+        return yield* new ProjectRuntimeConflictError({
+          projectId,
+          entity: "task",
+          entityId: data.taskId,
+          expectedRevision: data.expectedTaskRevision,
+          currentRevision: task.revision,
+        });
+      }
+      const {
+        taskId,
+        expectedTaskRevision,
+        taskState,
+        verification: verificationInput,
+        filesChanged,
+        ...handoffFields
+      } = data;
+      const timestamp = yield* now;
+      const verification = verificationInput ?? unverifiedVerification();
+      yield* validateVerification(projectId, task.taskId, verification);
+      const nextTask = taskState === undefined ? task : applyTaskPatch(task, taskState, timestamp);
+      const handoffId = ProjectRuntimeHandoffId.make(yield* newId);
+      const updatedTask: ProjectRuntimeTask = {
+        ...nextTask,
+        latestHandoffId: handoffId,
+        revision: task.revision + 1,
+        updatedAt: timestamp,
+        updatedBy: actor,
+      };
+      yield* validateTask(projectId, updatedTask);
+      const record: ProjectRuntimeHandoff = {
+        ...handoffFields,
         ...provenance,
         projectId,
-        handoffId: ProjectRuntimeHandoffId.make(yield* newId),
-        filesChanged: data.filesChanged ?? [],
-        verification: data.verification ?? { milestone: "none" as const, evidence: [] },
+        handoffId,
+        taskId,
+        filesChanged: filesChanged ?? [],
+        verification,
         runtimeRevision: runtime.revision,
-        taskRevision: task.revision,
-        createdAt: yield* now,
+        taskRevision: expectedTaskRevision,
+        createdAt: timestamp,
         createdBy: actor,
       };
       const payload = yield* encodeHandoff(record);
+      const taskPayload = yield* encodeTask(updatedTask);
       yield* sql`INSERT INTO project_runtime_handoffs (handoff_id, project_id, task_id, created_at, payload_json) VALUES (${record.handoffId}, ${projectId}, ${record.taskId}, ${record.createdAt}, ${payload})`;
+      const changed =
+        yield* sql`UPDATE project_runtime_tasks SET revision = revision + 1, status = ${updatedTask.status}, payload_json = ${taskPayload}
+        WHERE project_id = ${projectId} AND task_id = ${taskId} AND revision = ${expectedTaskRevision} RETURNING task_id`;
+      if (changed.length !== 1) {
+        const current = yield* find(projectId, "task", taskId, decodeTask);
+        return yield* new ProjectRuntimeConflictError({
+          projectId,
+          entity: "task",
+          entityId: taskId,
+          expectedRevision: expectedTaskRevision,
+          currentRevision: current.revision,
+        });
+      }
       yield* bump(projectId);
       return record;
     },
