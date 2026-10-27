@@ -25,6 +25,13 @@ import * as WorkspaceFileSystem from "../workspace/WorkspaceFileSystem.ts";
 import * as WorkspacePaths from "../workspace/WorkspacePaths.ts";
 import * as Runtime from "./ProjectRuntimeService.ts";
 import * as Sources from "./ProjectRuntimeSourceAccess.ts";
+import * as RuntimeRoutingService from "../runtimeRouting/RuntimeRoutingService.ts";
+import * as RuntimeRoutingProviderView from "../runtimeRouting/RuntimeRoutingProviderView.ts";
+import {
+  DEFAULT_SERVER_SETTINGS,
+  ProviderInstanceId,
+  type ServerProvider,
+} from "@t3tools/contracts";
 import { makeHandlers } from "./ProjectRuntimeRpc.ts";
 
 const group = RpcGroup.make(...PROJECT_RUNTIME_RPCS).middleware(RpcScopeAuthorization);
@@ -33,8 +40,16 @@ const workspace = WorkspaceFileSystem.layer.pipe(
   Layer.provideMerge(WorkspacePaths.layer),
   Layer.provide(Layer.mock(KnownWorkspaces.KnownWorkspaces)({ assertContains: () => Effect.void })),
 );
+const routingProviderView = Layer.succeed(RuntimeRoutingProviderView.RuntimeRoutingProviderView, {
+  read: Effect.succeed({
+    providers: [] as ReadonlyArray<ServerProvider>,
+    orchestrationCapableInstanceIds: new Set<ProviderInstanceId>(),
+    settings: DEFAULT_SERVER_SETTINGS,
+  }),
+});
 const layer = Sources.layer.pipe(
   Layer.provideMerge(Runtime.layer.pipe(Layer.provide(DevelopmentProfileService.layer))),
+  Layer.provideMerge(RuntimeRoutingService.layer.pipe(Layer.provide(routingProviderView))),
   Layer.provideMerge(ProjectStore.layer),
   Layer.provideMerge(workspace),
   Layer.provideMerge(Sqlite.layerMemory),
@@ -318,6 +333,7 @@ it.effect("redacts persistence details at the user transport boundary", () =>
               ),
           }),
           Layer.mock(Sources.ProjectRuntimeSourceAccess)({}),
+          Layer.mock(RuntimeRoutingService.RuntimeRoutingService)({}),
         ),
       ),
     );
@@ -335,4 +351,48 @@ it.effect("redacts persistence details at the user transport boundary", () =>
     assert.notInclude(JSON.stringify(failure), "/internal/database");
     assert.notInclude(JSON.stringify(failure), "internal stack");
   }).pipe(Effect.scoped),
+);
+
+it.effect("round-trips project routing and resolves it without launching work", () =>
+  Effect.gen(function* () {
+    const { client } = yield* setup;
+    const routing = {
+      roleRoutes: [
+        {
+          role: "implementation" as const,
+          candidates: [{ providerInstanceId: ProviderInstanceId.make("codex"), model: "gpt-6" }],
+          fallback: "inherit" as const,
+        },
+      ],
+    };
+    assert.isNull(yield* client[M.readRouting]({ projectId: a }));
+    const saved = yield* client[M.saveRouting]({
+      projectId: a,
+      routing,
+      expectedRevision: 0,
+    });
+    assert.equal(saved.revision, 1);
+    assert.deepEqual(yield* client[M.readRouting]({ projectId: a }), saved);
+    assert.equal(
+      (yield* client[M.saveRouting]({
+        projectId: a,
+        routing,
+        expectedRevision: 0,
+      }).pipe(Effect.flip))._tag,
+      "ProjectRuntimeRoutingConflictError",
+    );
+
+    const resolution = yield* client[M.resolveRoute]({ projectId: a });
+    assert.equal(resolution.status, "inherited");
+    assert.equal(resolution.rejected[0]?.reason, "provider_instance_missing");
+    assert.deepEqual(yield* client[M.readRouting]({ projectId: a }), saved);
+
+    const reset = yield* client[M.saveRouting]({
+      projectId: a,
+      routing: null,
+      expectedRevision: 1,
+    });
+    assert.equal(reset.revision, 2);
+    assert.isNull(reset.routing);
+  }).pipe(Effect.scoped, Effect.provide(layer)),
 );

@@ -136,6 +136,7 @@ const effective: EffectiveProjectInstructions = {
     profileId: DevelopmentProfileId.make("profile"),
     name: "Shared engineering policy",
     instructions: "Use the shared policy.",
+    routing: { roleRoutes: [] },
     revision: 1,
     createdAt: time,
     updatedAt: time,

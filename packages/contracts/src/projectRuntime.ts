@@ -12,6 +12,7 @@ import {
 } from "./baseSchemas.ts";
 import { ProviderInstanceId } from "./providerInstance.ts";
 import { ProjectContentMatchRange } from "./project.ts";
+import { RuntimeRoleRoute } from "./runtimeRouting.ts";
 
 export const PROJECT_RUNTIME_VERSION = 1 as const;
 
@@ -480,6 +481,8 @@ export const ProjectRuntimeTask = Schema.Struct({
   verification: ProjectRuntimeTaskVerification,
   latestHandoffId: Schema.NullOr(ProjectRuntimeHandoffId),
   nextAction: Schema.optionalKey(TaskNextAction),
+  /** Explicit worker role plus optional ordered candidates and layer fallback. */
+  routing: Schema.optionalKey(RuntimeRoleRoute),
   revision: PositiveInt,
   createdAt: IsoDateTime,
   updatedAt: IsoDateTime,
@@ -524,6 +527,7 @@ export const ProjectRuntimeTaskCreateInput = Schema.Struct({
   result: Schema.optionalKey(TaskResult),
   verification: Schema.optionalKey(ProjectRuntimeTaskVerification),
   nextAction: Schema.optionalKey(TaskNextAction),
+  routing: Schema.optionalKey(RuntimeRoleRoute),
 });
 export type ProjectRuntimeTaskCreateInput = typeof ProjectRuntimeTaskCreateInput.Type;
 
@@ -550,6 +554,8 @@ export const ProjectRuntimeTaskUpdateInput = Schema.Struct({
   verification: Schema.optionalKey(Schema.NullOr(ProjectRuntimeTaskVerification)),
   // Null clears the optional metadata; an omitted key leaves it unchanged.
   nextAction: Schema.optionalKey(Schema.NullOr(TaskNextAction)),
+  // Null clears task routing; an omitted key leaves the stored routing unchanged.
+  routing: Schema.optionalKey(Schema.NullOr(RuntimeRoleRoute)),
 });
 export type ProjectRuntimeTaskUpdateInput = typeof ProjectRuntimeTaskUpdateInput.Type;
 

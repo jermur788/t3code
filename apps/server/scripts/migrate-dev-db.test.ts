@@ -292,6 +292,7 @@ it.layer(NodeServices.layer)("migrate-dev-db", (it) => {
           [1, "ProjectRuntime"],
           [2, "DevelopmentProfiles"],
           [3, "TaskHandoffState"],
+          [4, "RuntimeRouting"],
         ],
       );
       assert.deepStrictEqual(state.audit, []);
@@ -385,14 +386,14 @@ it.layer(NodeServices.layer)("migrate-dev-db", (it) => {
           };
         }),
       );
-      // Reconciled history keeps its original timestamps; Task/Handoff state is new work and
-      // runs as the third fork migration on top of it.
+      // Reconciled history keeps its original timestamps; newer fork work runs on top of it.
       assert.deepStrictEqual(
         state.fork.map((row) => [row.migration_id, row.name]),
         [
           [1, "ProjectRuntime"],
           [2, "DevelopmentProfiles"],
           [3, "TaskHandoffState"],
+          [4, "RuntimeRouting"],
         ],
       );
       assert.deepStrictEqual(

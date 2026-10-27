@@ -54,6 +54,8 @@ export const RPC_REQUIRED_SCOPES = {
   [PROJECT_RUNTIME_RPC_METHODS.readTask]: AuthOrchestrationReadScope,
   [PROJECT_RUNTIME_RPC_METHODS.listHandoffs]: AuthOrchestrationReadScope,
   [PROJECT_RUNTIME_RPC_METHODS.readHandoff]: AuthOrchestrationReadScope,
+  [PROJECT_RUNTIME_RPC_METHODS.readRouting]: AuthOrchestrationReadScope,
+  [PROJECT_RUNTIME_RPC_METHODS.resolveRoute]: AuthOrchestrationReadScope,
 
   [ORCHESTRATION_V2_WS_METHODS.dispatchCommand]: AuthOrchestrationOperateScope,
   [ORCHESTRATION_V2_WS_METHODS.getWorkflowScript]: AuthOrchestrationReadScope,

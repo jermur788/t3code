@@ -25,6 +25,12 @@ import {
   ProjectRuntimeTaskReadInput,
   ProjectRuntimeTaskUpdateInput,
 } from "./projectRuntime.ts";
+import {
+  ProjectRuntimeRouting,
+  ProjectRuntimeRoutingSaveInput,
+  RuntimeRoutingError,
+} from "./runtimeRouting.ts";
+import { RuntimeRouteResolution, RuntimeRouteResolutionInput } from "./runtimeRoutingResolution.ts";
 
 export const PROJECT_RUNTIME_RPC_METHODS = {
   status: "projectRuntime.status",
@@ -41,6 +47,9 @@ export const PROJECT_RUNTIME_RPC_METHODS = {
   updateTask: "projectRuntime.updateTask",
   listHandoffs: "projectRuntime.listHandoffs",
   readHandoff: "projectRuntime.readHandoff",
+  readRouting: "projectRuntime.readRouting",
+  saveRouting: "projectRuntime.saveRouting",
+  resolveRoute: "projectRuntime.resolveRoute",
 } as const;
 
 export class ProjectRuntimeRequestError extends Schema.TaggedError<ProjectRuntimeRequestError>()(
@@ -57,6 +66,7 @@ export class ProjectRuntimeRequestError extends Schema.TaggedError<ProjectRuntim
 }
 const error = Schema.Union([
   ProjectRuntimeError,
+  RuntimeRoutingError,
   ProjectRuntimeRequestError,
   EnvironmentAuthorizationError,
 ]);
@@ -129,6 +139,21 @@ export const PROJECT_RUNTIME_RPCS = [
   Rpc.make(PROJECT_RUNTIME_RPC_METHODS.readHandoff, {
     payload: Schema.Struct({ projectId: ProjectId, ...ProjectRuntimeHandoffReadInput.fields }),
     success: ProjectRuntimeHandoff,
+    error,
+  }),
+  Rpc.make(PROJECT_RUNTIME_RPC_METHODS.readRouting, {
+    payload: Schema.Struct({ projectId: ProjectId }),
+    success: Schema.NullOr(ProjectRuntimeRouting),
+    error,
+  }),
+  Rpc.make(PROJECT_RUNTIME_RPC_METHODS.saveRouting, {
+    payload: Schema.Struct({ projectId: ProjectId, ...ProjectRuntimeRoutingSaveInput.fields }),
+    success: ProjectRuntimeRouting,
+    error,
+  }),
+  Rpc.make(PROJECT_RUNTIME_RPC_METHODS.resolveRoute, {
+    payload: RuntimeRouteResolutionInput,
+    success: RuntimeRouteResolution,
     error,
   }),
 ] as const;

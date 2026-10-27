@@ -17,6 +17,7 @@ import {
   ProjectDevelopmentProfileSetInput,
   ProjectId,
   ProjectRuntimeInstructions,
+  RuntimeProfileRoutingPolicy,
   TrimmedNonEmptyString,
 } from "@t3tools/contracts";
 import * as Context from "effect/Context";
@@ -83,6 +84,7 @@ interface ProfileRow {
   readonly profile_id: string;
   readonly name: string;
   readonly instructions: string;
+  readonly routing_json: string | null;
   readonly revision: number;
   readonly created_at: string;
   readonly updated_at: string;
@@ -115,16 +117,28 @@ const decodeAssignment = Schema.decodeUnknownEffect(ProjectDevelopmentProfile);
 const decodeProject = Schema.decodeUnknownEffect(DevelopmentProfileProject);
 const ProjectInstructionsJson = Schema.fromJsonString(ProjectRuntimeInstructions);
 const decodeProjectInstructions = Schema.decodeUnknownEffect(ProjectInstructionsJson);
+const ProfileRoutingJson = Schema.fromJsonString(RuntimeProfileRoutingPolicy);
+const decodeProfileRouting = Schema.decodeUnknownEffect(ProfileRoutingJson);
+const encodeProfileRouting = Schema.encodeEffect(ProfileRoutingJson);
 
-const toProfile = (row: ProfileRow) => ({
-  profileId: DevelopmentProfileId.make(row.profile_id),
-  name: row.name,
-  instructions: row.instructions,
-  revision: row.revision,
-  createdAt: row.created_at,
-  updatedAt: row.updated_at,
-  createdBy: row.created_by,
-  updatedBy: row.updated_by,
+const emptyProfileRouting = (): RuntimeProfileRoutingPolicy => ({ roleRoutes: [] });
+
+const toProfile = Effect.fn("DevelopmentProfileService.toProfile")(function* (row: ProfileRow) {
+  const routing =
+    row.routing_json === null
+      ? emptyProfileRouting()
+      : yield* decodeProfileRouting(row.routing_json);
+  return {
+    profileId: DevelopmentProfileId.make(row.profile_id),
+    name: row.name,
+    instructions: row.instructions,
+    routing,
+    revision: row.revision,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+    createdBy: row.created_by,
+    updatedBy: row.updated_by,
+  };
 });
 
 const toAssignment = (row: AssignmentRow) => ({
@@ -185,10 +199,10 @@ const make = Effect.gen(function* () {
     profileId: DevelopmentProfileId,
   ) {
     const rows = yield* sql<ProfileRow>`SELECT
-      profile_id, name, instructions, revision, created_at, updated_at, created_by, updated_by
+      profile_id, name, instructions, routing_json, revision, created_at, updated_at, created_by, updated_by
       FROM development_profiles WHERE profile_id = ${profileId}`;
     if (rows[0] === undefined) return yield* new DevelopmentProfileNotFoundError({ profileId });
-    return yield* decodeProfile(toProfile(rows[0]));
+    return yield* decodeProfile(yield* toProfile(rows[0]));
   });
 
   const findAssignment = Effect.fn("DevelopmentProfileService.findAssignment")(function* (
@@ -220,9 +234,11 @@ const make = Effect.gen(function* () {
   )(
     function* () {
       const rows = yield* sql<ProfileRow>`SELECT
-        profile_id, name, instructions, revision, created_at, updated_at, created_by, updated_by
+        profile_id, name, instructions, routing_json, revision, created_at, updated_at, created_by, updated_by
         FROM development_profiles ORDER BY created_at, profile_id`;
-      return yield* Effect.forEach(rows, (row) => decodeProfile(toProfile(row)));
+      return yield* Effect.forEach(rows, (row) =>
+        Effect.flatMap(toProfile(row), (profile) => decodeProfile(profile)),
+      );
     },
     sql.withTransaction,
     sqlErrors,
@@ -250,15 +266,17 @@ const make = Effect.gen(function* () {
         profileId: DevelopmentProfileId.make(yield* newId),
         name: data.name,
         instructions: data.instructions,
+        routing: data.routing ?? emptyProfileRouting(),
         revision: 1,
         createdAt: timestamp,
         updatedAt: timestamp,
         createdBy: actor,
         updatedBy: actor,
       });
+      const routingJson = yield* encodeProfileRouting(record.routing);
       yield* sql`INSERT INTO development_profiles
-        (profile_id, name, instructions, revision, created_at, updated_at, created_by, updated_by)
-        VALUES (${record.profileId}, ${record.name}, ${record.instructions}, ${record.revision}, ${record.createdAt}, ${record.updatedAt}, ${record.createdBy}, ${record.updatedBy})`;
+        (profile_id, name, instructions, routing_json, revision, created_at, updated_at, created_by, updated_by)
+        VALUES (${record.profileId}, ${record.name}, ${record.instructions}, ${routingJson}, ${record.revision}, ${record.createdAt}, ${record.updatedAt}, ${record.createdBy}, ${record.updatedBy})`;
       return record;
     },
     sql.withTransaction,
@@ -278,13 +296,15 @@ const make = Effect.gen(function* () {
         ...existing,
         name: data.name,
         instructions: data.instructions,
+        routing: data.routing ?? existing.routing,
         revision: existing.revision + 1,
         updatedAt,
         updatedBy: actor,
       });
+      const routingJson = yield* encodeProfileRouting(record.routing);
       const changed = yield* sql`UPDATE development_profiles
-        SET name = ${record.name}, instructions = ${record.instructions}, revision = ${record.revision},
-          updated_at = ${record.updatedAt}, updated_by = ${record.updatedBy}
+        SET name = ${record.name}, instructions = ${record.instructions}, routing_json = ${routingJson},
+          revision = ${record.revision}, updated_at = ${record.updatedAt}, updated_by = ${record.updatedBy}
         WHERE profile_id = ${record.profileId} AND revision = ${existing.revision}
         RETURNING profile_id`;
       if (changed.length !== 1) {

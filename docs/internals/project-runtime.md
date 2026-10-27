@@ -25,7 +25,7 @@ provider, or worktree.
 | [Provider bootstrap](../../packages/provider-core/src/server/orchestrationInstructions.ts) | The shared, provider-neutral `Project Runtime` instruction section.                                                                                         |
 | [Turn context](../../packages/provider-core/src/server/turnContext.ts)                     | Authority, ordering, bounds, and chunking for turn-scoped context that never enters provider session identity.                                              |
 | [Transport and UI](../../apps/server/src/projectRuntime/ProjectRuntimeRpc.ts)              | WebSocket handlers; the web client lives under [settings](../../apps/web/src/components/settings/ProjectRuntimeSettings.tsx).                               |
-| [Fork migrations](../../apps/server/src/persistence/ForkMigrations.ts)                     | The isolated fork ledger, historical reconciliation, and the three Runtime, Profile, and Task/Handoff migrations.                                           |
+| [Fork migrations](../../apps/server/src/persistence/ForkMigrations.ts)                     | The isolated fork ledger, historical reconciliation, and the four Runtime, Profile, Task/Handoff, and Routing migrations.                                   |
 
 ## Persistence and deletion
 
@@ -216,6 +216,15 @@ values travel only through turn context.
 Claude's read-only T3 MCP allowlist remains a provider-specific seam; a future
 Runtime read tool must be added there and to its test. Write tools are not
 pre-approved.
+
+## Routing
+
+Runtime tasks, projects, and Development Profiles can carry structured worker
+routes. Routing is configuration and resolution only: it selects and rejects
+candidates but launches no worker. Precedence, fallback, eligibility,
+persistence ownership, and concurrency are documented in
+[Runtime routing](./runtime-routing.md). Routing is deliberately absent from the
+MCP bootstrap and `t3_project_context`, so the agent-context budget is unchanged.
 
 ## Extension points
 

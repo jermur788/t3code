@@ -39,6 +39,6 @@ at the same repository starts without an assignment.
 
 V1 supports one profile per project and no profile inheritance chains. Profiles
 are user-managed settings: agents cannot create, edit, delete, assign, or remove
-them through MCP. There is no automatic memory, provider-specific policy, or
-synchronization between environments. Configuration is available on web and desktop;
+them through MCP. There is no automatic memory or synchronization between
+environments. Configuration is available on web and desktop;
 native mobile does not have a Development Profiles settings screen.

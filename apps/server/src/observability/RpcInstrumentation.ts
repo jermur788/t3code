@@ -41,6 +41,9 @@ const RPC_AGGREGATES = {
   [PROJECT_RUNTIME_RPC_METHODS.updateTask]: "projectRuntime",
   [PROJECT_RUNTIME_RPC_METHODS.listHandoffs]: "projectRuntime",
   [PROJECT_RUNTIME_RPC_METHODS.readHandoff]: "projectRuntime",
+  [PROJECT_RUNTIME_RPC_METHODS.readRouting]: "projectRuntime",
+  [PROJECT_RUNTIME_RPC_METHODS.saveRouting]: "projectRuntime",
+  [PROJECT_RUNTIME_RPC_METHODS.resolveRoute]: "projectRuntime",
 
   [ORCHESTRATION_V2_WS_METHODS.dispatchCommand]: "orchestrationV2",
   [ORCHESTRATION_V2_WS_METHODS.getWorkflowScript]: "orchestration",

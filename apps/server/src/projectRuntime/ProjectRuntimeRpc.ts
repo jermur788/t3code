@@ -2,6 +2,7 @@ import {
   PROJECT_RUNTIME_RPC_METHODS,
   ProjectRuntimeError,
   ProjectRuntimeRequestError,
+  RuntimeRoutingError,
 } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
@@ -10,10 +11,12 @@ import type { RpcGroup } from "effect/rpc";
 import { WsRpcGroup } from "@t3tools/contracts";
 import * as ProjectRuntimeService from "./ProjectRuntimeService.ts";
 import * as ProjectRuntimeSourceAccess from "./ProjectRuntimeSourceAccess.ts";
+import * as RuntimeRoutingService from "../runtimeRouting/RuntimeRoutingService.ts";
 
 const isRuntimeError = Schema.is(ProjectRuntimeError);
+const isRuntimeRoutingError = Schema.is(RuntimeRoutingError);
 const toRpcError = (error: unknown) =>
-  isRuntimeError(error)
+  isRuntimeError(error) || isRuntimeRoutingError(error)
     ? error
     : new ProjectRuntimeRequestError({
         reason: Predicate.isTagged(error, "ProjectNotFoundError")
@@ -28,6 +31,7 @@ export const makeHandlers = Effect.fn("ProjectRuntimeRpc.makeHandlers")(function
 ) {
   const runtime = yield* ProjectRuntimeService.ProjectRuntimeService;
   const sources = yield* ProjectRuntimeSourceAccess.ProjectRuntimeSourceAccess;
+  const routing = yield* RuntimeRoutingService.RuntimeRoutingService;
   const actor = { actor: `user:${sessionId}` };
   return {
     [PROJECT_RUNTIME_RPC_METHODS.status]: ({ projectId }) =>
@@ -58,5 +62,11 @@ export const makeHandlers = Effect.fn("ProjectRuntimeRpc.makeHandlers")(function
       runtime.listHandoffs(projectId, input).pipe(Effect.mapError(toRpcError)),
     [PROJECT_RUNTIME_RPC_METHODS.readHandoff]: ({ projectId, ...input }) =>
       runtime.readHandoff(projectId, input.handoffId).pipe(Effect.mapError(toRpcError)),
+    [PROJECT_RUNTIME_RPC_METHODS.readRouting]: ({ projectId }) =>
+      routing.readProjectRouting(projectId).pipe(Effect.mapError(toRpcError)),
+    [PROJECT_RUNTIME_RPC_METHODS.saveRouting]: ({ projectId, ...input }) =>
+      routing.saveProjectRouting(projectId, input).pipe(Effect.mapError(toRpcError)),
+    [PROJECT_RUNTIME_RPC_METHODS.resolveRoute]: (input) =>
+      routing.resolveRoute(input).pipe(Effect.mapError(toRpcError)),
   } satisfies Partial<RpcGroup.HandlersFrom<RpcGroup.Rpcs<typeof WsRpcGroup>>>;
 });
