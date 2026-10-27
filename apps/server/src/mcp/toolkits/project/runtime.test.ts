@@ -270,6 +270,7 @@ const runtimeToolNames = [
 ];
 
 const BODY_MARKER = "BODY-MARKER-31c9";
+const THREAD_MESSAGE_MARKER = "THREAD-MESSAGE-MARKER-8e2f";
 
 it.effect("exposes exactly the eleven Runtime tools and no authority-changing tool", () =>
   Effect.gen(function* () {
@@ -422,6 +423,14 @@ it.effect("builds the enabled context from saved state only, without source bodi
     yield* t.task(projectA, "done", "done");
     yield* t.task(projectA, "cancelled", "cancelled");
     yield* t.task(projectB, "foreign active", "active");
+    // Persisted conversation, for the calling thread and a sibling in the same project, that
+    // context must never read.
+    for (const threadId of [threadA, threadSupervised]) {
+      yield* t.sql`INSERT INTO orchestration_v2_projection_messages
+        (message_id, thread_id, role, streaming, created_at, updated_at, payload_json)
+        VALUES (${`message-${threadId}`}, ${threadId}, 'user', 0, '2026-10-23T00:00:00.000Z',
+          '2026-10-23T00:00:00.000Z', ${JSON.stringify({ text: THREAD_MESSAGE_MARKER })})`;
+    }
     yield* TestClock.adjust(1000);
     const review = yield* t.task(projectA, "review", "review");
     yield* TestClock.adjust(1000);
@@ -473,9 +482,10 @@ it.effect("builds the enabled context from saved state only, without source bodi
     assert.isNull(context.tasks[1]?.latestHandoff);
     assert.deepEqual(context.truncated, { sources: false, tasks: false, handoffs: false });
     assert.equal(context.status.enabled, true);
-    // No source body and nothing from the other project.
+    // No source body, no conversation, and nothing from the other project.
     const serialized = JSON.stringify(outcome);
     assert.notInclude(serialized, BODY_MARKER);
+    assert.notInclude(serialized, THREAD_MESSAGE_MARKER);
     assert.notInclude(serialized, "Foreign");
     assert.notInclude(serialized, "foreign active");
   }).pipe(Effect.scoped, Effect.provide(layerTest)),
