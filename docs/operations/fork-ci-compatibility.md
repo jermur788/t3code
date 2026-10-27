@@ -26,10 +26,10 @@ GitHub-hosted runners for normal pull-request and `main` CI.
   request.
 - Blacksmith labels select the runner for each job. The exact labels are the
   ones already present in those workflows.
-- `setup-apt-mirrors` rewrites Ubuntu sources to Blacksmith's `mirror+file:`
-  mirror list. That transport and the
-  `/etc/apt/blacksmith-ubuntu-mirrors.txt` file belong to the Blacksmith runner
-  image.
+- `setup-apt-mirrors` is a Blacksmith-runner optimization: it writes
+  `/etc/apt/blacksmith-ubuntu-mirrors.txt` and rewrites Ubuntu sources to the
+  `mirror+file:` transport. The fork skips it on GitHub-hosted runners so they
+  keep standard Ubuntu sources and the same package-install semantics.
 
 Release, deploy, desktop-preview, mobile-preview, Windows, and other manual
 workflows are not part of normal fork PR/main qualification. They keep their
@@ -95,6 +95,9 @@ is guarded with:
 ```yaml
 if: runner.environment == 'self-hosted'
 ```
+
+This intentionally gives up the mirror-failover optimization on GitHub-hosted
+runners; it does not change which packages are installed.
 
 The inline mirror-file `sed` in `ci.yml` and `release.yml` is guarded with a
 `-f /etc/apt/blacksmith-ubuntu-mirrors.txt` check. Package installation
@@ -181,5 +184,6 @@ qualification:
   secret-, environment-, or manual-triggered preview/release paths.
 
 `agent-context-budget.yml`, `issue-labels.yml`, `pr-size.yml`, `pr-vouch.yml`,
-and `thread-transfer-report.yml` already use GitHub-hosted runners and need no
-change.
+and `thread-transfer-report.yml` already use GitHub-hosted runners.
+`stale-needs-more-info.yml` uses `ubuntu-latest` and is schedule/manual. None
+need a change.
