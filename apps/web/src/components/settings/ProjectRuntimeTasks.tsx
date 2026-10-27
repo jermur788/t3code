@@ -1,8 +1,12 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import {
   PROJECT_RUNTIME_BOUNDS as B,
+  type ProjectRuntimeBlockerClassification,
+  type ProjectRuntimeEvidenceResult,
   type ProjectRuntimeTask,
+  type ProjectRuntimeTaskBase,
   type ProjectRuntimeTaskStatus,
+  type ProjectRuntimeVerificationMilestone,
 } from "@t3tools/contracts";
 import { Button } from "../ui/button";
 import {
@@ -16,6 +20,66 @@ import {
 import type { ProjectRuntimeApi } from "./useProjectRuntimeApi";
 import { ProjectRuntimeHandoffs } from "./ProjectRuntimeHandoffs";
 import { useSettingsSearchTarget } from "./settingsLayout";
+import {
+  BLOCKER_CLASSIFICATION_VALUES,
+  EVIDENCE_RESULT_VALUES,
+  TASK_STATUS_VALUES,
+  VERIFICATION_MILESTONE_VALUES,
+  mapAcceptanceCriteria,
+  mapVerificationEvidence,
+  taskBlockerInput,
+  taskDraftIssue,
+  verificationIssue,
+  type TaskEvidenceDraft,
+} from "./projectRuntimeTaskEditor.logic";
+
+function legacyBlockedWithoutBlocker(task: ProjectRuntimeTask): boolean {
+  return task.status === "blocked" && task.blocker === null;
+}
+
+function evidenceDrafts(task: ProjectRuntimeTask | null): TaskEvidenceDraft[] {
+  return (
+    task?.verification.evidence.map((entry) => ({
+      key: `saved-${entry.evidenceId}`,
+      evidenceId: entry.evidenceId,
+      result: entry.result,
+      summary: entry.summary,
+      command: entry.command ?? "",
+      recordedAt: entry.recordedAt,
+      ...(entry.criterionIds === undefined ? {} : { criterionIds: entry.criterionIds }),
+    })) ?? []
+  );
+}
+
+function nullableText(value: string): string | null {
+  const trimmed = value.trim();
+  return trimmed === "" ? null : trimmed;
+}
+
+function recordedBase(fields: {
+  readonly repository: string;
+  readonly branch: string;
+  readonly revision: string;
+  readonly worktree: string;
+  readonly upstreamRevision: string;
+  readonly notes: string;
+}): ProjectRuntimeTaskBase | null {
+  const base: {
+    repository?: string;
+    branch?: string;
+    revision?: string;
+    worktreePath?: string;
+    upstreamRevision?: string;
+    notes?: string;
+  } = {};
+  if (fields.repository.trim()) base.repository = fields.repository.trim();
+  if (fields.branch.trim()) base.branch = fields.branch.trim();
+  if (fields.revision.trim()) base.revision = fields.revision.trim();
+  if (fields.worktree.trim()) base.worktreePath = fields.worktree.trim();
+  if (fields.upstreamRevision.trim()) base.upstreamRevision = fields.upstreamRevision.trim();
+  if (fields.notes.trim()) base.notes = fields.notes.trim();
+  return Object.keys(base).length > 0 ? base : null;
+}
 
 export function ProjectRuntimeTasks({ api }: { api: ProjectRuntimeApi }) {
   const [cursor, setCursor] = useState(0);
@@ -69,7 +133,7 @@ function TaskPage({
           ) : (
             <ul className="divide-y rounded-lg border">
               {result.value.tasks.map((task) => (
-                <li key={task.taskId} className="space-y-2 p-3">
+                <li key={task.taskId} className="space-y-1.5 p-3">
                   <div className="flex flex-wrap items-start justify-between gap-2">
                     <p className="min-w-0 break-words text-sm font-medium">{task.title}</p>
                     <span className="text-xs">
@@ -77,12 +141,27 @@ function TaskPage({
                     </span>
                   </div>
                   <p className="break-words text-xs text-muted-foreground">
+                    Owner {task.owner} · Verification {task.verification.milestone}
+                  </p>
+                  {task.blocker ? (
+                    <p className="line-clamp-2 break-words text-xs text-muted-foreground">
+                      Blocker: {task.blocker.summary}
+                    </p>
+                  ) : legacyBlockedWithoutBlocker(task) ? (
+                    <p className="text-xs text-warning-foreground">
+                      Blocked without a recorded blocker. Edit the task to repair it.
+                    </p>
+                  ) : null}
+                  <p className="line-clamp-2 break-words text-xs text-muted-foreground">
                     Next: {task.nextAction ?? "Not set"}
+                  </p>
+                  <p className="truncate text-xs text-muted-foreground">
+                    Latest handoff: {task.latestHandoffId ?? "None"}
                   </p>
                   <p className="text-xs text-muted-foreground">
                     Updated {new Date(task.updatedAt).toLocaleString()}
                   </p>
-                  <div className="flex flex-wrap gap-2">
+                  <div className="flex flex-wrap gap-2 pt-1">
                     <Button size="xs" variant="outline" onClick={() => setEditing(task)}>
                       {api.canEdit ? "Edit task" : "View task"}
                     </Button>
@@ -142,57 +221,131 @@ function TaskEditor({
 }) {
   const [title, setTitle] = useState(saved?.title ?? "");
   const [status, setStatus] = useState<ProjectRuntimeTaskStatus>(saved?.status ?? "planned");
+  const [objective, setObjective] = useState(saved?.objective ?? "");
   const [scope, setScope] = useState(saved?.scope ?? "");
-  const [criteria, setCriteria] = useState(
-    saved?.acceptanceCriteria.map((c) => c.text).join("\n") ?? "",
-  );
+  const [outOfScope, setOutOfScope] = useState(saved?.outOfScope ?? "");
+  const [owner, setOwner] = useState(saved?.owner ?? "");
+  const [verificationPlan, setVerificationPlan] = useState(saved?.verificationPlan ?? "");
   const [next, setNext] = useState(saved?.nextAction ?? "");
+  const [result, setResult] = useState(saved?.result ?? "");
+  const [classification, setClassification] = useState<ProjectRuntimeBlockerClassification>(
+    saved?.blocker?.classification ?? "implementation-defect",
+  );
+  const [blockerSummary, setBlockerSummary] = useState(saved?.blocker?.summary ?? "");
+  const [blockerDetail, setBlockerDetail] = useState(saved?.blocker?.detail ?? "");
+  const [milestone, setMilestone] = useState<ProjectRuntimeVerificationMilestone>(
+    saved?.verification.milestone ?? "none",
+  );
+  const [evidence, setEvidence] = useState<TaskEvidenceDraft[]>(() => evidenceDrafts(saved));
+  const [criteria, setCriteria] = useState(
+    saved?.acceptanceCriteria.map((criterion) => criterion.text).join("\n") ?? "",
+  );
+  const [repository, setRepository] = useState(saved?.base?.repository ?? "");
   const [branch, setBranch] = useState(saved?.base?.branch ?? "");
+  const [revision, setRevision] = useState(saved?.base?.revision ?? "");
   const [worktree, setWorktree] = useState(saved?.base?.worktreePath ?? "");
-  const [sha, setSha] = useState(saved?.base?.revision ?? "");
+  const [upstreamRevision, setUpstreamRevision] = useState(saved?.base?.upstreamRevision ?? "");
+  const [baseNotes, setBaseNotes] = useState(saved?.base?.notes ?? "");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [conflict, setConflict] = useState(false);
+  const nextEvidenceKey = useRef(0);
+  const addEvidence = () => {
+    nextEvidenceKey.current += 1;
+    setEvidence((current) => [
+      ...current,
+      {
+        key: `draft-${nextEvidenceKey.current}`,
+        evidenceId: null,
+        result: "inconclusive",
+        summary: "",
+        command: "",
+        recordedAt: new Date().toISOString(),
+      },
+    ]);
+  };
+  const updateEvidence = (key: string, patch: Partial<Omit<TaskEvidenceDraft, "key">>) => {
+    setEvidence((current) =>
+      current.map((entry) => (entry.key === key ? { ...entry, ...patch } : entry)),
+    );
+  };
+  const resetVerification = () => {
+    setMilestone("none");
+    setEvidence([]);
+    setError(null);
+  };
+  const legacyBlocked = saved !== null && legacyBlockedWithoutBlocker(saved);
+  const clearsSavedBlocker = saved?.blocker != null && status !== "blocked";
   const save = async () => {
-    setBusy(true);
-    const fields = {
-      title,
+    if (busy) return;
+    const criteriaMapping = mapAcceptanceCriteria(criteria, saved?.acceptanceCriteria ?? []);
+    const evidenceMapping = mapVerificationEvidence(evidence);
+    const validationError = taskDraftIssue({
       status,
+      blockerSummary,
+      result,
+      criteriaError: criteriaMapping.error,
+      verificationError:
+        evidenceMapping.error ?? verificationIssue(milestone, evidenceMapping.evidence),
+    });
+    if (validationError) {
+      setError(validationError);
+      setConflict(false);
+      return;
+    }
+    setBusy(true);
+    setError(null);
+    const base = recordedBase({
+      repository,
+      branch,
+      revision,
+      worktree,
+      upstreamRevision,
+      notes: baseNotes,
+    });
+    const blocker =
+      status === "blocked"
+        ? taskBlockerInput({ classification, summary: blockerSummary, detail: blockerDetail })
+        : null;
+    const shared = {
+      title: title.trim(),
       scope,
-      // Ids carry over per line so evidence criterion links stay valid.
-      acceptanceCriteria: criteria
-        .split("\n")
-        .filter((line) => line.trim() !== "")
-        .map((text, index) => ({
-          id: saved?.acceptanceCriteria[index]?.id ?? `c${index + 1}`,
-          text,
-        })),
+      acceptanceCriteria: [...criteriaMapping.criteria],
+      status,
+      verification: { milestone, evidence: [...evidenceMapping.evidence] },
     };
-    const base = { ...saved?.base };
-    if (branch.trim()) base.branch = branch.trim();
-    else delete base.branch;
-    if (worktree.trim()) base.worktreePath = worktree.trim();
-    else delete base.worktreePath;
-    if (sha.trim()) base.revision = sha.trim();
-    else delete base.revision;
-    const result = saved
+    const response = saved
       ? await api.updateTask({
-          ...fields,
+          ...shared,
+          blocker,
           taskId: saved.taskId,
           expectedRevision: saved.revision,
-          nextAction: next.trim() || null,
-          base: Object.keys(base).length > 0 ? base : null,
+          objective: nullableText(objective),
+          outOfScope: nullableText(outOfScope),
+          verificationPlan: nullableText(verificationPlan),
+          result: nullableText(result),
+          nextAction: nullableText(next),
+          base: base ?? null,
+          ...(owner.trim() === "" ? {} : { owner: owner.trim() }),
         })
       : await api.createTask({
-          ...fields,
-          ...(next.trim() ? { nextAction: next } : {}),
-          ...(Object.keys(base).length > 0 ? { base } : {}),
+          ...shared,
+          ...(blocker === null ? {} : { blocker }),
+          ...(nullableText(objective) === null ? {} : { objective: objective.trim() }),
+          ...(nullableText(outOfScope) === null ? {} : { outOfScope: outOfScope.trim() }),
+          ...(nullableText(verificationPlan) === null
+            ? {}
+            : { verificationPlan: verificationPlan.trim() }),
+          ...(nullableText(result) === null ? {} : { result: result.trim() }),
+          ...(nullableText(next) === null ? {} : { nextAction: next.trim() }),
+          ...(base === null ? {} : { base }),
+          ...(owner.trim() === "" ? {} : { owner: owner.trim() }),
         });
     setBusy(false);
-    if (result.ok) savedTask();
+    if (response.ok) savedTask();
     else {
-      setError(result.message);
-      setConflict(result.conflict);
+      setError(response.message);
+      setConflict(response.conflict);
     }
   };
   return (
@@ -200,25 +353,105 @@ function TaskEditor({
       <h4 className="text-sm font-medium">
         {saved ? `Edit task · Revision ${saved.revision}` : "Create task"}
       </h4>
-      <fieldset disabled={!api.canEdit || busy} className="space-y-3">
+      {saved ? (
+        <p className="truncate text-xs text-muted-foreground">
+          Latest handoff: {saved.latestHandoffId ?? "None recorded."}
+        </p>
+      ) : null}
+      <fieldset disabled={!api.canEdit || busy} className="space-y-4">
+        <div className="space-y-3">
+          <RuntimeText
+            label="Task title"
+            value={title}
+            onChange={setTitle}
+            maxLength={B.taskTitleMaxLength}
+          />
+          <RuntimeSelect
+            label="Task status"
+            value={status}
+            values={TASK_STATUS_VALUES}
+            onChange={setStatus}
+          />
+          <RuntimeText
+            label="Owner"
+            value={owner}
+            onChange={setOwner}
+            maxLength={B.actorMaxLength}
+          />
+          <RuntimeText
+            label="Scope"
+            multiline
+            value={scope}
+            onChange={setScope}
+            maxLength={B.taskTextMaxLength}
+          />
+          <RuntimeText
+            label="Objective"
+            multiline
+            value={objective}
+            onChange={setObjective}
+            maxLength={B.taskObjectiveMaxLength}
+          />
+          <RuntimeText
+            label="Out of scope"
+            multiline
+            value={outOfScope}
+            onChange={setOutOfScope}
+            maxLength={B.taskOutOfScopeMaxLength}
+          />
+        </div>
+
+        {status === "blocked" ? (
+          <div className="space-y-3 rounded-lg border p-3">
+            <h5 className="text-sm font-medium">Blocker</h5>
+            {legacyBlocked ? (
+              <p role="status" className="text-xs text-warning-foreground">
+                This task is recorded as blocked without a blocker. Add a blocker, or change the
+                status to repair it.
+              </p>
+            ) : null}
+            <RuntimeSelect
+              label="Blocker classification"
+              value={classification}
+              values={BLOCKER_CLASSIFICATION_VALUES}
+              onChange={setClassification}
+            />
+            <RuntimeText
+              label="Blocker summary"
+              value={blockerSummary}
+              onChange={setBlockerSummary}
+              maxLength={B.blockerSummaryMaxLength}
+            />
+            <RuntimeText
+              label="Blocker detail"
+              multiline
+              value={blockerDetail}
+              onChange={setBlockerDetail}
+              maxLength={B.blockerDetailMaxLength}
+            />
+          </div>
+        ) : clearsSavedBlocker ? (
+          <p role="status" className="text-xs text-muted-foreground">
+            Saving this status clears the recorded blocker.
+          </p>
+        ) : null}
+
         <RuntimeText
-          label="Task title"
-          value={title}
-          onChange={setTitle}
-          maxLength={B.taskTitleMaxLength}
-        />
-        <RuntimeSelect
-          label="Task status"
-          value={status}
-          values={["planned", "ready", "active", "blocked", "review", "done", "cancelled"]}
-          onChange={setStatus}
-        />
-        <RuntimeText
-          label="Scope"
+          label="Result"
           multiline
-          value={scope}
-          onChange={setScope}
-          maxLength={B.taskTextMaxLength}
+          value={result}
+          onChange={setResult}
+          maxLength={B.taskResultMaxLength}
+        />
+        <p className="text-xs text-muted-foreground">
+          Required when the status is done. A handoff summary is not a task result.
+        </p>
+        <RuntimeText
+          label="Next action"
+          multiline
+          value={next}
+          onChange={setNext}
+          maxLength={B.taskNextActionMaxLength}
         />
         <RuntimeText
           label="Acceptance criteria"
@@ -227,39 +460,123 @@ function TaskEditor({
           onChange={setCriteria}
           maxLength={B.taskTextMaxLength}
         />
+        <p className="text-xs text-muted-foreground">
+          One criterion per line. Existing criteria keep their position and identity.
+        </p>
         <RuntimeText
-          label="Next action"
+          label="Verification plan"
           multiline
-          value={next}
-          onChange={setNext}
-          maxLength={B.taskNextActionMaxLength}
+          value={verificationPlan}
+          onChange={setVerificationPlan}
+          maxLength={B.taskVerificationPlanMaxLength}
         />
+
+        <div className="space-y-3 rounded-lg border p-3">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <h5 className="text-sm font-medium">Verification</h5>
+            <span className="text-xs text-muted-foreground">
+              {evidence.length} evidence item{evidence.length === 1 ? "" : "s"}
+            </span>
+          </div>
+          <RuntimeSelect
+            label="Verification milestone"
+            value={milestone}
+            values={VERIFICATION_MILESTONE_VALUES}
+            onChange={setMilestone}
+          />
+          <p className="text-xs text-muted-foreground">
+            Passing milestones need at least one passing evidence item. Inconclusive evidence is not
+            passing, and verified cannot coexist with failing evidence.
+          </p>
+          {evidence.map((entry, index) => (
+            <div key={entry.key} className="space-y-2 rounded-md border p-2">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <p className="text-xs font-medium">Evidence {index + 1}</p>
+                <Button
+                  size="xs"
+                  variant="ghost"
+                  onClick={() =>
+                    setEvidence((current) => current.filter((item) => item.key !== entry.key))
+                  }
+                >
+                  Remove evidence {index + 1}
+                </Button>
+              </div>
+              <RuntimeSelect
+                label={`Evidence result ${index + 1}`}
+                value={entry.result}
+                values={EVIDENCE_RESULT_VALUES}
+                onChange={(value: ProjectRuntimeEvidenceResult) =>
+                  updateEvidence(entry.key, { result: value })
+                }
+              />
+              <RuntimeText
+                label={`Evidence summary ${index + 1}`}
+                value={entry.summary}
+                onChange={(value) => updateEvidence(entry.key, { summary: value })}
+                maxLength={B.evidenceSummaryMaxLength}
+              />
+              <RuntimeText
+                label={`Evidence command ${index + 1}`}
+                value={entry.command}
+                onChange={(value) => updateEvidence(entry.key, { command: value })}
+                maxLength={B.evidenceCommandMaxLength}
+              />
+            </div>
+          ))}
+          <div className="flex flex-wrap gap-2">
+            <Button size="xs" variant="outline" onClick={addEvidence}>
+              Add evidence
+            </Button>
+            <Button size="xs" variant="outline" onClick={resetVerification}>
+              Reset verification to none
+            </Button>
+          </div>
+        </div>
+
         <details>
-          <summary className="cursor-pointer text-sm font-medium">
-            Git/worktree metadata only
-          </summary>
+          <summary className="cursor-pointer text-sm font-medium">Recorded base metadata</summary>
           <div className="mt-3 space-y-3">
             <p className="text-xs text-muted-foreground">
-              These descriptive fields do not create a branch, create or move a worktree, rebind a
-              thread, grant ownership, or authorize writes.
+              These fields describe the recorded starting point. They do not create, move, or verify
+              a Git branch or worktree, rebind a thread, grant ownership, or authorize writes.
             </p>
             <RuntimeText
-              label="Descriptive branch"
+              label="Recorded repository"
+              value={repository}
+              onChange={setRepository}
+              maxLength={B.baseRepositoryMaxLength}
+            />
+            <RuntimeText
+              label="Recorded branch"
               value={branch}
               onChange={setBranch}
               maxLength={B.baseBranchMaxLength}
             />
             <RuntimeText
-              label="Descriptive worktree path"
+              label="Recorded revision"
+              value={revision}
+              onChange={setRevision}
+              maxLength={B.baseRevisionMaxLength}
+            />
+            <RuntimeText
+              label="Recorded worktree"
               value={worktree}
               onChange={setWorktree}
               maxLength={B.baseWorktreePathMaxLength}
             />
             <RuntimeText
-              label="Descriptive base SHA"
-              value={sha}
-              onChange={setSha}
-              maxLength={B.baseRevisionMaxLength}
+              label="Recorded upstream revision"
+              value={upstreamRevision}
+              onChange={setUpstreamRevision}
+              maxLength={B.baseUpstreamRevisionMaxLength}
+            />
+            <RuntimeText
+              label="Recorded notes"
+              multiline
+              value={baseNotes}
+              onChange={setBaseNotes}
+              maxLength={B.baseNotesMaxLength}
             />
           </div>
         </details>

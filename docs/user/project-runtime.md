@@ -102,27 +102,42 @@ memory inference or automatic execution to them.
 ## Runtime tasks
 
 A Runtime task is durable project work, independent of any one thread or delegated
-execution. Record its title, status, scope, acceptance criteria, and next action.
-Statuses are **planned**, **ready**, **active**, **blocked**, **review**, **done**,
+execution. Record its title, status, owner, scope, objective, out-of-scope work,
+acceptance criteria, verification plan, result, and next action. Statuses are
+**planned**, **ready**, **active**, **blocked**, **review**, **done**, **deferred**,
 and **cancelled**. A status change records workflow state, not verification,
 review, or user acceptance.
+
+A **blocked** task needs a blocker classification and summary. Moving it to another
+status clears the blocker, and the editor says so before you save. A **done** task
+needs a result; a handoff summary is not a task result. One line of acceptance
+criteria becomes one criterion, and each new line receives a valid identifier
+without exposing identifiers in the editor.
+
+Verification is separate from lifecycle status. Passing milestones
+(**static-pass**, **runtime-pass**, **review-pass**, **integrated**, **verified**)
+need at least one passing evidence item, and **verified** cannot coexist with
+failing evidence. Inconclusive evidence never counts as passing. Use **Reset
+verification to none** when a claim no longer holds.
 
 Choose **Create task** to add one and **Edit task** to change it. Every save checks
 the revision you started from. If someone else saved first, your draft stays and
 the save is refused; choose **Discard draft and reload task**, then reapply your
 change. This stops one worker from silently overwriting another's work.
 
-The optional branch, worktree path, and base SHA fields are notes only. They do not
-create a branch or worktree, move or bind a thread, grant ownership, or authorize
+The recorded base metadata (repository, branch, revision, worktree, upstream
+revision, and notes) describes the work's starting point. It does not create, move,
+or verify a Git branch or worktree, rebind a thread, grant ownership, or authorize
 writes. Use T3 Code's normal thread and worktree controls for that.
 
 ## Handoffs
 
 Choose **View handoffs** on a task to see its continuation records. A handoff
-captures a checkpoint, a summary, changes, verification, failures or blockers, a
-next action, and optional evidence references. It is written once and cannot be
-edited or deleted. It also records the task and Runtime revisions it was written
-against.
+captures a checkpoint, a summary, a result, files changed, tests run and not run,
+failures or risks, unresolved decisions, repository and integration state,
+verification evidence, a next action, and optional provenance. The record the task
+points to is marked **Latest**. Handoffs are written once and cannot be edited or
+deleted. Each also records the task and Runtime revisions it was written against.
 
 When an agent appends a handoff, T3 Code records the author, thread, provider, and
 model from the invocation. That provenance shows who produced the note; it is not

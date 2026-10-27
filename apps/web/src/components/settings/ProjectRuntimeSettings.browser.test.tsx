@@ -6,6 +6,8 @@ import {
   ProjectRuntimeTaskId,
   ProjectRuntimeSourceId,
   ProjectRuntimeHandoffId,
+  ProviderInstanceId,
+  ThreadId,
   type ProjectRuntimeTask,
   type ProjectRuntimeSource,
   type ProjectRuntimeHandoff,
@@ -148,10 +150,8 @@ function setup({ enabled = true, canEdit = true }: { enabled?: boolean; canEdit?
       const updated = {
         ...task,
         ...input,
-        nextAction: input.nextAction ?? undefined,
-        base: input.base ?? undefined,
-        revision: 2,
-      };
+        revision: (project.tasks[0]?.revision ?? 1) + 1,
+      } as unknown as ProjectRuntimeTask;
       project.tasks = [updated];
       return ok(updated);
     }),
@@ -396,7 +396,10 @@ it("creates tasks, saves a status change with its revision, and exposes immutabl
       taskId: t.task.taskId,
       checkpoint: "PRT fixture",
       summary: "Work continued",
-      filesChanged: [],
+      result: "Handoff result",
+      filesChanged: ["apps/web/src/App.tsx"],
+      testsRun: ["vp test run focused"],
+      testsNotRun: ["Manual device pass"],
       verification: {
         milestone: "static-pass",
         evidence: [
@@ -404,6 +407,7 @@ it("creates tasks, saves a status change with its revision, and exposes immutabl
             evidenceId: "e1",
             result: "pass",
             summary: "Focused tests passed",
+            command: "vp test run focused",
             recordedAt: time,
           },
           {
@@ -419,6 +423,13 @@ it("creates tasks, saves a status change with its revision, and exposes immutabl
       createdAt: time,
       createdBy: "thread:previous",
       failuresRisks: "None",
+      unresolvedDecisions: ["Open product decision"],
+      repositoryState: "branch t4/ui, clean",
+      integrationState: "not merged",
+      nextAction: "Continue after review",
+      threadId: ThreadId.make("thread-1"),
+      providerInstanceId: ProviderInstanceId.make("provider-1"),
+      model: "model-1",
     },
   ];
   await using screen = await render(<ProjectRuntimeSettings members={[a]} />);
@@ -431,10 +442,15 @@ it("creates tasks, saves a status change with its revision, and exposes immutabl
   await userEvent.click(screen.getByRole("button", { name: "Save task", exact: true }));
   await expect.element(screen.getByText("New task", { exact: true })).toBeVisible();
   await userEvent.click(screen.getByRole("button", { name: "Edit task", exact: true }));
-  await userEvent.click(screen.getByText("Git/worktree metadata only", { exact: true }));
+  await userEvent.click(screen.getByText("Recorded base metadata", { exact: true }));
   await expect
-    .element(screen.getByText("These descriptive fields do not create a branch", { exact: false }))
+    .element(
+      screen.getByText("These fields describe the recorded starting point", { exact: false }),
+    )
     .toBeVisible();
+  await expect
+    .element(screen.getByRole("textbox", { name: "Recorded worktree", exact: true }))
+    .toHaveValue("/metadata-only");
   await userEvent.click(screen.getByRole("combobox", { name: "Task status", exact: true }));
   await userEvent.click(screen.getByRole("option", { name: "review", exact: true }));
   await userEvent.click(screen.getByRole("button", { name: "Save task", exact: true }));
@@ -446,10 +462,292 @@ it("creates tasks, saves a status change with its revision, and exposes immutabl
   await userEvent.click(screen.getByText("PRT fixture", { exact: true }));
   await expect.element(screen.getByText("Focused tests passed", { exact: true })).toBeVisible();
   await expect.element(screen.getByText("notes.md:2", { exact: true })).toBeVisible();
+  await expect.element(screen.getByText("Handoff result", { exact: true })).toBeVisible();
+  await expect.element(screen.getByText("pass", { exact: true })).toBeVisible();
+  await expect
+    .element(screen.getByText("vp test run focused", { exact: true }).first())
+    .toBeVisible();
+  await expect.element(screen.getByText("Manual device pass", { exact: true })).toBeVisible();
+  await expect.element(screen.getByText("Open product decision", { exact: true })).toBeVisible();
+  await expect.element(screen.getByText("branch t4/ui, clean", { exact: true })).toBeVisible();
+  await expect.element(screen.getByText("not merged", { exact: true })).toBeVisible();
+  await expect.element(screen.getByText("thread-1", { exact: true })).toBeVisible();
+  await expect.element(screen.getByText("provider-1", { exact: true })).toBeVisible();
+  await expect.element(screen.getByText("model-1", { exact: true })).toBeVisible();
   await expect
     .element(screen.getByRole("button", { name: /edit handoff|delete handoff/i }))
     .not.toBeInTheDocument();
 });
+it("requires a blocker for blocked, saves it, and clears it when the status moves away", async () => {
+  const t = setup();
+  t.project.tasks = [{ ...t.task }];
+  await using screen = await render(<ProjectRuntimeSettings members={[a]} />);
+  await expect.element(screen.getByText("Review work", { exact: true })).toBeVisible();
+  await userEvent.click(screen.getByRole("button", { name: "Edit task", exact: true }));
+  await userEvent.click(screen.getByRole("combobox", { name: "Task status", exact: true }));
+  await userEvent.click(screen.getByRole("option", { name: "blocked", exact: true }));
+  await userEvent.click(screen.getByRole("button", { name: "Save task", exact: true }));
+  await expect
+    .element(
+      screen.getByText("Blocked tasks need a blocker classification and summary before saving.", {
+        exact: true,
+      }),
+    )
+    .toBeVisible();
+  expect(t.api.updateTask).not.toHaveBeenCalled();
+
+  await userEvent.type(
+    screen.getByRole("textbox", { name: "Blocker summary", exact: true }),
+    "Waiting on review",
+  );
+  await userEvent.click(
+    screen.getByRole("combobox", { name: "Blocker classification", exact: true }),
+  );
+  await userEvent.click(screen.getByRole("option", { name: "review-required", exact: true }));
+  await userEvent.click(screen.getByRole("button", { name: "Save task", exact: true }));
+  await expect.element(screen.getByText("blocked · Revision 2", { exact: true })).toBeVisible();
+  expect(t.api.updateTask).toHaveBeenLastCalledWith(
+    expect.objectContaining({
+      status: "blocked",
+      blocker: { classification: "review-required", summary: "Waiting on review" },
+    }),
+  );
+
+  await userEvent.click(screen.getByRole("button", { name: "Edit task", exact: true }));
+  await userEvent.click(screen.getByRole("combobox", { name: "Task status", exact: true }));
+  await userEvent.click(screen.getByRole("option", { name: "active", exact: true }));
+  await expect
+    .element(screen.getByText("Saving this status clears the recorded blocker.", { exact: true }))
+    .toBeVisible();
+  await userEvent.click(screen.getByRole("button", { name: "Save task", exact: true }));
+  await expect.element(screen.getByText("active · Revision 3", { exact: true })).toBeVisible();
+  expect(t.api.updateTask).toHaveBeenLastCalledWith(
+    expect.objectContaining({ status: "active", blocker: null }),
+  );
+});
+
+it("requires a result before saving a done task", async () => {
+  const t = setup();
+  t.project.tasks = [{ ...t.task }];
+  await using screen = await render(<ProjectRuntimeSettings members={[a]} />);
+  await userEvent.click(screen.getByRole("button", { name: "Edit task", exact: true }));
+  await userEvent.click(screen.getByRole("combobox", { name: "Task status", exact: true }));
+  await userEvent.click(screen.getByRole("option", { name: "done", exact: true }));
+  await userEvent.click(screen.getByRole("button", { name: "Save task", exact: true }));
+  await expect
+    .element(
+      screen.getByText(
+        "Done tasks need a result before saving. A handoff summary is not a task result.",
+        { exact: true },
+      ),
+    )
+    .toBeVisible();
+  expect(t.api.updateTask).not.toHaveBeenCalled();
+
+  await userEvent.type(
+    screen.getByRole("textbox", { name: "Result", exact: true }),
+    "Shipped the change",
+  );
+  await userEvent.click(screen.getByRole("button", { name: "Save task", exact: true }));
+  await expect.element(screen.getByText("done · Revision 2", { exact: true })).toBeVisible();
+  expect(t.api.updateTask).toHaveBeenLastCalledWith(
+    expect.objectContaining({ status: "done", result: "Shipped the change" }),
+  );
+});
+
+it("represents passing, failing, and reset verification evidence", async () => {
+  const t = setup();
+  t.project.tasks = [{ ...t.task }];
+  await using screen = await render(<ProjectRuntimeSettings members={[a]} />);
+  await userEvent.click(screen.getByRole("button", { name: "Edit task", exact: true }));
+  await userEvent.click(
+    screen.getByRole("combobox", { name: "Verification milestone", exact: true }),
+  );
+  await userEvent.click(screen.getByRole("option", { name: "static-pass", exact: true }));
+  await userEvent.click(screen.getByRole("button", { name: "Save task", exact: true }));
+  await expect
+    .element(
+      screen.getByText("static-pass needs at least one passing evidence item.", { exact: false }),
+    )
+    .toBeVisible();
+  expect(t.api.updateTask).not.toHaveBeenCalled();
+
+  await userEvent.click(screen.getByRole("button", { name: "Add evidence", exact: true }));
+  await userEvent.type(
+    screen.getByRole("textbox", { name: "Evidence summary 1", exact: true }),
+    "Focused tests passed",
+  );
+  await userEvent.click(screen.getByRole("button", { name: "Save task", exact: true }));
+  await expect
+    .element(
+      screen.getByText("static-pass needs at least one passing evidence item.", { exact: false }),
+    )
+    .toBeVisible();
+  expect(t.api.updateTask).not.toHaveBeenCalled();
+
+  await userEvent.click(screen.getByRole("combobox", { name: "Evidence result 1", exact: true }));
+  await userEvent.click(screen.getByRole("option", { name: "pass", exact: true }));
+  await userEvent.click(screen.getByRole("button", { name: "Save task", exact: true }));
+  await expect
+    .element(screen.getByText("Owner user:maintainer · Verification static-pass", { exact: true }))
+    .toBeVisible();
+  expect(t.api.updateTask).toHaveBeenCalledTimes(1);
+  expect(t.api.updateTask).toHaveBeenLastCalledWith(
+    expect.objectContaining({
+      verification: {
+        milestone: "static-pass",
+        evidence: [
+          expect.objectContaining({
+            evidenceId: "e1",
+            result: "pass",
+            summary: "Focused tests passed",
+          }),
+        ],
+      },
+    }),
+  );
+
+  await userEvent.click(screen.getByRole("button", { name: "Edit task", exact: true }));
+  await userEvent.click(screen.getByRole("button", { name: "Add evidence", exact: true }));
+  await userEvent.type(
+    screen.getByRole("textbox", { name: "Evidence summary 2", exact: true }),
+    "Device check failed",
+  );
+  await userEvent.click(screen.getByRole("combobox", { name: "Evidence result 2", exact: true }));
+  await userEvent.click(screen.getByRole("option", { name: "fail", exact: true }));
+  await userEvent.click(
+    screen.getByRole("combobox", { name: "Verification milestone", exact: true }),
+  );
+  await userEvent.click(screen.getByRole("option", { name: "verified", exact: true }));
+  await userEvent.click(screen.getByRole("button", { name: "Save task", exact: true }));
+  await expect
+    .element(
+      screen.getByText(
+        "Verified cannot coexist with failing evidence. Remove or resolve the failing evidence, or choose another milestone.",
+        { exact: true },
+      ),
+    )
+    .toBeVisible();
+  expect(t.api.updateTask).toHaveBeenCalledTimes(1);
+
+  await userEvent.click(
+    screen.getByRole("button", { name: "Reset verification to none", exact: true }),
+  );
+  await userEvent.click(screen.getByRole("button", { name: "Save task", exact: true }));
+  expect(t.api.updateTask).toHaveBeenCalledTimes(2);
+  expect(t.api.updateTask).toHaveBeenLastCalledWith(
+    expect.objectContaining({ verification: { milestone: "none", evidence: [] } }),
+  );
+});
+
+it("renders a legacy blocked task without a blocker and lets the user repair it", async () => {
+  const t = setup();
+  t.project.tasks = [{ ...t.task, status: "blocked", blocker: null }];
+  await using screen = await render(<ProjectRuntimeSettings members={[a]} />);
+  await expect
+    .element(screen.getByText("Blocked without a recorded blocker. Edit the task to repair it."))
+    .toBeVisible();
+  await userEvent.click(screen.getByRole("button", { name: "Edit task", exact: true }));
+  await expect
+    .element(
+      screen.getByText(
+        "This task is recorded as blocked without a blocker. Add a blocker, or change the status to repair it.",
+        { exact: true },
+      ),
+    )
+    .toBeVisible();
+  await userEvent.click(screen.getByRole("combobox", { name: "Task status", exact: true }));
+  await userEvent.click(screen.getByRole("option", { name: "active", exact: true }));
+  await userEvent.click(screen.getByRole("button", { name: "Save task", exact: true }));
+  await expect.element(screen.getByText("active · Revision 2", { exact: true })).toBeVisible();
+  expect(t.api.updateTask).toHaveBeenLastCalledWith(
+    expect.objectContaining({ status: "active", blocker: null }),
+  );
+});
+
+it("maps acceptance criteria lines to stable positional ids", async () => {
+  const t = setup();
+  t.project.tasks = [
+    {
+      ...t.task,
+      acceptanceCriteria: [
+        { id: "c1", text: "First criterion" },
+        { id: "c2", text: "Second criterion" },
+      ],
+    },
+  ];
+  await using screen = await render(<ProjectRuntimeSettings members={[a]} />);
+  await userEvent.click(screen.getByRole("button", { name: "Edit task", exact: true }));
+  const criteria = screen.getByRole("textbox", { name: "Acceptance criteria", exact: true });
+  await userEvent.clear(criteria);
+  await userEvent.type(criteria, "First criterion{Enter}Second criterion{Enter}Third criterion");
+  await userEvent.click(screen.getByRole("button", { name: "Save task", exact: true }));
+  expect(t.api.updateTask).toHaveBeenLastCalledWith(
+    expect.objectContaining({
+      acceptanceCriteria: [
+        { id: "c1", text: "First criterion" },
+        { id: "c2", text: "Second criterion" },
+        { id: "c3", text: "Third criterion" },
+      ],
+    }),
+  );
+});
+
+it("edits recorded base metadata without implying live Git control", async () => {
+  const t = setup();
+  t.project.tasks = [{ ...t.task }];
+  await using screen = await render(<ProjectRuntimeSettings members={[a]} />);
+  await userEvent.click(screen.getByRole("button", { name: "Edit task", exact: true }));
+  await userEvent.click(screen.getByText("Recorded base metadata", { exact: true }));
+  await expect
+    .element(screen.getByRole("textbox", { name: "Recorded repository", exact: true }))
+    .toBeVisible();
+  await expect
+    .element(screen.getByRole("textbox", { name: "Recorded upstream revision", exact: true }))
+    .toBeVisible();
+  await expect
+    .element(screen.getByRole("textbox", { name: "Recorded notes", exact: true }))
+    .toBeVisible();
+  const branch = screen.getByRole("textbox", { name: "Recorded branch", exact: true });
+  await userEvent.type(branch, "t4/ui");
+  const revision = screen.getByRole("textbox", { name: "Recorded revision", exact: true });
+  await userEvent.type(revision, "abcdef0");
+  await userEvent.click(screen.getByRole("button", { name: "Save task", exact: true }));
+  expect(t.api.updateTask).toHaveBeenLastCalledWith(
+    expect.objectContaining({
+      base: { worktreePath: "/metadata-only", branch: "t4/ui", revision: "abcdef0" },
+    }),
+  );
+});
+
+it("marks the task's authoritative latest handoff without adding write controls", async () => {
+  const t = setup();
+  t.project.tasks = [{ ...t.task, latestHandoffId: ProjectRuntimeHandoffId.make("handoff") }];
+  t.project.handoffs = [
+    {
+      handoffId: ProjectRuntimeHandoffId.make("handoff"),
+      projectId: a.id,
+      taskId: t.task.taskId,
+      checkpoint: "Latest checkpoint",
+      summary: "Latest continuation",
+      filesChanged: [],
+      verification: { milestone: "none", evidence: [] },
+      taskRevision: 1,
+      runtimeRevision: 1,
+      createdAt: time,
+      createdBy: "thread:previous",
+    },
+  ];
+  await using screen = await render(<ProjectRuntimeSettings members={[a]} />);
+  await userEvent.click(screen.getByRole("button", { name: "View handoffs", exact: true }));
+  await expect.element(screen.getByText("Latest", { exact: true })).toBeVisible();
+  await userEvent.click(screen.getByText("Latest checkpoint", { exact: true }));
+  await expect.element(screen.getByText("Latest continuation", { exact: true })).toBeVisible();
+  await expect
+    .element(screen.getByRole("button", { name: /edit handoff|delete handoff/i }))
+    .not.toBeInTheDocument();
+});
+
 it("retains a stale task draft until explicit reload and disables writes on read-only connections", async () => {
   const t = setup();
   t.project.tasks = [t.task];

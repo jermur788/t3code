@@ -340,6 +340,7 @@ function ProjectRuntimeHome({
         />
         <ProjectStateCard
           section={runtime.data.tasks}
+          handoffs={runtime.data.handoffs}
           disabled={disabled}
           onRetry={reloadRuntime}
           group={group}
@@ -623,12 +624,14 @@ function SourcesSummaryView({ summary }: { readonly summary: ForkSourceSummary }
 
 function ProjectStateCard({
   section,
+  handoffs,
   disabled,
   onRetry,
   group,
   member,
 }: {
   readonly section: ForkSection<ProjectRuntimeTaskListResult>;
+  readonly handoffs: ForkSection<ProjectRuntimeHandoffListResult>;
   readonly disabled: boolean;
   readonly onRetry: () => void;
   readonly group: SidebarProjectSnapshot;
@@ -653,7 +656,11 @@ function ProjectStateCard({
         <DisabledSection />
       ) : (
         <SectionState section={section} onRetry={onRetry} label="Project State">
-          {(result) => <ProjectStateSummaryView summary={summarizeTasks(result)} />}
+          {(result) => (
+            <ProjectStateSummaryView
+              summary={summarizeTasks(result, handoffs.status === "ready" ? handoffs.value : null)}
+            />
+          )}
         </SectionState>
       )}
     </HomeCard>
@@ -676,25 +683,56 @@ function ProjectStateSummaryView({ summary }: { readonly summary: ForkTaskSummar
         <Stat label="Review" value={summary.review} />
         <Stat label="Total" value={summary.total} />
       </dl>
-      {summary.focus ? (
-        <p className="text-foreground">
-          <span className="text-muted-foreground">Current focus: </span>
-          {summary.focus.title}
-        </p>
-      ) : null}
-      {summary.blockers.length > 0 ? (
-        <div>
-          <p className="text-xs font-medium text-muted-foreground">Blockers</p>
-          <ul className="mt-1 list-disc space-y-0.5 pl-4 text-xs text-muted-foreground">
-            {summary.blockers.map((title) => (
-              <li key={title}>{title}</li>
-            ))}
-          </ul>
-        </div>
-      ) : null}
-      {summary.focus?.nextAction ? (
+      <ul className="space-y-2">
+        {summary.cards.map((card) => (
+          <li
+            key={card.taskId}
+            className="min-w-0 rounded-lg border border-border/60 bg-background/50 p-2.5"
+          >
+            <div className="flex min-w-0 items-start justify-between gap-2">
+              <p className="min-w-0 truncate text-sm font-medium">{card.title}</p>
+              <Badge
+                size="sm"
+                variant={
+                  card.status === "blocked"
+                    ? "warning"
+                    : card.status === "done"
+                      ? "success"
+                      : card.status === "review"
+                        ? "info"
+                        : card.status === "active"
+                          ? "default"
+                          : "secondary"
+                }
+              >
+                {card.status}
+              </Badge>
+            </div>
+            <p className="truncate text-xs text-muted-foreground">
+              Owner {card.owner} · Verification {card.verificationMilestone}
+            </p>
+            {card.blockerSummary ? (
+              <p className="line-clamp-2 break-words text-xs text-warning-foreground">
+                Blocker: {card.blockerSummary}
+              </p>
+            ) : null}
+            {card.nextAction ? (
+              <p className="line-clamp-1 break-words text-xs text-muted-foreground">
+                Next: {card.nextAction}
+              </p>
+            ) : null}
+            {card.latestHandoff ? (
+              <p className="truncate text-xs text-muted-foreground">
+                Latest handoff: {card.latestHandoff.summary ?? card.latestHandoff.handoffId}
+              </p>
+            ) : null}
+          </li>
+        ))}
+      </ul>
+      {summary.total > summary.cards.length ? (
         <p className="text-xs text-muted-foreground">
-          <span className="font-medium">Next action:</span> {summary.focus.nextAction}
+          {summary.total - summary.cards.length} more task
+          {summary.total - summary.cards.length === 1 ? "" : "s"} in Runtime settings.
         </p>
       ) : null}
       {summary.truncated ? (
@@ -722,7 +760,10 @@ function TasksAndHandoffsCard({
   readonly member: SidebarProjectGroupMember;
 }) {
   const taskList = tasks.status === "ready" ? tasks.value.tasks : [];
-  const taskSummary = tasks.status === "ready" ? summarizeTasks(tasks.value) : null;
+  const taskSummary =
+    tasks.status === "ready"
+      ? summarizeTasks(tasks.value, handoffs.status === "ready" ? handoffs.value : null)
+      : null;
   return (
     <HomeCard
       icon={<ListChecksIcon />}

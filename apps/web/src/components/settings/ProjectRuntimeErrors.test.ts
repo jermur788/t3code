@@ -26,3 +26,29 @@ it("shows actionable Runtime errors without exposing defect data", () => {
     "Project Runtime could not complete the request. Check your connection and reload.",
   );
 });
+
+it("turns each invalid transition into guidance that names the required change", () => {
+  for (const [violation, ...words] of [
+    ["blocked_requires_blocker", "Blocked tasks need a blocker", "before saving"],
+    ["blocker_requires_blocked_status", "blocked task", "Clear the blocker"],
+    ["done_requires_result", "Done tasks need a result", "not a task result"],
+    ["milestone_requires_passing_evidence", "passing evidence", "lower milestone"],
+    ["verified_forbids_failing_evidence", "failing evidence", "another milestone"],
+  ] as const) {
+    const message = runtimeErrorMessage({
+      _tag: "ProjectRuntimeInvalidTransitionError",
+      violation,
+      projectId: "project",
+      taskId: "task",
+    });
+    for (const word of words) expect(message).toContain(word);
+  }
+  expect(
+    runtimeErrorMessage({
+      _tag: "ProjectRuntimeInvalidTransitionError",
+      violation: "unknown_violation",
+    }),
+  ).toBe(
+    "This task state is not valid. Review status, blocker, result, and verification before saving.",
+  );
+});

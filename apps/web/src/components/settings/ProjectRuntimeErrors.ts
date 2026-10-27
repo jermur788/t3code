@@ -1,3 +1,22 @@
+function invalidTransitionMessage(error: unknown): string {
+  const violation =
+    typeof error === "object" && error !== null && "violation" in error ? error.violation : null;
+  switch (violation) {
+    case "blocked_requires_blocker":
+      return "Blocked tasks need a blocker summary. Add the blocker before saving, or choose another status.";
+    case "blocker_requires_blocked_status":
+      return "A blocker only applies to a blocked task. Clear the blocker or move the task back to blocked.";
+    case "done_requires_result":
+      return "Done tasks need a result. Add the result before saving; a handoff summary is not a task result.";
+    case "milestone_requires_passing_evidence":
+      return "That verification milestone needs at least one passing evidence item. Add passing evidence or choose a lower milestone.";
+    case "verified_forbids_failing_evidence":
+      return "Verified cannot coexist with failing evidence. Remove or resolve the failing evidence, or choose another milestone.";
+    default:
+      return "This task state is not valid. Review status, blocker, result, and verification before saving.";
+  }
+}
+
 export function runtimeErrorMessage(error: unknown): string {
   const tag = typeof error === "object" && error !== null && "_tag" in error ? error._tag : "";
   switch (tag) {
@@ -5,6 +24,8 @@ export function runtimeErrorMessage(error: unknown): string {
       return "This record changed since you loaded it. Your draft is preserved. Reload the current record before saving again.";
     case "ProjectRuntimeDisabledError":
       return "Runtime is disabled. Enable it, then reload.";
+    case "ProjectRuntimeInvalidTransitionError":
+      return invalidTransitionMessage(error);
     case "ProjectRuntimeNotFoundError":
     case "ProjectRuntimeProjectMismatchError":
       return "This Runtime record is no longer available in this project.";

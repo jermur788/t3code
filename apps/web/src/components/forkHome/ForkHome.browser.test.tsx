@@ -260,6 +260,60 @@ it("shows an explicit empty state when no durable project exists", async () => {
   expect(mock.openPalette).toHaveBeenCalledWith({ open: "add-project" });
 });
 
+it("shows blocker, owner, verification, next action, and the pointed handoff on a task card", async () => {
+  const blocked: ProjectRuntimeTask = {
+    ...task,
+    status: "blocked",
+    owner: "user:owner",
+    blocker: {
+      classification: "integration-conflict",
+      summary: "Waiting on an upstream tag",
+      createdAt: time,
+    },
+    verification: { milestone: "static-pass", evidence: [] },
+    latestHandoffId: handoff.handoffId,
+    nextAction: "Retry after the upstream release",
+  };
+  setup(
+    runtimeData({
+      tasks: ready({ tasks: [blocked], nextCursor: null }),
+    }),
+  );
+  await using screen = await render(<ForkHome search={{}} onSearchChange={vi.fn()} />, {
+    router: "/home",
+  });
+
+  await expect.element(screen.getByText("Finish the fork home", { exact: true })).toBeVisible();
+  await expect
+    .element(screen.getByText("Owner user:owner · Verification static-pass", { exact: true }))
+    .toBeVisible();
+  await expect
+    .element(screen.getByText("Blocker: Waiting on an upstream tag", { exact: true }))
+    .toBeVisible();
+  await expect
+    .element(screen.getByText("Next: Retry after the upstream release", { exact: true }))
+    .toBeVisible();
+  await expect
+    .element(
+      screen.getByText("Latest handoff: Home route and project summaries are in place.", {
+        exact: true,
+      }),
+    )
+    .toBeVisible();
+});
+
+it("omits a blocker line when the task has no blocker", async () => {
+  setup();
+  await using screen = await render(<ForkHome search={{}} onSearchChange={vi.fn()} />, {
+    router: "/home",
+  });
+
+  await expect
+    .element(screen.getByText("Owner user:maintainer · Verification none", { exact: true }))
+    .toBeVisible();
+  await expect.element(screen.getByText("Blocker:", { exact: false })).not.toBeInTheDocument();
+});
+
 it("keeps available sections visible when one Runtime section fails", async () => {
   setup(
     runtimeData({

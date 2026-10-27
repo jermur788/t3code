@@ -36,10 +36,21 @@ export interface ForkSourceSummary {
   readonly truncated: boolean;
 }
 
-export interface ForkTaskFocus {
+export interface ForkTaskHandoffReference {
+  readonly handoffId: string;
+  readonly checkpoint: string | null;
+  readonly summary: string | null;
+}
+
+export interface ForkTaskCard {
+  readonly taskId: string;
   readonly title: string;
   readonly status: ProjectRuntimeTask["status"];
+  readonly owner: string;
+  readonly blockerSummary: string | null;
+  readonly verificationMilestone: ProjectRuntimeTask["verification"]["milestone"];
   readonly nextAction: string | null;
+  readonly latestHandoff: ForkTaskHandoffReference | null;
 }
 
 export interface ForkTaskSummary {
@@ -49,8 +60,7 @@ export interface ForkTaskSummary {
   readonly review: number;
   readonly ready: number;
   readonly done: number;
-  readonly focus: ForkTaskFocus | null;
-  readonly blockers: readonly string[];
+  readonly cards: readonly ForkTaskCard[];
   readonly truncated: boolean;
 }
 
@@ -219,7 +229,35 @@ export function summarizeSources(result: ProjectRuntimeSourceListResult): ForkSo
   return summary;
 }
 
-export function summarizeTasks(result: ProjectRuntimeTaskListResult): ForkTaskSummary {
+const TASK_STATUS_PRIORITY: Readonly<Record<ProjectRuntimeTask["status"], number>> = {
+  active: 0,
+  blocked: 1,
+  review: 2,
+  ready: 3,
+  planned: 4,
+  deferred: 5,
+  done: 6,
+  cancelled: 7,
+};
+
+function handoffReferenceFor(
+  task: ProjectRuntimeTask,
+  handoffs: ProjectRuntimeHandoffListResult | null,
+): ForkTaskHandoffReference | null {
+  if (task.latestHandoffId === null) return null;
+  const handoff =
+    handoffs?.handoffs.find((entry) => entry.handoffId === task.latestHandoffId) ?? null;
+  return {
+    handoffId: task.latestHandoffId,
+    checkpoint: handoff?.checkpoint ?? null,
+    summary: handoff === null ? null : previewText(handoff.summary, 160),
+  };
+}
+
+export function summarizeTasks(
+  result: ProjectRuntimeTaskListResult,
+  handoffs: ProjectRuntimeHandoffListResult | null = null,
+): ForkTaskSummary {
   const tasks = [...result.tasks].sort(
     (left, right) => timeValue(right.updatedAt) - timeValue(left.updatedAt),
   );
@@ -238,48 +276,57 @@ export function summarizeTasks(result: ProjectRuntimeTaskListResult): ForkTaskSu
     else if (task.status === "ready") counts.ready += 1;
     else if (task.status === "done") counts.done += 1;
   }
-  const priorities: ReadonlyArray<ProjectRuntimeTask["status"]> = [
-    "active",
-    "blocked",
-    "review",
-    "ready",
-  ];
-  let focusTask: ProjectRuntimeTask | null = null;
-  for (const status of priorities) {
-    focusTask = tasks.find((task) => task.status === status) ?? null;
-    if (focusTask !== null) break;
-  }
-  const nextAction =
-    focusTask?.nextAction ??
-    tasks.find((task) => task.nextAction !== undefined)?.nextAction ??
-    null;
+  const ordered = [...tasks].sort(
+    (left, right) =>
+      TASK_STATUS_PRIORITY[left.status] - TASK_STATUS_PRIORITY[right.status] ||
+      timeValue(right.updatedAt) - timeValue(left.updatedAt),
+  );
   return {
     ...counts,
-    focus:
-      focusTask === null
-        ? null
-        : {
-            title: focusTask.title,
-            status: focusTask.status,
-            nextAction: nextAction,
-          },
-    blockers: tasks
-      .filter((task) => task.status === "blocked")
-      .slice(0, 3)
-      .map((task) => task.title),
+    cards: ordered.slice(0, 3).map((task) => ({
+      taskId: task.taskId,
+      title: task.title,
+      status: task.status,
+      owner: task.owner,
+      blockerSummary: task.blocker === null ? null : previewText(task.blocker.summary, 160),
+      verificationMilestone: task.verification.milestone,
+      nextAction: task.nextAction === undefined ? null : previewText(task.nextAction, 120),
+      latestHandoff: handoffReferenceFor(task, handoffs),
+    })),
     truncated: result.nextCursor !== null,
   };
 }
 
+/**
+ * The task record's latestHandoffId is the authoritative pointer. Only fall
+ * back to handoff order when no task on this page carries a pointer.
+ */
 export function summarizeHandoffs(
   result: ProjectRuntimeHandoffListResult,
   tasks: readonly ProjectRuntimeTask[] = [],
 ): ForkHandoffSummary {
   const truncated = result.nextCursor !== null;
-  const sorted = [...result.handoffs].sort(
-    (left, right) => timeValue(left.createdAt) - timeValue(right.createdAt),
-  );
-  const latest = truncated ? null : (sorted.at(-1) ?? null);
+  if (truncated) return { latest: null, total: null, truncated };
+  const byId = new Map(result.handoffs.map((handoff) => [handoff.handoffId, handoff]));
+  const pointed = tasks.flatMap((task) => {
+    if (task.latestHandoffId === null) return [];
+    const handoff = byId.get(task.latestHandoffId);
+    return handoff === undefined ? [] : [handoff];
+  });
+  const candidates =
+    pointed.length > 0
+      ? pointed
+      : [...result.handoffs]
+          .sort((left, right) => timeValue(left.createdAt) - timeValue(right.createdAt))
+          .slice(-1);
+  const latest =
+    candidates.reduce<(typeof candidates)[number] | null>(
+      (newest, handoff) =>
+        newest === null || timeValue(handoff.createdAt) > timeValue(newest.createdAt)
+          ? handoff
+          : newest,
+      null,
+    ) ?? null;
   return {
     latest:
       latest === null
@@ -291,7 +338,7 @@ export function summarizeHandoffs(
             summary: previewText(latest.summary, 220),
             createdAt: latest.createdAt,
           },
-    total: truncated ? null : sorted.length,
+    total: result.handoffs.length,
     truncated,
   };
 }

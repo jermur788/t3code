@@ -76,19 +76,33 @@ function task(input: {
   title: string;
   status: ProjectRuntimeTask["status"];
   updatedAt: string;
+  owner?: string;
   nextAction?: string;
+  blockerSummary?: string;
+  milestone?: ProjectRuntimeTask["verification"]["milestone"];
+  latestHandoffId?: string;
 }): ProjectRuntimeTask {
   return {
     taskId: ProjectRuntimeTaskId.make(input.id),
     projectId: ProjectId.make("project"),
     title: input.title,
-    owner: "user:test",
+    owner: input.owner ?? "user:test",
     status: input.status,
     scope: "",
     acceptanceCriteria: [],
-    blocker: null,
-    verification: { milestone: "none", evidence: [] },
-    latestHandoffId: null,
+    blocker:
+      input.blockerSummary === undefined
+        ? null
+        : {
+            classification: "implementation-defect",
+            summary: input.blockerSummary,
+            createdAt: time,
+          },
+    verification: { milestone: input.milestone ?? "none", evidence: [] },
+    latestHandoffId:
+      input.latestHandoffId === undefined
+        ? null
+        : ProjectRuntimeHandoffId.make(input.latestHandoffId),
     ...(input.nextAction === undefined ? {} : { nextAction: input.nextAction }),
     revision: 1,
     createdAt: time,
@@ -350,14 +364,107 @@ describe("fork home runtime summaries", () => {
       blocked: 1,
       review: 1,
       done: 1,
-      blockers: ["Blocked work"],
       truncated: false,
     });
-    expect(summary.focus).toEqual({
+    expect(summary.cards[0]).toMatchObject({
       title: "Newest active work",
       status: "active",
+      owner: "user:test",
+      blockerSummary: null,
+      verificationMilestone: "none",
       nextAction: "Run the focused tests",
     });
+    expect(summary.cards.map((card) => card.title)).toEqual([
+      "Newest active work",
+      "Older active work",
+      "Blocked work",
+    ]);
+  });
+
+  it("surfaces blocker, owner, milestone, next action, and the pointed handoff per task", () => {
+    const blocked = task({
+      id: "blocked",
+      title: "Blocked work",
+      status: "blocked",
+      updatedAt: "2026-10-24T12:00:00.000Z",
+      owner: "user:owner",
+      blockerSummary: "Waiting on upstream release",
+      milestone: "implemented",
+      nextAction: "Retry after the upstream tag",
+      latestHandoffId: "blocked-handoff",
+    });
+    const active = task({
+      id: "active",
+      title: "Active work",
+      status: "active",
+      updatedAt: "2026-10-24T11:00:00.000Z",
+      latestHandoffId: "active-handoff",
+    });
+    const handoffs = {
+      handoffs: [
+        handoff({
+          id: "active-handoff",
+          taskId: "active",
+          summary: "Active continuation",
+          createdAt: "2026-10-24T10:00:00.000Z",
+        }),
+        handoff({
+          id: "blocked-handoff",
+          taskId: "blocked",
+          summary: "Blocked continuation",
+          createdAt: "2026-10-24T09:00:00.000Z",
+        }),
+      ],
+      nextCursor: null,
+    };
+    const summary = summarizeTasks({ tasks: [active, blocked], nextCursor: null }, handoffs);
+
+    expect(summary.cards[0]).toMatchObject({
+      title: "Active work",
+      status: "active",
+      owner: "user:test",
+      blockerSummary: null,
+      verificationMilestone: "none",
+      latestHandoff: {
+        handoffId: "active-handoff",
+        summary: "Active continuation",
+      },
+    });
+    expect(summary.cards[1]).toMatchObject({
+      title: "Blocked work",
+      status: "blocked",
+      owner: "user:owner",
+      blockerSummary: "Waiting on upstream release",
+      verificationMilestone: "implemented",
+      nextAction: "Retry after the upstream tag",
+      latestHandoff: {
+        handoffId: "blocked-handoff",
+        summary: "Blocked continuation",
+      },
+    });
+  });
+
+  it("bounds long task summaries without adding fields that are absent", () => {
+    const longText = "x".repeat(400);
+    const summary = summarizeTasks({
+      tasks: [
+        task({
+          id: "blocked",
+          title: "Blocked work",
+          status: "blocked",
+          updatedAt: time,
+          blockerSummary: longText,
+          nextAction: longText,
+        }),
+      ],
+      nextCursor: null,
+    });
+
+    expect(summary.cards[0]?.blockerSummary).toHaveLength(160);
+    expect(summary.cards[0]?.blockerSummary?.endsWith("…")).toBe(true);
+    expect(summary.cards[0]?.nextAction).toHaveLength(120);
+    expect(summary.cards[0]?.nextAction?.endsWith("…")).toBe(true);
+    expect(summary.cards[0]?.latestHandoff).toBeNull();
   });
 
   it("does not claim a latest handoff when the page is truncated", () => {
@@ -397,6 +504,46 @@ describe("fork home runtime summaries", () => {
       total: null,
       truncated: true,
     });
+  });
+
+  it("follows the task's authoritative latest handoff pointer", () => {
+    const tasks = [
+      task({
+        id: "task",
+        title: "Runtime task",
+        status: "active",
+        updatedAt: time,
+        latestHandoffId: "pointed",
+      }),
+    ];
+    const pointed = handoff({
+      id: "pointed",
+      taskId: "task",
+      summary: "Authoritative continuation",
+      createdAt: "2026-10-24T10:00:00.000Z",
+    });
+    const newerButUnpointed = handoff({
+      id: "newer",
+      taskId: "task",
+      summary: "Newer but not the task pointer",
+      createdAt: "2026-10-24T11:00:00.000Z",
+    });
+
+    expect(
+      summarizeHandoffs({ handoffs: [pointed, newerButUnpointed], nextCursor: null }, tasks),
+    ).toMatchObject({
+      latest: { summary: "Authoritative continuation" },
+      total: 2,
+    });
+    expect(
+      summarizeTasks(
+        { tasks, nextCursor: null },
+        {
+          handoffs: [pointed, newerButUnpointed],
+          nextCursor: null,
+        },
+      ).cards[0]?.latestHandoff?.summary,
+    ).toBe("Authoritative continuation");
   });
 
   it("summarizes the effective Development Profile layers", () => {
