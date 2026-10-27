@@ -144,6 +144,14 @@ points; delete them together with the patch.
 7. An independent review confirms the expressions, permissions, and APT path.
 8. Rebasing the patch remains limited to the hotspots above.
 
+## Verification repairs
+
+GitHub-hosted Ubuntu 24.04 ships Git 2.56, whose corrupt-worktree diagnostic is
+`gitfile does not point to a valid repository`. `storageCleanup` now treats that
+diagnostic like `not a git repository`, so a corrupt worktree is kept as
+"Repository or branch changed" instead of reported as a cleanup failure. This is
+the behavior the existing test already specified; no coverage changed.
+
 ## Verification plan
 
 Local:
