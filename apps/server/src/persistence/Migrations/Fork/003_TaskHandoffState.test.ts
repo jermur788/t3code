@@ -182,6 +182,31 @@ const seedLegacyRows = Effect.gen(function* () {
     createdAt: t2,
     createdBy: "thread:thread-1",
   });
+  yield* taskRow("t-emoji", "active", 1, {
+    taskId: "t-emoji",
+    projectId: "legacy-project",
+    title: "Chunk boundary",
+    status: "active",
+    scope: "Surrogates",
+    acceptanceCriteria: "",
+    revision: 1,
+    createdAt: t0,
+    updatedAt: t0,
+    createdBy: "user:maintainer",
+    updatedBy: "user:maintainer",
+  });
+  yield* handoffRow("h-emoji", "t-emoji", t1, {
+    handoffId: "h-emoji",
+    projectId: "legacy-project",
+    taskId: "t-emoji",
+    checkpoint: "emoji",
+    summary: "Chunk boundary",
+    changes: "x".repeat(511) + "😀" + "yy",
+    runtimeRevision: 1,
+    taskRevision: 1,
+    createdAt: t1,
+    createdBy: "user:maintainer",
+  });
 });
 
 const readPayloads = Effect.gen(function* () {
@@ -382,6 +407,9 @@ it.effect("rewrites legacy task and handoff payloads into the v1 shape", () =>
         assert.equal(entry.result, "inconclusive");
       }
     }
+
+    const emoji = decodeHandoff(JSON.parse(byHandoff.get("h-emoji")!.payload_json));
+    expect(emoji.filesChanged).toEqual(["x".repeat(511), "😀yy"]);
 
     for (const row of tasks) {
       assert.equal(row.created_at, t0);

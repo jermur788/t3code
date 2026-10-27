@@ -17,15 +17,23 @@ const isActor = (value: unknown): value is string =>
 
 /**
  * Legacy free text becomes bounded entries. Chunks are cut at exactly `max`
- * characters and whitespace-only fragments are dropped; the entry schemas
- * require non-blank text. Remaining entries renumber in order.
+ * characters without splitting a surrogate pair, and whitespace-only fragments
+ * are dropped; the entry schemas require non-blank text. Remaining entries
+ * renumber in order.
  */
 const chunkText = (text: string, max: number): string[] => {
   const trimmed = text.trim();
   const chunks: string[] = [];
-  for (let start = 0; start < trimmed.length; start += max) {
-    const chunk = trimmed.slice(start, start + max);
+  let start = 0;
+  while (start < trimmed.length) {
+    let end = Math.min(start + max, trimmed.length);
+    if (end < trimmed.length) {
+      const last = trimmed.charCodeAt(end - 1);
+      if (last >= 0xd800 && last <= 0xdbff) end -= 1;
+    }
+    const chunk = trimmed.slice(start, end);
     if (chunk.trim() !== "") chunks.push(chunk);
+    start = end;
   }
   return chunks;
 };

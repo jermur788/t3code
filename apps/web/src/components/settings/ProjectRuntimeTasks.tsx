@@ -159,10 +159,14 @@ function TaskEditor({
       title,
       status,
       scope,
-      // The textarea keeps one criterion for now; T4 owns per-criterion editing.
-      acceptanceCriteria: criteria.trim()
-        ? [{ id: saved?.acceptanceCriteria[0]?.id ?? "c1", text: criteria }]
-        : [],
+      // Ids carry over per line so evidence criterion links stay valid.
+      acceptanceCriteria: criteria
+        .split("\n")
+        .filter((line) => line.trim() !== "")
+        .map((text, index) => ({
+          id: saved?.acceptanceCriteria[index]?.id ?? `c${index + 1}`,
+          text,
+        })),
     };
     const base = { ...saved?.base };
     if (branch.trim()) base.branch = branch.trim();
