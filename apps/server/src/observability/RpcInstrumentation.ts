@@ -1,4 +1,10 @@
-import { ORCHESTRATION_V2_WS_METHODS, WS_METHODS, type WsRpcGroup } from "@t3tools/contracts";
+import {
+  PROJECT_RUNTIME_RPC_METHODS,
+  DEVELOPMENT_PROFILE_RPC_METHODS,
+  ORCHESTRATION_V2_WS_METHODS,
+  WS_METHODS,
+  type WsRpcGroup,
+} from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as References from "effect/References";
@@ -9,11 +15,33 @@ import { rpcRequestDuration, rpcRequestsTotal, withMetrics } from "./Metrics.ts"
 
 type WsRpcMethod = RpcGroup.Rpcs<typeof WsRpcGroup>["_tag"];
 
-/**
- * Trace queries and dashboards group by these labels, so they keep their historical values
- * even where they differ from the method prefix.
- */
+// Trace queries and dashboards depend on these labels, including deviations from method prefixes.
 const RPC_AGGREGATES = {
+  [DEVELOPMENT_PROFILE_RPC_METHODS.list]: "developmentProfiles",
+  [DEVELOPMENT_PROFILE_RPC_METHODS.read]: "developmentProfiles",
+  [DEVELOPMENT_PROFILE_RPC_METHODS.create]: "developmentProfiles",
+  [DEVELOPMENT_PROFILE_RPC_METHODS.update]: "developmentProfiles",
+  [DEVELOPMENT_PROFILE_RPC_METHODS.delete]: "developmentProfiles",
+  [DEVELOPMENT_PROFILE_RPC_METHODS.listProjects]: "developmentProfiles",
+  [DEVELOPMENT_PROFILE_RPC_METHODS.getAssignment]: "developmentProfiles",
+  [DEVELOPMENT_PROFILE_RPC_METHODS.setAssignment]: "developmentProfiles",
+  [DEVELOPMENT_PROFILE_RPC_METHODS.resolve]: "developmentProfiles",
+
+  [PROJECT_RUNTIME_RPC_METHODS.status]: "projectRuntime",
+  [PROJECT_RUNTIME_RPC_METHODS.setEnabled]: "projectRuntime",
+  [PROJECT_RUNTIME_RPC_METHODS.readInstructions]: "projectRuntime",
+  [PROJECT_RUNTIME_RPC_METHODS.saveInstructions]: "projectRuntime",
+  [PROJECT_RUNTIME_RPC_METHODS.listSources]: "projectRuntime",
+  [PROJECT_RUNTIME_RPC_METHODS.createSource]: "projectRuntime",
+  [PROJECT_RUNTIME_RPC_METHODS.updateSource]: "projectRuntime",
+  [PROJECT_RUNTIME_RPC_METHODS.removeSource]: "projectRuntime",
+  [PROJECT_RUNTIME_RPC_METHODS.listTasks]: "projectRuntime",
+  [PROJECT_RUNTIME_RPC_METHODS.readTask]: "projectRuntime",
+  [PROJECT_RUNTIME_RPC_METHODS.createTask]: "projectRuntime",
+  [PROJECT_RUNTIME_RPC_METHODS.updateTask]: "projectRuntime",
+  [PROJECT_RUNTIME_RPC_METHODS.listHandoffs]: "projectRuntime",
+  [PROJECT_RUNTIME_RPC_METHODS.readHandoff]: "projectRuntime",
+
   [ORCHESTRATION_V2_WS_METHODS.dispatchCommand]: "orchestrationV2",
   [ORCHESTRATION_V2_WS_METHODS.getWorkflowScript]: "orchestration",
   [ORCHESTRATION_V2_WS_METHODS.stopWorkflow]: "orchestration",
@@ -24,6 +52,9 @@ const RPC_AGGREGATES = {
   [ORCHESTRATION_V2_WS_METHODS.searchThread]: "orchestration",
   [ORCHESTRATION_V2_WS_METHODS.searchThreadStream]: "orchestration",
   [ORCHESTRATION_V2_WS_METHODS.getArchivedShellSnapshot]: "orchestration",
+  [ORCHESTRATION_V2_WS_METHODS.getThreadFamily]: "orchestration",
+  [ORCHESTRATION_V2_WS_METHODS.getWorktreeThreadIds]: "orchestration",
+  [ORCHESTRATION_V2_WS_METHODS.getOlderSettledThreads]: "orchestration",
   [ORCHESTRATION_V2_WS_METHODS.getThreadProjection]: "orchestrationV2",
   [ORCHESTRATION_V2_WS_METHODS.launchThread]: "orchestration",
   [ORCHESTRATION_V2_WS_METHODS.subscribeArchivedShell]: "orchestration",
@@ -95,10 +126,12 @@ const RPC_AGGREGATES = {
   [WS_METHODS.scheduledTasksListWebhookDeliveries]: "scheduledTasks",
   [WS_METHODS.scheduledTasksGetWebhookDelivery]: "scheduledTasks",
   [WS_METHODS.secretsAnswerRequest]: "secrets",
+  [WS_METHODS.guestShareCreate]: "guest-share",
   [WS_METHODS.cloudGetRelayClientStatus]: "cloud",
   [WS_METHODS.cloudInstallRelayClient]: "cloud",
   [WS_METHODS.pullRequestsList]: "pull-requests",
   [WS_METHODS.pullRequestsListStats]: "pull-requests",
+  [WS_METHODS.pullRequestsFilterOptions]: "pull-requests",
   [WS_METHODS.pullRequestsSummary]: "pull-requests",
   [WS_METHODS.pullRequestsRouting]: "pull-requests",
   [WS_METHODS.pullRequestsRoutingIdentity]: "pull-requests",
@@ -226,10 +259,7 @@ const RPC_METHODS_WITH_TRACING_DISABLED: ReadonlySet<string> = new Set([
   WS_METHODS.serverSignalProcess,
 ]);
 
-/**
- * `ws.ts` adds it to the server's group after `RpcScopeAuthorization`, so it wraps
- * authorization and also records rejected calls.
- */
+/** Add after RpcScopeAuthorization to wrap authorization and record rejected calls. */
 export class RpcInstrumentation extends RpcMiddleware.Service<RpcInstrumentation>()(
   "t3/server/RpcInstrumentation",
 ) {}

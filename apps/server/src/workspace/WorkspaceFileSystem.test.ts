@@ -26,7 +26,6 @@ vi.mock("node:fs/promises", async (importOriginal) => {
   return { ...actual, realpath: vi.fn(actual.realpath) };
 });
 
-// Temp folders count as known workspaces unless named as unknown.
 const UNKNOWN_WORKSPACE_PREFIX = "t3code-unknown-workspace-";
 const layerKnownWorkspacesTest = Layer.mock(KnownWorkspaces.KnownWorkspaces)({
   assertContains: (cwd) =>
@@ -369,6 +368,123 @@ it.layer(layerTest, { excludeTestServices: true })("WorkspaceFileSystemLive", (i
     );
   });
 
+  describe("readFileRange", () => {
+    it.effect("reads a byte range past the readFile prefix and reports the file size", () =>
+      Effect.gen(function* () {
+        const workspaceFileSystem = yield* WorkspaceFileSystem.WorkspaceFileSystem;
+        const cwd = yield* makeTempDir;
+        const contents = `${"a".repeat(1024 * 1024)}tail-bytes`;
+        yield* writeTextFile(cwd, "big.txt", contents);
+
+        const range = yield* workspaceFileSystem.readFileRange({
+          cwd,
+          relativePath: "big.txt",
+          offset: 1024 * 1024,
+          length: 4,
+        });
+        const pastEnd = yield* workspaceFileSystem.readFileRange({
+          cwd,
+          relativePath: "big.txt",
+          offset: contents.length + 10,
+          length: 4,
+        });
+
+        expect(range.bytes.toString()).toBe("tail");
+        expect(range.size).toBe(contents.length);
+        expect(pastEnd.bytes.length).toBe(0);
+      }),
+    );
+
+    it.effect("never treats absolute or ~/ paths as host paths", () =>
+      Effect.gen(function* () {
+        const workspaceFileSystem = yield* WorkspaceFileSystem.WorkspaceFileSystem;
+        const path = yield* Path.Path;
+        const cwd = yield* makeTempDir;
+        const outsideDir = yield* makeTempDir;
+        yield* writeTextFile(outsideDir, "report.md", "outside\n");
+
+        const absolute = yield* workspaceFileSystem
+          .readFileRange({
+            cwd,
+            relativePath: path.join(outsideDir, "report.md"),
+            offset: 0,
+            length: 16,
+          })
+          .pipe(Effect.flip);
+        const home = yield* workspaceFileSystem
+          .readFileRange({ cwd, relativePath: "~/report.md", offset: 0, length: 16 })
+          .pipe(Effect.flip);
+
+        expect(absolute).toBeInstanceOf(WorkspacePaths.WorkspacePathOutsideRootError);
+        expect(home).toBeInstanceOf(WorkspaceFileSystem.WorkspaceFileSystemOperationError);
+      }),
+    );
+
+    it.effect.skipIf(!symlinksSupported)("rejects symlinks that resolve outside the root", () =>
+      Effect.gen(function* () {
+        const workspaceFileSystem = yield* WorkspaceFileSystem.WorkspaceFileSystem;
+        const fileSystem = yield* FileSystem.FileSystem;
+        const path = yield* Path.Path;
+        const cwd = yield* makeTempDir;
+        const outsideDir = yield* makeTempDir;
+        yield* writeTextFile(outsideDir, "secret.txt", "outside\n");
+        yield* fileSystem.symlink(
+          path.join(outsideDir, "secret.txt"),
+          path.join(cwd, "linked-secret.txt"),
+        );
+
+        const error = yield* workspaceFileSystem
+          .readFileRange({ cwd, relativePath: "linked-secret.txt", offset: 0, length: 16 })
+          .pipe(Effect.flip);
+
+        expect(error).toBeInstanceOf(WorkspaceFileSystem.WorkspaceFilePathEscapeError);
+      }),
+    );
+
+    it.effect("rejects a range containing a NUL byte as binary", () =>
+      Effect.gen(function* () {
+        const workspaceFileSystem = yield* WorkspaceFileSystem.WorkspaceFileSystem;
+        const fileSystem = yield* FileSystem.FileSystem;
+        const path = yield* Path.Path;
+        const cwd = yield* makeTempDir;
+        yield* fileSystem.writeFile(
+          path.join(cwd, "late.bin"),
+          Buffer.concat([Buffer.from("text-before"), Buffer.from([0]), Buffer.from("text-after")]),
+        );
+
+        const binary = yield* workspaceFileSystem
+          .readFileRange({ cwd, relativePath: "late.bin", offset: 8, length: 8 })
+          .pipe(Effect.flip);
+        // Only the requested range is inspected, so text clear of the NUL still reads.
+        const clear = yield* workspaceFileSystem.readFileRange({
+          cwd,
+          relativePath: "late.bin",
+          offset: 0,
+          length: 11,
+        });
+
+        expect(binary).toBeInstanceOf(WorkspaceFileSystem.WorkspaceBinaryFileError);
+        expect(clear.bytes.toString()).toBe("text-before");
+      }),
+    );
+
+    it.effect("rejects directories", () =>
+      Effect.gen(function* () {
+        const workspaceFileSystem = yield* WorkspaceFileSystem.WorkspaceFileSystem;
+        const fileSystem = yield* FileSystem.FileSystem;
+        const path = yield* Path.Path;
+        const cwd = yield* makeTempDir;
+        yield* fileSystem.makeDirectory(path.join(cwd, "docs"));
+
+        const error = yield* workspaceFileSystem
+          .readFileRange({ cwd, relativePath: "docs", offset: 0, length: 16 })
+          .pipe(Effect.flip);
+
+        expect(error).toBeInstanceOf(WorkspaceFileSystem.WorkspacePathNotFileError);
+      }),
+    );
+  });
+
   describe("writeFile", () => {
     it.effect("rejects writes outside a known workspace", () =>
       Effect.gen(function* () {
@@ -575,7 +691,6 @@ it.layer(layerTest, { excludeTestServices: true })("WorkspaceFileSystemLive", (i
         const path = yield* Path.Path;
         const cwd = yield* makeTempDir;
         yield* writeTextFile(cwd, ".git/config", "[core]\n");
-        // A bare repository named `.bare`, and a linked worktree's git folder inside it.
         yield* writeTextFile(cwd, ".bare/HEAD", "ref: refs/heads/main\n");
         yield* writeTextFile(cwd, ".bare/objects/info/packs");
         yield* writeTextFile(cwd, ".bare/refs/heads/main");
@@ -649,7 +764,6 @@ it.layer(layerTest, { excludeTestServices: true })("WorkspaceFileSystemLive", (i
         const fileSystem = yield* FileSystem.FileSystem;
         const path = yield* Path.Path;
         const parentDir = yield* makeTempDir;
-        // A bare repository with a worktree checked out inside it.
         const bare = path.join(parentDir, "repo.git");
         yield* writeTextFile(bare, "HEAD", "ref: refs/heads/main\n");
         yield* writeTextFile(bare, "objects/info/packs");

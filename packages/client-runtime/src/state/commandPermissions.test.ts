@@ -7,6 +7,8 @@ import type { RpcSession } from "../rpc/session.ts";
 import { describe, expect, it } from "@effect/vitest";
 import { vi } from "vite-plus/test";
 import {
+  PROJECT_RUNTIME_RPC_METHODS,
+  DEVELOPMENT_PROFILE_RPC_METHODS,
   AuthOrchestrationOperateScope,
   AuthOrchestrationReadScope,
   AuthPreviewOperateScope,
@@ -345,4 +347,56 @@ it.effect("rejects protected unary and streamed RPCs outside a guarded command",
     expect(streamed._tag).toBe("EnvironmentAuthorizationError");
     expect(writes).toBe(0);
   }),
+);
+
+it.effect("uses destination operate grants for every Runtime mutation", () =>
+  Effect.scoped(
+    Effect.gen(function* () {
+      const registry = yield* setup;
+      registry.set(sessions(env), AsyncResult.success(grant(true)));
+      registry.set(sessions(other), AsyncResult.success(grant(false)));
+      for (const name of [
+        "setEnabled",
+        "saveInstructions",
+        "createSource",
+        "updateSource",
+        "removeSource",
+        "createTask",
+        "updateTask",
+      ] as const) {
+        const permission = createCommandPermissions(runtime, PROJECT_RUNTIME_RPC_METHODS[name]);
+        expect(registry.get(permission.permissionAtom(env))).toBe(true);
+        expect(registry.get(permission.permissionAtom(other))).toBe(false);
+        expect((yield* permission.authorize(registry, other).pipe(Effect.flip))._tag).toBe(
+          "EnvironmentAuthorizationError",
+        );
+      }
+    }),
+  ),
+);
+
+it.effect("requires destination settings authority for every Development Profile mutation", () =>
+  Effect.scoped(
+    Effect.gen(function* () {
+      const registry = yield* setup;
+      registry.set(
+        sessions(env),
+        AsyncResult.success({
+          ...grant(false),
+          scopes: [AuthSettingsWriteScope],
+          permissions: [AuthSettingsWriteScope],
+        }),
+      );
+      registry.set(sessions(other), AsyncResult.success(grant(true)));
+      for (const name of ["create", "update", "delete", "setAssignment"] as const) {
+        const permission = createCommandPermissions(runtime, DEVELOPMENT_PROFILE_RPC_METHODS[name]);
+        expect(registry.get(permission.permissionAtom(env))).toBe(true);
+        yield* permission.authorize(registry, env);
+        expect(registry.get(permission.permissionAtom(other))).toBe(false);
+        expect((yield* permission.authorize(registry, other).pipe(Effect.flip))._tag).toBe(
+          "EnvironmentAuthorizationError",
+        );
+      }
+    }),
+  ),
 );

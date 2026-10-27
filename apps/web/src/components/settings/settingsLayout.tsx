@@ -6,20 +6,15 @@ import { InfoIcon, Undo2Icon } from "lucide-react";
 import { DEFAULT_SERVER_SETTINGS, type ServerSettings } from "@t3tools/contracts";
 import * as Equal from "effect/Equal";
 import { useLocation, useNavigate } from "@tanstack/react-router";
-import {
-  createContext,
-  type ComponentPropsWithoutRef,
-  type ReactNode,
-  useContext,
-  useEffect,
-  useState,
-} from "react";
+import { createContext, type ComponentPropsWithoutRef, type ReactNode, useContext } from "react";
 
 import {
   PRIMARY_SETTINGS_UNAVAILABLE_MESSAGE,
   usePrimarySettingsAvailable,
 } from "../../hooks/useSettings";
+import { observeResize } from "../../lib/observeResize";
 import { cn } from "../../lib/utils";
+import { shouldSettleSettingsTarget } from "./settingsScroll";
 import { WorkspacePageContainer, type WorkspacePageWidth } from "../WorkspacePageContainer";
 import { Button } from "../ui/button";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
@@ -76,6 +71,55 @@ function SettingsSearchTargetProvider({
 }
 
 let pendingTargetScroll: AbortController | undefined;
+let pendingTargetSettle: AbortController | undefined;
+
+/**
+ * Settings above the target can finish loading after the target mounts, which
+ * moves it without changing its own size. Re-scroll while the page height
+ * settles, and stop as soon as the user takes over or the layout is quiet.
+ */
+function settleScrollAfterLayout(scrollTarget: HTMLElement, page: HTMLElement | null): void {
+  pendingTargetSettle?.abort();
+  if (page === null) return;
+  const content = page.firstElementChild;
+  if (content === null) return;
+  const controller = new AbortController();
+  pendingTargetSettle = controller;
+  const { signal } = controller;
+  let quietTimer: number | undefined;
+  const armQuiet = (delay = 350) => {
+    window.clearTimeout(quietTimer);
+    quietTimer = window.setTimeout(() => controller.abort(), delay);
+  };
+  const stopObserving = observeResize([page, content], () => {
+    if (signal.aborted) return;
+    scrollTarget.scrollIntoView({ behavior: "auto", block: "center" });
+    armQuiet();
+  });
+  // Async sections above the target may mount well after the first paint.
+  const settleTimers = [120, 400, 900, 1_600].map((delay) =>
+    window.setTimeout(() => {
+      if (!signal.aborted) {
+        scrollTarget.scrollIntoView({ behavior: "auto", block: "center" });
+      }
+    }, delay),
+  );
+  armQuiet(2_000);
+  const cancel = () => controller.abort();
+  for (const event of ["wheel", "pointerdown", "touchstart", "keydown"] as const) {
+    window.addEventListener(event, cancel, { once: true, capture: true, signal });
+  }
+  signal.addEventListener(
+    "abort",
+    () => {
+      window.clearTimeout(quietTimer);
+      for (const timer of settleTimers) window.clearTimeout(timer);
+      stopObserving();
+      if (pendingTargetSettle === controller) pendingTargetSettle = undefined;
+    },
+    { once: true },
+  );
+}
 
 function scrollAndFocusSettingsTarget(target: HTMLElement, highlight = true): void {
   pendingTargetScroll?.abort();
@@ -96,6 +140,12 @@ function scrollAndFocusSettingsTarget(target: HTMLElement, highlight = true): vo
       block: "center",
     });
   scroll();
+  if (shouldSettleSettingsTarget(target.id)) {
+    settleScrollAfterLayout(
+      scrollTarget,
+      target.closest<HTMLElement>("[data-settings-page-scroll]"),
+    );
+  }
   const panel = target.parentElement?.closest<HTMLElement>(
     '[data-slot="collapsible-panel"][data-open]',
   );
@@ -183,7 +233,9 @@ export function SettingsSearchTarget({
   );
 }
 
-export const SETTINGS_PICKER_TRIGGER_CLASSNAME = "min-w-0 max-w-none shrink-0";
+// Settings pickers reuse composer controls but match the bordered selects beside them.
+export const SETTINGS_PICKER_TRIGGER_CLASSNAME =
+  "min-w-0 max-w-none shrink-0 border-input bg-background font-normal text-foreground shadow-xs/5 hover:bg-accent/50 dark:bg-input/32 [&_svg[data-composer-control-chevron]]:stroke-[1.75] [&_svg[data-composer-control-chevron]]:opacity-70";
 
 export function PolicyTooltip({ children }: { readonly children: string }) {
   return (
@@ -199,15 +251,6 @@ export function PolicyTooltip({ children }: { readonly children: string }) {
       <TooltipPopup side="top">{children}</TooltipPopup>
     </Tooltip>
   );
-}
-
-export function useRelativeTimeTick(intervalMs = 1_000) {
-  const [nowMs, setNowMs] = useState(() => Date.now());
-  useEffect(() => {
-    const id = setInterval(() => setNowMs(Date.now()), intervalMs);
-    return () => clearInterval(id);
-  }, [intervalMs]);
-  return nowMs;
 }
 
 export function SettingsSection({
@@ -246,7 +289,7 @@ export function SettingsSection({
           className="flex min-h-7 items-start justify-between gap-4 px-3 sm:px-4"
         >
           <div className="flex min-w-0 items-center gap-1">
-            <h2 className="flex min-h-7 items-center gap-2 text-sm font-normal text-foreground/70">
+            <h2 className="flex min-h-7 items-center gap-2 text-base font-semibold text-foreground">
               {icon}
               {title}
             </h2>
@@ -473,7 +516,7 @@ export function SettingsRow({
       tabIndex={rowProps.id ? -1 : rowProps.tabIndex}
       data-slot="settings-row"
       className={cn(
-        "@container/settings-row rounded-xl px-3 sm:px-4 aria-disabled:opacity-64 aria-disabled:[&_*]:text-muted-foreground",
+        "group/settings-row @container/settings-row rounded-xl px-3 sm:px-4 aria-disabled:opacity-64 aria-disabled:[&_*]:text-muted-foreground",
         children ? "pt-3 pb-1" : "py-3",
         className,
       )}
@@ -483,7 +526,15 @@ export function SettingsRow({
           <div className="flex min-h-5 items-center gap-1.5">
             <h3 className="text-sm font-medium text-foreground">{title}</h3>
             {renderedInheritance ? (
-              <span className="inline-flex h-5 w-5 shrink-0 items-center justify-center">
+              <span
+                className={cn(
+                  "inline-flex h-5 w-5 shrink-0 items-center justify-center",
+                  // Values set right here explain nothing new, so their marker waits for hover or focus.
+                  (inheritance.state === "default" || inheritance.state === "environment") &&
+                    overridingProjects.length === 0 &&
+                    "opacity-0 group-hover/settings-row:opacity-100 has-focus-visible:opacity-100 has-data-popup-open:opacity-100",
+                )}
+              >
                 {renderedInheritance}
               </span>
             ) : null}
@@ -492,7 +543,7 @@ export function SettingsRow({
             </span>
           </div>
           {description ? (
-            <p className="max-w-xl text-xs leading-normal text-muted-foreground/80">
+            <p className="max-w-2xl text-balance text-xs leading-normal text-muted-foreground">
               {description}
             </p>
           ) : null}

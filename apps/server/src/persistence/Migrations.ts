@@ -1,6 +1,11 @@
 import * as Migrator from "effect/sql/Migrator";
 import * as Effect from "effect/Effect";
 import * as SqlClient from "effect/sql/SqlClient";
+import {
+  reconcileForkMigrationHistory,
+  runForkMigrations,
+  FORK_MIGRATION_TABLE,
+} from "./ForkMigrations.ts";
 import { reconcileV2PreviewMigration } from "./reconcileV2PreviewMigration.ts";
 
 import Migration0001 from "./Migrations/001_OrchestrationEvents.ts";
@@ -70,6 +75,8 @@ import Migration0064 from "./Migrations/064_CanonicalizeThreadPullRequestLinks.t
 import Migration0065 from "./Migrations/065_CodexUsageNativeTurnIndex.ts";
 import Migration0066 from "./Migrations/066_RepairClientSettlementTimestamps.ts";
 import Migration0067 from "./Migrations/067_WebhookDedupe.ts";
+import Migration0068 from "./Migrations/068_ShellStopRequestIndex.ts";
+import Migration0069 from "./Migrations/069_ThreadMessageSearch.ts";
 
 const migrationEntries = [
   [1, "OrchestrationEvents", Migration0001],
@@ -140,6 +147,8 @@ const migrationEntries = [
   [65, "CodexUsageNativeTurnIndex", Migration0065],
   [66, "RepairClientSettlementTimestamps", Migration0066],
   [67, "WebhookDedupe", Migration0067],
+  [68, "ShellStopRequestIndex", Migration0068],
+  [69, "ThreadMessageSearch", Migration0069],
 ] as const;
 
 export const migrationManifest = migrationEntries.map(([id, name]) => [id, name] as const);
@@ -155,12 +164,7 @@ const makeMigrationLoader = (throughId?: number) =>
 
 const FIRST_V2_MIGRATION_ID = 55;
 
-/**
- * Fail before migrating when the migrator would skip one of V2's own
- * migrations. It skips every id up to the highest recorded one, whatever name
- * was recorded, so a database that took a V2 id for another migration would
- * start without V2's schema and fail on first use.
- */
+// Migrators skip ids up to the highest recorded; reject collisions that would skip V2 schema.
 const assertV2MigrationsCanRun = Effect.fn("assertV2MigrationsCanRun")(function* (
   throughId?: number,
 ) {
@@ -204,6 +208,10 @@ export const runMigrations = Effect.fn("runMigrations")(function* ({
 }: RunMigrationsOptions = {}) {
   const includesV2 =
     toMigrationInclusive === undefined || toMigrationInclusive >= FIRST_V2_MIGRATION_ID;
+  // A limited run exists for tests and schema probes. It never rewrites a
+  // released history or adds fork-owned schema.
+  const includesFork = includesV2 && toMigrationInclusive === undefined;
+  const forkReconciliations = includesFork ? yield* reconcileForkMigrationHistory() : [];
   const previewMigrations = includesV2 ? yield* reconcileV2PreviewMigration() : [];
   if (includesV2) {
     yield* assertV2MigrationsCanRun(toMigrationInclusive);
@@ -212,10 +220,28 @@ export const runMigrations = Effect.fn("runMigrations")(function* ({
     ...previewMigrations,
     ...(yield* run({ loader: makeMigrationLoader(toMigrationInclusive) })),
   ];
+  const forkMigrations = includesFork ? yield* runForkMigrations() : [];
   const migrations = executedMigrations.map(([id, name]) => `${id}_${name}`);
-  yield* migrations.length === 0
+  const forkMigrationNames = forkMigrations.map(([id, name]) => `${id}_${name}`);
+  yield* migrations.length === 0 && forkMigrationNames.length === 0
     ? Effect.logDebug("Database schema is current")
-    : Effect.log("Migrations ran successfully").pipe(Effect.annotateLogs({ migrations }));
+    : Effect.log("Migrations ran successfully").pipe(
+        Effect.annotateLogs({
+          migrations,
+          ...(forkMigrationNames.length === 0
+            ? {}
+            : { [`${FORK_MIGRATION_TABLE}_migrations`]: forkMigrationNames }),
+          ...(forkReconciliations.length === 0
+            ? {}
+            : {
+                forkMigrationReconciliations: forkReconciliations.map(
+                  (entry) =>
+                    `${entry.legacyMigrationId}_${entry.legacyName} -> ` +
+                    `${FORK_MIGRATION_TABLE}/${entry.forkMigrationId}_${entry.forkName}`,
+                ),
+              }),
+        }),
+      );
 
   const sql = yield* SqlClient.SqlClient;
   const recorded = yield* sql<{
