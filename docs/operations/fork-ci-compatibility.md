@@ -114,7 +114,9 @@ To reconcile an upstream change, take upstream's new runner label or command as
 the source of truth, then reapply the same fork expression with upstream's
 Blacksmith label and the matching GitHub-hosted fallback from the table above.
 Do not copy the fork expression over an upstream job that changed shape without
-checking the new job's requirements.
+checking the new job's requirements. If upstream changes its repository slug,
+update the `pingdotgg/t3code` literal in every expression and in this document;
+otherwise the upstream path will silently fall back to GitHub-hosted.
 
 The compatibility layer can be deleted when either of these becomes true:
 
@@ -158,6 +160,8 @@ Remote:
 - confirm downstream jobs materialize after `Changes`;
 - confirm the `setup-apt-mirrors` step is skipped and package installation
   succeeds on the GitHub-hosted path;
+- confirm every job completes within its existing timeout on the smaller
+  runners; a timeout increase is preferred to reducing coverage;
 - record expected skips, including release/deploy workflows and optional
   preview workflows.
 
@@ -172,9 +176,10 @@ qualification:
 - `deploy-relay.yml`, `mobile-android-apk.yml`, `mobile-eas-production.yml`,
   `publish-aur.yml` — upstream-guarded or manual;
 - `mobile-eas-preview.yml`, `web-preview.yml`, `desktop-macos-preview.yml`,
-  `desktop-macos-preview-publish.yml`, `mobile-showcase-screenshots.yml` —
-  label-, secret-, or manual-triggered preview/release paths.
+  `desktop-macos-preview-publish.yml`, `relay-preview.yml`,
+  `relay-preview-cleanup.yml`, `mobile-showcase-screenshots.yml` — label-,
+  secret-, environment-, or manual-triggered preview/release paths.
 
-`issue-labels.yml`, `pr-size.yml`, `pr-vouch.yml`, and
-`thread-transfer-report.yml` already use GitHub-hosted `ubuntu-24.04` and need no
+`agent-context-budget.yml`, `issue-labels.yml`, `pr-size.yml`, `pr-vouch.yml`,
+and `thread-transfer-report.yml` already use GitHub-hosted runners and need no
 change.
