@@ -1523,3 +1523,48 @@ it.effect(
       );
     }).pipe(Effect.provide(layerTest)),
 );
+
+it.effect("keeps task routing under the normal task revision CAS", () =>
+  Effect.gen(function* () {
+    const service = yield* setup;
+    const routing = (model: string, fallback: "continue" | "inherit" | "fail" = "inherit") => ({
+      role: "implementation" as const,
+      candidates: [{ providerInstanceId: ProviderInstanceId.make("codex"), model }],
+      fallback,
+    });
+    const created = yield* service.createTask(
+      projectA,
+      { ...taskInput, routing: routing("gpt-6") },
+      actor,
+    );
+    assert.deepEqual(created.routing, routing("gpt-6"));
+
+    const routed = yield* service.updateTask(
+      projectA,
+      { taskId: created.taskId, expectedRevision: 1, routing: routing("gpt-7", "fail") },
+      otherActor,
+    );
+    assert.equal(routed.revision, 2);
+    assert.deepEqual(routed.routing, routing("gpt-7", "fail"));
+
+    const stale = yield* service
+      .updateTask(
+        projectA,
+        { taskId: created.taskId, expectedRevision: 1, routing: routing("gpt-8") },
+        actor,
+      )
+      .pipe(Effect.flip);
+    assert.instanceOf(stale, ProjectRuntimeConflictError);
+    const afterStale = yield* service.readTask(projectA, created.taskId);
+    assert.equal(afterStale.revision, 2);
+    assert.equal(afterStale.scope, created.scope);
+    assert.deepEqual(afterStale.routing, routing("gpt-7", "fail"));
+
+    const cleared = yield* service.updateTask(
+      projectA,
+      { taskId: created.taskId, expectedRevision: 2, routing: null },
+      actor,
+    );
+    assert.equal(cleared.routing, undefined);
+  }).pipe(Effect.provide(layerTest)),
+);

@@ -102,6 +102,8 @@ import * as T3ProjectFileLoader from "./project/T3ProjectFileLoader.ts";
 import * as RepositoryIdentityResolver from "./project/RepositoryIdentityResolver.ts";
 import * as ProjectRuntimeService from "./projectRuntime/ProjectRuntimeService.ts";
 import * as ProjectRuntimeSourceAccess from "./projectRuntime/ProjectRuntimeSourceAccess.ts";
+import * as RuntimeRoutingProviderView from "./runtimeRouting/RuntimeRoutingProviderView.ts";
+import * as RuntimeRoutingService from "./runtimeRouting/RuntimeRoutingService.ts";
 import * as WorkspaceEntries from "./workspace/WorkspaceEntries.ts";
 import * as KnownWorkspaces from "./workspace/KnownWorkspaces.ts";
 import * as WorkspaceFileSystem from "./workspace/WorkspaceFileSystem.ts";
@@ -707,6 +709,9 @@ const layerCommandReadiness = HttpRouter.middleware(
 const layerProjectRuntime = ProjectRuntimeSourceAccess.layer.pipe(
   Layer.provideMerge(ProjectRuntimeService.layer),
   Layer.provideMerge(DevelopmentProfileService.layer),
+  Layer.provideMerge(
+    RuntimeRoutingService.layer.pipe(Layer.provide(RuntimeRoutingProviderView.layer)),
+  ),
 );
 
 const layerMakeRoutes = Layer.mergeAll(

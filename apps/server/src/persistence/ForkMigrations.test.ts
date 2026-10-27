@@ -93,14 +93,17 @@ const seedLegacyForkHome = Effect.gen(function* () {
 
 const legacyData = Effect.gen(function* () {
   const sql = yield* SqlClient.SqlClient;
-  const [runtime] = yield* sql`SELECT * FROM project_runtime WHERE project_id = 'legacy-project'`;
+  const [runtime] = yield* sql`SELECT project_id, enabled, revision, instructions_json,
+    instructions_revision, created_at, updated_at
+    FROM project_runtime WHERE project_id = 'legacy-project'`;
   const [source] =
     yield* sql`SELECT * FROM project_runtime_sources WHERE source_id = 'legacy-source'`;
   const [task] = yield* sql`SELECT * FROM project_runtime_tasks WHERE task_id = 'legacy-task'`;
   const [handoff] =
     yield* sql`SELECT * FROM project_runtime_handoffs WHERE handoff_id = 'legacy-handoff'`;
-  const [profile] =
-    yield* sql`SELECT * FROM development_profiles WHERE profile_id = 'legacy-profile'`;
+  const [profile] = yield* sql`SELECT profile_id, name, instructions, revision, created_at,
+    updated_at, created_by, updated_by
+    FROM development_profiles WHERE profile_id = 'legacy-profile'`;
   const [assignment] =
     yield* sql`SELECT * FROM project_development_profiles WHERE project_id = 'legacy-project'`;
   return { runtime, source, task, handoff, profile, assignment };
@@ -119,7 +122,8 @@ describe("fork migration namespace", () => {
       const tables = yield* sql<{ readonly name: string }>`
         SELECT name FROM sqlite_master WHERE type = 'table' AND name IN (
           'project_runtime', 'project_runtime_sources', 'project_runtime_tasks',
-          'project_runtime_handoffs', 'development_profiles', 'project_development_profiles'
+          'project_runtime_handoffs', 'project_runtime_routing', 'development_profiles',
+          'project_development_profiles'
         ) ORDER BY name
       `;
       assert.deepStrictEqual(
@@ -129,6 +133,7 @@ describe("fork migration namespace", () => {
           "project_development_profiles",
           "project_runtime",
           "project_runtime_handoffs",
+          "project_runtime_routing",
           "project_runtime_sources",
           "project_runtime_tasks",
         ],
@@ -203,6 +208,10 @@ describe("fork migration namespace", () => {
           {
             migration_id: 3,
             name: "TaskHandoffState",
+          },
+          {
+            migration_id: 4,
+            name: "RuntimeRouting",
           },
         ],
       );
@@ -317,8 +326,18 @@ const frozenForkSchema: ReadonlyArray<readonly [string, string, string]> = [
   ],
   [
     "table",
+    "project_runtime_routing",
+    "CREATE TABLE project_runtime_routing ( project_id TEXT PRIMARY KEY REFERENCES projection_projects(project_id) ON DELETE CASCADE, routing_json TEXT, revision INTEGER NOT NULL CHECK (revision >= 1), created_at TEXT NOT NULL, updated_at TEXT NOT NULL )",
+  ],
+  [
+    "trigger",
+    "project_runtime_routing_project_deleted",
+    "CREATE TRIGGER project_runtime_routing_project_deleted AFTER UPDATE OF deleted_at ON projection_projects WHEN NEW.deleted_at IS NOT NULL BEGIN DELETE FROM project_runtime_routing WHERE project_id = NEW.project_id; END",
+  ],
+  [
+    "table",
     "development_profiles",
-    "CREATE TABLE development_profiles ( profile_id TEXT PRIMARY KEY, name TEXT NOT NULL CHECK (length(name) BETWEEN 1 AND 200), instructions TEXT NOT NULL CHECK (length(instructions) <= 32000), revision INTEGER NOT NULL CHECK (revision >= 1), created_at TEXT NOT NULL, updated_at TEXT NOT NULL, created_by TEXT NOT NULL CHECK (length(created_by) BETWEEN 1 AND 200), updated_by TEXT NOT NULL CHECK (length(updated_by) BETWEEN 1 AND 200) )",
+    "CREATE TABLE development_profiles ( profile_id TEXT PRIMARY KEY, name TEXT NOT NULL CHECK (length(name) BETWEEN 1 AND 200), instructions TEXT NOT NULL CHECK (length(instructions) <= 32000), revision INTEGER NOT NULL CHECK (revision >= 1), created_at TEXT NOT NULL, updated_at TEXT NOT NULL, created_by TEXT NOT NULL CHECK (length(created_by) BETWEEN 1 AND 200), updated_by TEXT NOT NULL CHECK (length(updated_by) BETWEEN 1 AND 200) , routing_json TEXT)",
   ],
   [
     "index",

@@ -10,6 +10,7 @@ import {
   DevelopmentProfileProjectNotFoundError,
   EffectiveProjectInstructions,
   ProjectId,
+  ProviderInstanceId,
 } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
@@ -506,4 +507,62 @@ it.effect(
       assert.isNull(yield* service.getAssignment(projectB));
       assert.deepEqual(yield* service.getAssignment(projectA), assignment);
     }).pipe(Effect.provide(layerTest)),
+);
+
+it.effect("writes instructions and routing under one profile revision", () =>
+  Effect.gen(function* () {
+    const service = yield* DevelopmentProfileService.DevelopmentProfileService;
+    const implementation = {
+      role: "implementation" as const,
+      candidates: [{ providerInstanceId: ProviderInstanceId.make("codex"), model: "gpt-6" }],
+      fallback: "inherit" as const,
+    };
+    const created = yield* service.create(
+      { name: "Routing policy", instructions: "Use the main model" },
+      actor,
+    );
+    assert.deepEqual(created.routing, { roleRoutes: [] });
+
+    const updated = yield* service.update(
+      {
+        profileId: created.profileId,
+        name: "Routing policy",
+        instructions: "Use the routed model",
+        routing: { roleRoutes: [implementation] },
+        expectedRevision: 1,
+      },
+      actor,
+    );
+    assert.equal(updated.revision, 2);
+    assert.deepEqual(updated.routing, { roleRoutes: [implementation] });
+
+    const stale = yield* service
+      .update(
+        {
+          profileId: created.profileId,
+          name: "Routing policy",
+          instructions: "Stale instructions",
+          routing: { roleRoutes: [] },
+          expectedRevision: 1,
+        },
+        actor,
+      )
+      .pipe(Effect.flip);
+    assert.instanceOf(stale, DevelopmentProfileConflictError);
+    const afterStale = yield* service.read(created.profileId);
+    assert.equal(afterStale.instructions, "Use the routed model");
+    assert.deepEqual(afterStale.routing, { roleRoutes: [implementation] });
+
+    const instructionsOnly = yield* service.update(
+      {
+        profileId: created.profileId,
+        name: "Routing policy",
+        instructions: "Only instructions changed",
+        expectedRevision: 2,
+      },
+      actor,
+    );
+    assert.equal(instructionsOnly.revision, 3);
+    assert.deepEqual(instructionsOnly.routing, { roleRoutes: [implementation] });
+  }).pipe(Effect.provide(layerTest)),
 );

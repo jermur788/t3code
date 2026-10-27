@@ -237,6 +237,7 @@ it.effect("rewrites legacy task and handoff payloads into the v1 shape", () =>
         { migration_id: 1, name: "ProjectRuntime" },
         { migration_id: 2, name: "DevelopmentProfiles" },
         { migration_id: 3, name: "TaskHandoffState" },
+        { migration_id: 4, name: "RuntimeRouting" },
       ],
     );
 

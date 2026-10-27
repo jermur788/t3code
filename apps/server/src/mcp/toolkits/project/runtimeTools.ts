@@ -2,6 +2,7 @@ import {
   OrchestratorMcpFailure,
   PositiveInt,
   ProjectId,
+  PROJECT_RUNTIME_BOUNDS,
   ProjectRuntimeContext,
   ProjectRuntimeError,
   ProjectRuntimeHandoff,
@@ -52,6 +53,21 @@ const projectId = Schema.optional(
       "Outside a T3 thread only. An agent in a T3 thread acts on its own project; a different projectId is refused.",
   }),
 );
+
+// Routing is user/orchestrator configuration in this gate. Keeping it out of
+// agent-facing tool schemas avoids expanding every Runtime task tool prompt.
+const { routing: _taskRouting, ...AgentProjectRuntimeTaskFields } = ProjectRuntimeTask.fields;
+const AgentProjectRuntimeTask = Schema.Struct(AgentProjectRuntimeTaskFields);
+const { routing: _createTaskRouting, ...AgentProjectRuntimeTaskCreateFields } =
+  ProjectRuntimeTaskCreateInput.fields;
+const { routing: _updateTaskRouting, ...AgentProjectRuntimeTaskUpdateFields } =
+  ProjectRuntimeTaskUpdateInput.fields;
+const AgentProjectRuntimeTaskListResult = Schema.Struct({
+  ...ProjectRuntimeTaskListResult.fields,
+  tasks: Schema.Array(AgentProjectRuntimeTask).check(
+    Schema.isMaxLength(PROJECT_RUNTIME_BOUNDS.listMaxLimit),
+  ),
+});
 
 const worktreeMetadataNote =
   "base.branch, base.worktreePath, and base.revision are descriptive only; they do not create, move, bind, or authorize a worktree or change the thread workspace.";
@@ -110,7 +126,7 @@ export const ProjectTaskListTool = Tool.make("t3_project_task_list", {
   description:
     "List Runtime tasks, oldest first; optional status. Pass `nextCursor` back as `cursor`.",
   parameters: Schema.Struct({ projectId, ...ProjectRuntimeTaskListInput.fields }),
-  success: ProjectRuntimeTaskListResult,
+  success: AgentProjectRuntimeTaskListResult,
 })
   .annotate(Tool.Readonly, true)
   .annotate(Tool.Destructive, false)
@@ -120,7 +136,7 @@ export const ProjectTaskReadTool = Tool.make("t3_project_task_read", {
   ...shared,
   description: "Read one Runtime task by `taskId`, including its revision.",
   parameters: Schema.Struct({ projectId, ...ProjectRuntimeTaskReadInput.fields }),
-  success: ProjectRuntimeTask,
+  success: AgentProjectRuntimeTask,
 })
   .annotate(Tool.Readonly, true)
   .annotate(Tool.Destructive, false)
@@ -129,8 +145,8 @@ export const ProjectTaskReadTool = Tool.make("t3_project_task_read", {
 export const ProjectTaskCreateTool = Tool.make("t3_project_task_create", {
   ...shared,
   description: `Create a Runtime task. The server records the author. A blocker requires \`status:"blocked"\`, \`status:"blocked"\` requires a blocker, and \`status:"done"\` requires \`result\`. Verification milestones above \`implemented\` require passing evidence, and \`verified\` cannot coexist with failing evidence. ${worktreeMetadataNote}`,
-  parameters: Schema.Struct({ projectId, ...ProjectRuntimeTaskCreateInput.fields }),
-  success: ProjectRuntimeTask,
+  parameters: Schema.Struct({ projectId, ...AgentProjectRuntimeTaskCreateFields }),
+  success: AgentProjectRuntimeTask,
 })
   .annotate(Tool.Destructive, false)
   .annotate(Tool.OpenWorld, false);
@@ -138,8 +154,8 @@ export const ProjectTaskCreateTool = Tool.make("t3_project_task_create", {
 export const ProjectTaskUpdateTool = Tool.make("t3_project_task_update", {
   ...shared,
   description: `Update a Runtime task using compare-and-set: pass the revision last read as \`expectedRevision\`; a stale value returns \`ProjectRuntimeConflictError\`, so reread and retry. Omitted fields stay unchanged; null clears optional metadata. \`blocker:null\` clears the blocker, a blocker requires \`status:"blocked"\`, and \`status:"blocked"\` requires a blocker. \`status:"done"\` requires \`result\`. \`verification:null\` resets to milestone \`none\` with no evidence; milestones above \`implemented\` require passing evidence, and \`verified\` cannot coexist with failing evidence. ${worktreeMetadataNote}`,
-  parameters: Schema.Struct({ projectId, ...ProjectRuntimeTaskUpdateInput.fields }),
-  success: ProjectRuntimeTask,
+  parameters: Schema.Struct({ projectId, ...AgentProjectRuntimeTaskUpdateFields }),
+  success: AgentProjectRuntimeTask,
 }).annotate(Tool.OpenWorld, false);
 
 export const ProjectHandoffAppendTool = Tool.make("t3_project_handoff_append", {

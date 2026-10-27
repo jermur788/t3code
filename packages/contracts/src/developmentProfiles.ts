@@ -8,6 +8,7 @@ import {
   TrimmedNonEmptyString,
 } from "./baseSchemas.ts";
 import { ProjectRuntimeInstructions } from "./projectRuntime.ts";
+import { RuntimeProfileRoutingPolicy } from "./runtimeRouting.ts";
 
 import { DEVELOPMENT_PROFILE_BOUNDS } from "./developmentProfileBounds.ts";
 export { DEVELOPMENT_PROFILE_BOUNDS } from "./developmentProfileBounds.ts";
@@ -34,6 +35,8 @@ export const DevelopmentProfile = Schema.Struct({
   profileId: DevelopmentProfileId,
   name: DevelopmentProfileName,
   instructions: DevelopmentProfileInstructions,
+  /** Structured role routing defaults; instructions never encode routing. */
+  routing: RuntimeProfileRoutingPolicy,
   revision: PositiveInt,
   createdAt: IsoDateTime,
   updatedAt: IsoDateTime,
@@ -45,6 +48,7 @@ export type DevelopmentProfile = typeof DevelopmentProfile.Type;
 export const DevelopmentProfileCreateInput = Schema.Struct({
   name: DevelopmentProfileName,
   instructions: DevelopmentProfileInstructions,
+  routing: Schema.optionalKey(RuntimeProfileRoutingPolicy),
 });
 export type DevelopmentProfileCreateInput = typeof DevelopmentProfileCreateInput.Type;
 
@@ -52,6 +56,8 @@ export const DevelopmentProfileUpdateInput = Schema.Struct({
   profileId: DevelopmentProfileId,
   name: DevelopmentProfileName,
   instructions: DevelopmentProfileInstructions,
+  /** Omitted preserves the stored routing; the same revision guards both fields. */
+  routing: Schema.optionalKey(RuntimeProfileRoutingPolicy),
   expectedRevision: PositiveInt,
 });
 export type DevelopmentProfileUpdateInput = typeof DevelopmentProfileUpdateInput.Type;

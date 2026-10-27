@@ -1,7 +1,6 @@
 import {
   CommandId,
   type RunId,
-  isProviderAvailable,
   MessageId,
   type ModelSelection,
   NodeId,
@@ -56,7 +55,6 @@ import {
   type ProviderInteractionMode,
   type ProviderInstanceId,
   type ProviderOptionDescriptor,
-  type ProviderOptionSelection,
   ProviderRequestKind,
   type RuntimeMode,
   type ScheduledTask,
@@ -103,6 +101,11 @@ import { isSnoozed } from "../orchestration-v2/ThreadSettlementService.ts";
 import { userFacingDispatchErrorMessage } from "../orchestration-v2/UserFacingErrors.ts";
 import * as ProjectService from "../project/ProjectService.ts";
 import * as ProviderRegistry from "../provider/ProviderRegistry.ts";
+import {
+  providerConstraintMessages,
+  providerEligibilityIssues,
+  providerOptionSelectionProblems,
+} from "../provider/providerEligibility.ts";
 import * as ScheduledTaskService from "../scheduledTasks/ScheduledTaskService.ts";
 import * as ServerSettings from "../serverSettings.ts";
 import {
@@ -360,68 +363,6 @@ function capabilityModelOption(descriptor: ProviderOptionDescriptor): Orchestrat
       descriptor.type === "boolean" ? [false, true] : descriptor.options.map((choice) => choice.id),
     ...(defaultValue === undefined ? {} : { default: defaultValue }),
   };
-}
-
-function providerConstraints(
-  provider: ServerProvider | undefined,
-  supportsOrchestrationV2: boolean,
-): ReadonlyArray<string> {
-  const constraints: Array<string> = [];
-  if (!supportsOrchestrationV2) {
-    constraints.push("No V2 provider adapter is registered.");
-  }
-  if (provider === undefined) return constraints;
-  if (!isProviderAvailable(provider)) {
-    constraints.push(provider.unavailableReason ?? "Provider driver is unavailable.");
-  }
-  if (!provider.enabled) {
-    constraints.push("Provider instance is disabled.");
-    // Disabled snapshots contain placeholders for installation, health, and auth.
-    return constraints;
-  }
-  if (!provider.installed) constraints.push("Provider executable is not installed.");
-  if (provider.status === "error" || provider.status === "disabled") {
-    constraints.push(provider.message ?? `Provider status is ${provider.status}.`);
-  }
-  if (provider.auth.status === "unauthenticated") {
-    constraints.push("Provider is not authenticated.");
-  }
-  return constraints;
-}
-
-/** Skip checks without descriptors; reject duplicate IDs because consumers disagree on precedence. */
-function invalidOptionSelections(
-  selections: ReadonlyArray<ProviderOptionSelection>,
-  descriptors: ReadonlyArray<ProviderOptionDescriptor> | undefined,
-): ReadonlyArray<string> {
-  const problems: Array<string> = [];
-  const seen = new Set<string>();
-  for (const selection of selections) {
-    if (seen.has(selection.id)) {
-      problems.push(`Option ${selection.id} was specified more than once.`);
-      continue;
-    }
-    seen.add(selection.id);
-    if (descriptors === undefined) continue;
-    const descriptor = descriptors.find((candidate) => candidate.id === selection.id);
-    if (descriptor === undefined) {
-      const known = descriptors.map((candidate) => candidate.id).join(", ");
-      problems.push(`Unknown option ${selection.id}; supported options: ${known || "none"}.`);
-      continue;
-    }
-    if (descriptor.type === "boolean" && typeof selection.value !== "boolean") {
-      problems.push(`Option ${selection.id} expects a boolean value.`);
-      continue;
-    }
-    if (
-      descriptor.type === "select" &&
-      !descriptor.options.some((choice) => choice.id === selection.value)
-    ) {
-      const choices = descriptor.options.map((choice) => choice.id).join(", ");
-      problems.push(`Option ${selection.id} must be one of: ${choices}.`);
-    }
-  }
-  return problems;
 }
 
 function taskStatusForRun(
@@ -1352,7 +1293,8 @@ const make = Effect.gen(function* () {
         );
       }
       const healthyCandidates = candidates.filter(
-        (candidate) => providerConstraints(candidate, true).length === 0,
+        (candidate) =>
+          providerConstraintMessages(providerEligibilityIssues(candidate, true)).length === 0,
       );
       const inheritedCandidate = healthyCandidates.find(
         (candidate) => candidate.instanceId === input.parent.thread.modelSelection.instanceId,
@@ -1397,9 +1339,8 @@ const make = Effect.gen(function* () {
         `Provider instance ${instanceId} uses driver ${provider.driver}, not ${requestedDriver}.`,
       );
     }
-    const constraints = providerConstraints(
-      provider,
-      orchestrationCapableInstanceIds.has(provider.instanceId),
+    const constraints = providerConstraintMessages(
+      providerEligibilityIssues(provider, orchestrationCapableInstanceIds.has(provider.instanceId)),
     );
     if (constraints.length > 0) {
       return yield* failure(
@@ -1437,7 +1378,7 @@ const make = Effect.gen(function* () {
     if (requestedOptions !== undefined) {
       const descriptors = provider.models.find((candidate) => candidate.slug === model)
         ?.capabilities?.optionDescriptors;
-      const invalid = invalidOptionSelections(requestedOptions, descriptors);
+      const invalid = providerOptionSelectionProblems(requestedOptions, descriptors);
       if (invalid.length > 0) {
         return yield* failure(
           "invalid_request",
@@ -2081,9 +2022,11 @@ const make = Effect.gen(function* () {
         runtimeMode: limits.runtimeMode,
         interactionMode: limits.interactionMode,
         providers: providers.map((provider) => {
-          const constraints = providerConstraints(
-            provider,
-            orchestrationCapableInstanceIds.has(provider.instanceId),
+          const constraints = providerConstraintMessages(
+            providerEligibilityIssues(
+              provider,
+              orchestrationCapableInstanceIds.has(provider.instanceId),
+            ),
           );
           const { listed, omitted } = listCapabilityModels({
             provider,

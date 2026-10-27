@@ -2,6 +2,7 @@ import * as DevelopmentProfileService from "./developmentProfiles/DevelopmentPro
 import * as DevelopmentProfileRpc from "./developmentProfiles/DevelopmentProfileRpc.ts";
 import * as ProjectRuntimeService from "./projectRuntime/ProjectRuntimeService.ts";
 import * as ProjectRuntimeSourceAccess from "./projectRuntime/ProjectRuntimeSourceAccess.ts";
+import * as RuntimeRoutingService from "./runtimeRouting/RuntimeRoutingService.ts";
 import * as ProjectRuntimeRpc from "./projectRuntime/ProjectRuntimeRpc.ts";
 import { OrchestrationDispatchCommandError } from "@t3tools/contracts";
 import * as Context from "effect/Context";
@@ -3312,6 +3313,7 @@ export const layer = Layer.unwrap(
     const developmentProfiles = yield* DevelopmentProfileService.DevelopmentProfileService;
     const projectRuntime = yield* ProjectRuntimeService.ProjectRuntimeService;
     const runtimeSources = yield* ProjectRuntimeSourceAccess.ProjectRuntimeSourceAccess;
+    const runtimeRouting = yield* RuntimeRoutingService.RuntimeRoutingService;
     const previewAutomationBroker = yield* PreviewAutomationBroker.PreviewAutomationBroker;
     const serverBrowser = yield* ServerBrowser.ServerBrowser;
     const serverSelfUpdate = yield* ServerSelfUpdate.ServerSelfUpdate;
@@ -3397,6 +3399,9 @@ export const layer = Layer.unwrap(
               ),
               Layer.provide(
                 Layer.succeed(ProjectRuntimeService.ProjectRuntimeService, projectRuntime),
+              ),
+              Layer.provide(
+                Layer.succeed(RuntimeRoutingService.RuntimeRoutingService, runtimeRouting),
               ),
               Layer.provide(
                 Layer.succeed(

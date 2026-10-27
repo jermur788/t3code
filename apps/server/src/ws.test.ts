@@ -1,6 +1,7 @@
 import * as DevelopmentProfileService from "./developmentProfiles/DevelopmentProfileService.ts";
 import * as ProjectRuntimeService from "./projectRuntime/ProjectRuntimeService.ts";
 import * as ProjectRuntimeSourceAccess from "./projectRuntime/ProjectRuntimeSourceAccess.ts";
+import * as RuntimeRoutingService from "./runtimeRouting/RuntimeRoutingService.ts";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, it } from "@effect/vitest";
 import {
@@ -399,6 +400,7 @@ const layerUnusedConfigRpcServices = Layer.mergeAll(
   Layer.mock(ProjectRuntimeService.ProjectRuntimeService)({}),
   Layer.mock(DevelopmentProfileService.DevelopmentProfileService)({}),
   Layer.mock(ProjectRuntimeSourceAccess.ProjectRuntimeSourceAccess)({}),
+  Layer.mock(RuntimeRoutingService.RuntimeRoutingService)({}),
   Layer.mock(DocumentText.DocumentText)({}),
   Layer.mock(ServerSecretStore.ServerSecretStore)({}),
   Layer.mock(WorkspacePaths.WorkspacePaths)({}),

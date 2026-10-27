@@ -283,6 +283,10 @@ function applyTaskPatch(
     if (patch.nextAction === null) delete result.nextAction;
     else result.nextAction = patch.nextAction;
   }
+  if (patch.routing !== undefined) {
+    if (patch.routing === null) delete result.routing;
+    else result.routing = patch.routing;
+  }
   return result;
 }
 
