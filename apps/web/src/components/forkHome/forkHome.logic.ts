@@ -196,7 +196,11 @@ export function projectOptionLabel(
 
 function previewText(text: string, maxLength = 180): string {
   const compact = text.replace(/\s+/g, " ").trim();
-  return compact.length <= maxLength ? compact : `${compact.slice(0, maxLength - 1)}…`;
+  if (compact.length <= maxLength) return compact;
+  let end = maxLength - 1;
+  const last = compact.charCodeAt(end - 1);
+  if (last >= 0xd800 && last <= 0xdbff) end -= 1;
+  return `${compact.slice(0, end)}…`;
 }
 
 export function summarizeInstructions(

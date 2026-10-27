@@ -444,6 +444,27 @@ describe("fork home runtime summaries", () => {
     });
   });
 
+  it("clips previews without splitting a surrogate pair", () => {
+    const summary = summarizeTasks({
+      tasks: [
+        task({
+          id: "emoji",
+          title: "Emoji task",
+          status: "blocked",
+          updatedAt: time,
+          blockerSummary: "😀".repeat(200),
+        }),
+      ],
+      nextCursor: null,
+    });
+    const preview = summary.cards[0]?.blockerSummary ?? "";
+    expect(preview.endsWith("…")).toBe(true);
+    expect(preview).not.toContain("\uFFFD");
+    const beforeEllipsis = preview.slice(0, -1);
+    const last = beforeEllipsis.charCodeAt(beforeEllipsis.length - 1);
+    expect(last >= 0xd800 && last <= 0xdbff).toBe(false);
+  });
+
   it("bounds long task summaries without adding fields that are absent", () => {
     const longText = "x".repeat(400);
     const summary = summarizeTasks({
