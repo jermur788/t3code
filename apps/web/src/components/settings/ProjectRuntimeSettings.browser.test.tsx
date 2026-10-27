@@ -665,7 +665,7 @@ it("renders a legacy blocked task without a blocker and lets the user repair it"
   );
 });
 
-it("keeps acceptance criteria ids stable while editing", async () => {
+it("keeps existing criteria ids when a line is added", async () => {
   const t = setup();
   t.project.tasks = [
     {

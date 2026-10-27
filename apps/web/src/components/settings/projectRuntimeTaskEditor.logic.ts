@@ -67,8 +67,9 @@ export interface AcceptanceCriteriaMapping {
 
 /**
  * One non-empty line maps to one criterion. Text matches keep an id on the same
- * criterion when lines are inserted, removed, or reordered; an edited line falls
- * back to its position, and fresh ids never reuse a removed criterion's id.
+ * criterion when lines are inserted, removed, or reordered. A line whose text
+ * changed gets a fresh id, so a removed criterion's id is never reused and its
+ * evidence links are dropped rather than attached to a different criterion.
  */
 export function mapAcceptanceCriteria(
   text: string,
@@ -120,16 +121,6 @@ export function mapAcceptanceCriteria(
   let ordinal = 1;
   lines.forEach((_line, index) => {
     if (ids[index] !== undefined) return;
-    const inherited = existing[index]?.id;
-    if (
-      inherited !== undefined &&
-      isRecordKey(inherited, PROJECT_RUNTIME_BOUNDS.criterionIdMaxLength) &&
-      !used.has(inherited)
-    ) {
-      ids[index] = inherited;
-      used.add(inherited);
-      return;
-    }
     while (used.has(`c${ordinal}`) || taken.has(`c${ordinal}`)) ordinal += 1;
     const id = `c${ordinal}`;
     ordinal += 1;

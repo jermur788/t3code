@@ -19,16 +19,16 @@ describe("acceptance criteria mapping", () => {
     ]);
   });
 
-  it("matches ids by text, then falls back to position for an edited line", () => {
+  it("gives an edited line a fresh id instead of reusing its old one", () => {
     const mapping = mapAcceptanceCriteria("Edited first\nSecond\nThird", [
       { id: "c7", text: "First" },
       { id: "c9", text: "Second" },
     ]);
     expect(mapping.error).toBeNull();
     expect(mapping.criteria).toEqual([
-      { id: "c7", text: "Edited first" },
+      { id: "c1", text: "Edited first" },
       { id: "c9", text: "Second" },
-      { id: "c1", text: "Third" },
+      { id: "c2", text: "Third" },
     ]);
   });
 
@@ -50,6 +50,19 @@ describe("acceptance criteria mapping", () => {
     ]);
     expect(mapping.criteria.map((criterion) => criterion.id)).toEqual(["c2", "c3"]);
     expect(new Set(mapping.criteria.map((criterion) => criterion.id)).size).toBe(2);
+  });
+
+  it("does not attach a removed criterion's id to an appended line", () => {
+    const mapping = mapAcceptanceCriteria("Third\nFourth", [
+      { id: "c1", text: "First" },
+      { id: "c2", text: "Second" },
+      { id: "c3", text: "Third" },
+    ]);
+    expect(mapping.criteria).toEqual([
+      { id: "c3", text: "Third" },
+      { id: "c4", text: "Fourth" },
+    ]);
+    expect(mapping.criteria.map((criterion) => criterion.id)).not.toContain("c2");
   });
 
   it("rejects too many criteria or an over-long line with guidance", () => {
