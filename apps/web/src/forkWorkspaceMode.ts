@@ -21,9 +21,9 @@ export interface ForkWorkspaceModeState {
  * Development so existing users never have advanced controls hidden after an upgrade.
  */
 export function useForkWorkspaceMode(): ForkWorkspaceModeState {
-  const [savedMode, setSavedMode] = useLocalStorage<ForkWorkspaceMode | null, unknown>(
+  const [savedMode, setSavedMode] = useLocalStorage(
     FORK_WORKSPACE_MODE_STORAGE_KEY,
-    null,
+    null as ForkWorkspaceMode | null,
     StoredForkWorkspaceMode,
   );
   return {
