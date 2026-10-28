@@ -1,6 +1,8 @@
 # RTE-040 — Execution Bridge
 
-Status: IMPLEMENTED / RUNTIME PASS (RTE-050+ pending)
+Status: INTEGRATED / REVIEW PASS (RTE-050+ pending)
+
+Implementation commit: `c475816ea9` (`feat(runtime): add durable task execution bridge`).
 
 ## Task
 
@@ -95,3 +97,12 @@ reconciliation; it never permits a second launch for the same task.
 RTE-050 recovery and cancellation: reconcile pending/reconcile-required attempts,
 link handoffs, idempotent restart behavior, cancellation, and `reconcile-required`
 resolution.
+
+## Completion handoff
+
+- **VERDICT:** RUNTIME PASS / REVIEW PASS; RTE-V1 is not yet VERIFIED.
+- **DELIVERED:** attempt-first durable execution, deterministic task packet, routing receipt, execute/list/read RPCs and permissions, task Execute UI, migration 005, focused service/packet/migration/UI tests, and docs. No cancellation, restart reconciliation, retry lineage, or handoff linking.
+- **VERIFICATION:** `VITEST_MAX_WORKERS=1 vp run check:changed` passed (format, lint, knip, graphql, typecheck 32 packages, 11 test files / 98 tests). Rendered launch: a review task routed to Claude in a new worktree produced a `launched` attempt and a worker thread; the same attempt/status/thread link persisted after a server restart. The provider turn itself hit a Claude usage limit, outside this gate.
+- **REVIEW:** independent Claude B review found one ambiguity-classification blocker; fixed to distinguish a known-absent thread from a failed shell read, with a regression test. Re-review returned RUNTIME PASS.
+- **EXCLUDED:** cancellation, restart reconciliation, `reconcile-required` resolution, handoff linking, execution history paging, retries, and MCP execution tools.
+- **NEXT:** RTE-050 Recovery and Cancellation under the continuation amendment.
