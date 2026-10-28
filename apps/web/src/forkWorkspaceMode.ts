@@ -4,14 +4,14 @@ import { getLocalStorageItem, useLocalStorage } from "./hooks/useLocalStorage";
 
 export const FORK_WORKSPACE_MODE_STORAGE_KEY = "t3-fork:interface-mode";
 
-export const ForkWorkspaceMode = Schema.Literals(["workspace", "development"]);
-export type ForkWorkspaceMode = typeof ForkWorkspaceMode.Type;
+export type ForkWorkspaceMode = "workspace" | "development";
+export const ForkWorkspaceModeSchema = Schema.Literals(["workspace", "development"]);
 
 export const DEFAULT_FORK_WORKSPACE_MODE: ForkWorkspaceMode = "development";
 
 export function readForkWorkspaceMode(): ForkWorkspaceMode | null {
   try {
-    return getLocalStorageItem(FORK_WORKSPACE_MODE_STORAGE_KEY, ForkWorkspaceMode);
+    return getLocalStorageItem(FORK_WORKSPACE_MODE_STORAGE_KEY, ForkWorkspaceModeSchema);
   } catch {
     return null;
   }
@@ -25,7 +25,7 @@ export function useForkWorkspaceMode(): {
   const [mode, setMode] = useLocalStorage(
     FORK_WORKSPACE_MODE_STORAGE_KEY,
     DEFAULT_FORK_WORKSPACE_MODE,
-    ForkWorkspaceMode,
+    ForkWorkspaceModeSchema,
   );
   return {
     mode,
