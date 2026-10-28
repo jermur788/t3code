@@ -128,3 +128,19 @@ If executable verification cannot run, leave ARM-010 as **IMPLEMENTED / VERIFICA
 ## User decision needed
 
 None for this checkpoint. The next logical step is verification, not a new specification. If a later step would materially change the design or expand scope beyond the governing ARM specification, ask the user whether they want a new or revised spec before proceeding.
+
+## Repair: cross-task identity coherence (CCF #63 IMPLEMENTATION DEFECT)
+
+Reviewed HEAD `71f9ae4acbbecf0582ecf6b6cbeadd1148199bff`. Migration 007 was repaired in place (not yet integrated).
+
+**Defect.** `adaptive_execution_observations` and `adaptive_recommendation_receipts` referenced attempts and predictions through independent single-column foreign keys, so a row could claim task A while pointing at task B's attempt or prediction.
+
+**Repair (database-level).**
+
+- `adaptive_difficulty_predictions` gains `UNIQUE(project_id, task_id, prediction_id)`.
+- Migration 007 creates `project_runtime_execution_attempts_task_attempt_idx`, a unique index on `(project_id, task_id, attempt_id)`. SQLite requires a composite parent key to be unique. The index is derived from the attempt primary key, so it cannot fail on existing data, and no Runtime row is rewritten.
+- Observations reference `(project_id, task_id, attempt_id)` and `(project_id, task_id, prediction_id)` as composite foreign keys; receipts reference `(project_id, task_id, prediction_id)`. All keep `ON DELETE CASCADE`, so deleting adaptive rows still never reaches Runtime tables.
+
+**Tests added.** `packages/contracts/src/adaptiveRouting.test.ts` (schema decoding and bounds); cross-task rejection, matched-identity persistence, historical-attempt-without-telemetry and extended Runtime-preservation deletion tests in `007_AdaptiveRouting.test.ts`; the same rejection/acceptance through the service plus a file-backed close/reopen proof and a malformed accepted-outcome proof in `AdaptiveRoutingService.test.ts`. `001`, `003` and `004` fork-migration tests had hard-coded a six-entry ledger and were already failing at the reviewed HEAD; their expectations now include migration 7.
+
+**Known residual (unchanged scope).** Other ids inside observation and receipt payloads (`realizedDifficultyId`, `outcomeId`, snapshot ids, `experimentAssignmentId`) are payload-only soft references with no columns or foreign keys. `check:changed` also reports pre-existing format drift in `ForkMigrations.test.ts`, `AdaptiveRoutingService.ts` and `contracts/src/index.ts`, and knip reports unused exports `adaptiveRoutingSchema` and `ADAPTIVE_ROUTING_VERSION`; none were touched here.

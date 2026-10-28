@@ -2,22 +2,22 @@ import * as Effect from "effect/Effect";
 import * as SqlClient from "effect/sql/SqlClient";
 
 /**
- * Adaptive Model Routing is an observation layer beside Project Runtime. Raw
- * observations are append-only by service contract. Only the accepted-outcome
- * head is mutable, with revision/CAS and append-only reconciliation history.
- *
- * Project-scoped adaptive rows reference Runtime truth and cascade only when
- * that Runtime truth itself is deleted. Deleting adaptive rows never reaches
- * Runtime tables. Capacity pools are environment-scoped and intentionally have
- * no project foreign key.
+ * Adaptive rows are append-only observations beside Runtime; deleting them never reaches
+ * Runtime tables, while deleting Runtime truth cascades them. Attempt and prediction
+ * references are composite (project_id, task_id, id) so SQLite rejects cross-task pairs;
+ * that needs one extra unique index on Runtime attempts, which rewrites no Runtime rows.
  */
 export const adaptiveRoutingSchema = [
+  `CREATE UNIQUE INDEX project_runtime_execution_attempts_task_attempt_idx
+    ON project_runtime_execution_attempts(project_id, task_id, attempt_id)`,
+
   `CREATE TABLE adaptive_difficulty_predictions (
     prediction_id TEXT PRIMARY KEY,
     project_id TEXT NOT NULL,
     task_id TEXT NOT NULL,
     created_at TEXT NOT NULL,
     payload_json TEXT NOT NULL,
+    UNIQUE(project_id, task_id, prediction_id),
     FOREIGN KEY (project_id, task_id)
       REFERENCES project_runtime_tasks(project_id, task_id) ON DELETE CASCADE
   )`,
@@ -117,8 +117,9 @@ export const adaptiveRoutingSchema = [
     payload_json TEXT NOT NULL,
     FOREIGN KEY (project_id, task_id)
       REFERENCES project_runtime_tasks(project_id, task_id) ON DELETE CASCADE,
-    FOREIGN KEY (prediction_id)
-      REFERENCES adaptive_difficulty_predictions(prediction_id) ON DELETE CASCADE
+    FOREIGN KEY (project_id, task_id, prediction_id)
+      REFERENCES adaptive_difficulty_predictions(project_id, task_id, prediction_id)
+      ON DELETE CASCADE
   )`,
 
   `CREATE INDEX adaptive_recommendation_receipts_task_idx
@@ -147,10 +148,12 @@ export const adaptiveRoutingSchema = [
     payload_json TEXT NOT NULL,
     FOREIGN KEY (project_id, task_id)
       REFERENCES project_runtime_tasks(project_id, task_id) ON DELETE CASCADE,
-    FOREIGN KEY (attempt_id)
-      REFERENCES project_runtime_execution_attempts(attempt_id) ON DELETE CASCADE,
-    FOREIGN KEY (prediction_id)
-      REFERENCES adaptive_difficulty_predictions(prediction_id) ON DELETE CASCADE
+    FOREIGN KEY (project_id, task_id, attempt_id)
+      REFERENCES project_runtime_execution_attempts(project_id, task_id, attempt_id)
+      ON DELETE CASCADE,
+    FOREIGN KEY (project_id, task_id, prediction_id)
+      REFERENCES adaptive_difficulty_predictions(project_id, task_id, prediction_id)
+      ON DELETE CASCADE
   )`,
 
   `CREATE INDEX adaptive_execution_observations_task_idx
