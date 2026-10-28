@@ -5,7 +5,7 @@ This is the shortest supported path from a fresh source checkout to durable, pro
 > [!IMPORTANT]
 > Use the **source checkout** workflow below for this fork. Upstream installers/packages, `t3 update`, and upstream in-app updates install stock T3 and do not contain fork features such as Project Home, Project Runtime, Development Profiles, or Runtime task routing.
 
-For compact definitions, storage details, state tables, routing fallback semantics, and upgrade notes, see [Reference](reference.md). For upstream T3 features that are not fork-specific, use the [user documentation index](user/README.md).
+For compact definitions, storage details, state tables, routing fallback semantics, and upgrade notes, see [Reference](reference.md). For upstream T3 features that are not fork-specific, use the [documentation index](README.md).
 
 ## 1. Quickstart
 
