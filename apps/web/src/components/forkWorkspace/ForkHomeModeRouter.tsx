@@ -1,7 +1,9 @@
-import { Button } from "../ui/button";
+import { Link } from "@tanstack/react-router";
+
+import { useForkWorkspaceMode } from "../../forkWorkspaceMode";
 import { ForkHome } from "../forkHome/ForkHome";
 import type { SettingsScopeSearch } from "../settings/settingsScope";
-import { useForkWorkspaceMode } from "../../forkWorkspaceMode";
+import { Button } from "../ui/button";
 import { WorkspaceForkHome } from "./WorkspaceForkHome";
 
 export function ForkHomeModeRouter({
@@ -16,7 +18,17 @@ export function ForkHomeModeRouter({
   return (
     <>
       {mode.effectiveMode === "workspace" ? (
-        <WorkspaceForkHome search={search} onSearchChange={onSearchChange} />
+        <>
+          <WorkspaceForkHome search={search} onSearchChange={onSearchChange} />
+          <Button
+            size="sm"
+            variant="ghost"
+            className="fixed right-4 top-3 z-40"
+            render={<Link to="/" search={{ classic: 1 }} />}
+          >
+            Classic T3 Home
+          </Button>
+        </>
       ) : (
         <ForkHome search={search} onSearchChange={onSearchChange} />
       )}
