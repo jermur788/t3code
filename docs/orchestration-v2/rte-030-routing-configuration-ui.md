@@ -1,11 +1,16 @@
 # RTE-030 — Routing Configuration UI
 
-Status: AUTHORIZED / ACTIVE
+Status: INTEGRATED / REVIEW PASS
+
+Implementation commit: `4da1064531` (`feat(web): add runtime worker routing settings`).
+Next authorized gate: RTE-040 (continuation amendment).
 
 ## Task
+
 Add the settings screens for choosing AI workers without introducing worker execution.
 
 ## Routing
+
 Preferred primary worker: OpenCode / DeepSeek-class implementation worker. Use a fresh independent Claude/Codex-class review if material architecture or integration concerns arise.
 
 Use one writer for the UI lane and a fresh isolated worktree.
@@ -199,3 +204,11 @@ One of: `IMPLEMENTED`, `STATIC PASS`, `RUNTIME PASS`, `REVIEW PASS`, `VERIFIED`,
 ### NEXT
 
 Exact next authorized manager action. Do not start RTE-040 without manager acceptance of RTE-030.
+
+## Completion handoff
+
+- **VERDICT:** RUNTIME PASS / REVIEW PASS; not yet VERIFIED before RTE-070.
+- **DELIVERED:** profile role routing, project override/reset, task role/routing/clear, server-resolved effective layer, unavailable saved-worker warnings, revision conflict handling, focused tests and docs. No execution path.
+- **VERIFICATION:** `VITEST_MAX_WORKERS=1 vp run check:changed` passed (format, lint, knip, typecheck, 98 tests). Independent Codex review returned RUNTIME PASS after repaired findings. Rendered profile/project/task states and narrow layout were inspected.
+- **EXCLUDED:** worker launch, execution attempts, cancellation, recovery, and execution history (RTE-040+).
+- **NEXT:** RTE-040 Execution Bridge under the continuation amendment.
