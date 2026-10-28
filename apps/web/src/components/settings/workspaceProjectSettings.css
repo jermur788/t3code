@@ -1,0 +1,6 @@
+[data-fork-project-settings-mode="workspace"][data-fork-advanced-open="false"] #development-profile,
+[data-fork-project-settings-mode="workspace"][data-fork-advanced-open="false"] #project-worker-preferences,
+[data-fork-project-settings-mode="workspace"][data-fork-advanced-open="false"] #project-runtime-state,
+[data-fork-project-settings-mode="workspace"][data-fork-advanced-open="false"] #project-runtime-tasks {
+  display: none;
+}
