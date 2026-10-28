@@ -1,6 +1,8 @@
 # RTE-050 — Recovery and Cancellation
 
-Status: IMPLEMENTED / RUNTIME PASS (integration pending)
+Status: INTEGRATED / REVIEW PASS (RTE-060+ pending)
+
+Implementation commit: `b706ed0744` (`feat(runtime): recover and cancel task executions`).
 
 ## Task
 
@@ -72,3 +74,12 @@ After the run is terminal, reconciliation releases the active slot.
 - Cancel is revision-guarded and uses the existing orchestration stop path.
 - Terminal attempts link the worker's handoff when one exists.
 - Focused service/migration/UI tests and changed-package checks pass.
+
+## Completion handoff
+
+- **VERDICT:** RUNTIME PASS / REVIEW PASS; RTE-V1 is not yet VERIFIED.
+- **DELIVERED:** startup reconciliation, pending launch replay, terminal run mapping, reconcile-required ambiguity handling, revision-guarded cancellation through `thread.stop`, active-slot retention, worker-thread handoff linking, migration 006, Cancel/Recheck UI, and focused tests/docs.
+- **VERIFICATION:** `VITEST_MAX_WORKERS=1 vp run check:changed` passed (format, lint, knip, graphql, typecheck 32 packages, 8 changed test files / 81 tests). Runtime evidence: RTE-040's launched Claude attempt reconciled to Failed after restart; a live execution was cancelled (Cancelling + cancellation timestamp), then after restart reconciled to Interrupted with the same attempt/thread link and revision 4. Handoff-link and wrong-thread tests pass.
+- **REVIEW:** independent Claude B review found two reconciliation blockers (terminal non-revival and runtime slot release); both fixed with tests. Re-review returned RUNTIME PASS.
+- **EXCLUDED:** automatic retry lineage, orphan-thread cleanup, execution history paging, MCP execution tools.
+- **NEXT:** RTE-060 Cross-Provider Qualification under the continuation amendment.
