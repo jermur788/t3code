@@ -31,6 +31,14 @@ import {
   RuntimeRoutingError,
 } from "./runtimeRouting.ts";
 import { RuntimeRouteResolution, RuntimeRouteResolutionInput } from "./runtimeRoutingResolution.ts";
+import {
+  ExecuteProjectRuntimeTaskInput,
+  ListRuntimeExecutionAttemptsInput,
+  ReadRuntimeExecutionAttemptInput,
+  RuntimeExecutionAttempt,
+  RuntimeExecutionAttemptListResult,
+  RuntimeExecutionError,
+} from "./runtimeExecution.ts";
 
 export const PROJECT_RUNTIME_RPC_METHODS = {
   status: "projectRuntime.status",
@@ -50,6 +58,9 @@ export const PROJECT_RUNTIME_RPC_METHODS = {
   readRouting: "projectRuntime.readRouting",
   saveRouting: "projectRuntime.saveRouting",
   resolveRoute: "projectRuntime.resolveRoute",
+  executeTask: "projectRuntime.executeTask",
+  listExecutionAttempts: "projectRuntime.listExecutionAttempts",
+  readExecutionAttempt: "projectRuntime.readExecutionAttempt",
 } as const;
 
 export class ProjectRuntimeRequestError extends Schema.TaggedError<ProjectRuntimeRequestError>()(
@@ -67,6 +78,7 @@ export class ProjectRuntimeRequestError extends Schema.TaggedError<ProjectRuntim
 const error = Schema.Union([
   ProjectRuntimeError,
   RuntimeRoutingError,
+  RuntimeExecutionError,
   ProjectRuntimeRequestError,
   EnvironmentAuthorizationError,
 ]);
@@ -154,6 +166,24 @@ export const PROJECT_RUNTIME_RPCS = [
   Rpc.make(PROJECT_RUNTIME_RPC_METHODS.resolveRoute, {
     payload: RuntimeRouteResolutionInput,
     success: RuntimeRouteResolution,
+    error,
+  }),
+  Rpc.make(PROJECT_RUNTIME_RPC_METHODS.executeTask, {
+    payload: Schema.Struct({ projectId: ProjectId, ...ExecuteProjectRuntimeTaskInput.fields }),
+    success: RuntimeExecutionAttempt,
+    error,
+  }),
+  Rpc.make(PROJECT_RUNTIME_RPC_METHODS.listExecutionAttempts, {
+    payload: Schema.Struct({
+      projectId: ProjectId,
+      ...ListRuntimeExecutionAttemptsInput.fields,
+    }),
+    success: RuntimeExecutionAttemptListResult,
+    error,
+  }),
+  Rpc.make(PROJECT_RUNTIME_RPC_METHODS.readExecutionAttempt, {
+    payload: Schema.Struct({ projectId: ProjectId, ...ReadRuntimeExecutionAttemptInput.fields }),
+    success: RuntimeExecutionAttempt,
     error,
   }),
 ] as const;

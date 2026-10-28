@@ -29,6 +29,7 @@ export const CLIENT_GUARDED_RPC_SCOPES = {
   [PROJECT_RUNTIME_RPC_METHODS.createTask]: AuthOrchestrationOperateScope,
   [PROJECT_RUNTIME_RPC_METHODS.updateTask]: AuthOrchestrationOperateScope,
   [PROJECT_RUNTIME_RPC_METHODS.saveRouting]: AuthOrchestrationOperateScope,
+  [PROJECT_RUNTIME_RPC_METHODS.executeTask]: AuthOrchestrationOperateScope,
 
   [WS_METHODS.previewClose]: AuthPreviewOperateScope,
   [WS_METHODS.serverRunStorageCleanup]: AuthSettingsWriteScope,

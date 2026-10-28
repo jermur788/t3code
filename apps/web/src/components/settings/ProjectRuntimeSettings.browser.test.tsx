@@ -9,6 +9,8 @@ import {
   ProviderInstanceId,
   ThreadId,
   type RuntimeRouteResolution,
+  type RuntimeExecutionAttempt,
+  type RuntimeExecutionAttemptListResult,
   type ProjectRuntimeTask,
   type ProjectRuntimeSource,
   type ProjectRuntimeHandoff,
@@ -208,6 +210,20 @@ function setup({ enabled = true, canEdit = true }: { enabled?: boolean; canEdit?
         updatedAt: time,
       }),
     ),
+    executeTask: vi.fn(async (): Promise<RuntimeResult<RuntimeExecutionAttempt>> => ({
+      ok: false as const,
+      message: "Execution is not configured in this test.",
+      conflict: false,
+    })),
+    listExecutionAttempts: vi.fn(
+      async (): Promise<RuntimeResult<RuntimeExecutionAttemptListResult>> =>
+        ok({ attempts: [], nextCursor: null }),
+    ),
+    readExecutionAttempt: vi.fn(async (): Promise<RuntimeResult<RuntimeExecutionAttempt>> => ({
+      ok: false as const,
+      message: "Execution is not configured in this test.",
+      conflict: false,
+    })),
     resolveRoute: vi.fn(async (input?: { taskId?: string }) => {
       const saved = input?.taskId === undefined ? undefined : project.tasks[0];
       const route = saved?.routing ?? undefined;
@@ -1025,4 +1041,83 @@ it("sets a task worker role, saves an ordered candidate, shows the task layer, t
   await expect
     .element(screen.getByText("Worker preference: Project or Development Profile", { exact: true }))
     .toBeVisible();
+});
+
+it("executes an eligible task, disables re-entry, and links the worker thread", async () => {
+  const t = setup();
+  t.project.tasks = [t.task];
+  const workerThreadId = ThreadId.make("runtime-worker-thread");
+  const attempt = {
+    attemptId: "runtime-attempt-1",
+    projectId: a.id,
+    taskId: t.task.taskId,
+    taskTitle: t.task.title,
+    status: "launched",
+    revision: 2,
+    threadId: workerThreadId,
+    runId: "runtime-run-1",
+    modelSelection: { instanceId: ProviderInstanceId.make("codex"), model: "gpt-6-astra" },
+    routeSource: "inherit",
+    failure: null,
+    createdAt: time,
+    updatedAt: time,
+    receipt: {
+      route: {
+        projectId: a.id,
+        taskId: t.task.taskId,
+        role: "implementation",
+        status: "inherited",
+        source: "inherit",
+        selected: null,
+        inheritedFrom: null,
+        rejected: [],
+        failure: null,
+        revisions: { task: 1, projectRouting: 0, profile: null, assignment: null },
+      },
+      launch: {
+        modelSelection: { instanceId: ProviderInstanceId.make("codex"), model: "gpt-6-astra" },
+        runtimeMode: "full-access",
+        interactionMode: "default",
+        workspaceStrategy: { type: "root" },
+      },
+      packet: {
+        version: 1,
+        taskRevision: 1,
+        handoffId: null,
+        text: "Runtime task packet",
+      },
+    },
+  } as unknown as RuntimeExecutionAttempt;
+  let attempts: ReadonlyArray<RuntimeExecutionAttempt> = [];
+  vi.mocked(t.api.listExecutionAttempts).mockImplementation(async () =>
+    ok({
+      attempts: attempts.map(({ receipt: _receipt, ...summary }) => summary),
+      nextCursor: null,
+    }),
+  );
+  vi.mocked(t.api.executeTask).mockImplementation(async () => {
+    attempts = [attempt];
+    return ok(attempt);
+  });
+
+  await using screen = await render(<ProjectRuntimeSettings members={[a]} />);
+  await expect.element(screen.getByText("Review work", { exact: true })).toBeVisible();
+  await userEvent.click(screen.getByRole("button", { name: "Edit task", exact: true }));
+  await expect
+    .element(screen.getByText("No execution attempts yet.", { exact: true }))
+    .toBeVisible();
+
+  await userEvent.click(screen.getByRole("button", { name: "Execute task", exact: true }));
+  expect(t.api.executeTask).toHaveBeenCalledWith({
+    taskId: t.task.taskId,
+    expectedTaskRevision: 1,
+    clientRequestId: expect.any(String),
+  });
+  await expect.element(screen.getByText("Launched", { exact: true })).toBeVisible();
+  await expect
+    .element(screen.getByRole("link", { name: "Open worker thread", exact: true }))
+    .toBeVisible();
+  await expect
+    .element(screen.getByRole("button", { name: "Execute task", exact: true }))
+    .toBeDisabled();
 });

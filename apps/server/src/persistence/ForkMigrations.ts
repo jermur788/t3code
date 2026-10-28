@@ -8,6 +8,7 @@ import DevelopmentProfiles from "./Migrations/Fork/002_DevelopmentProfiles.ts";
 import ProjectRuntime from "./Migrations/Fork/001_ProjectRuntime.ts";
 import TaskHandoffState from "./Migrations/Fork/003_TaskHandoffState.ts";
 import RuntimeRouting from "./Migrations/Fork/004_RuntimeRouting.ts";
+import RuntimeExecutionAttempts from "./Migrations/Fork/005_RuntimeExecutionAttempts.ts";
 
 // Fork-owned schema lives in its own ledger. Upstream's numeric history stays
 // upstream's alone, so neither side can skip the other's migrations by id.
@@ -16,6 +17,7 @@ const forkMigrationEntries = [
   [2, "DevelopmentProfiles", DevelopmentProfiles],
   [3, "TaskHandoffState", TaskHandoffState],
   [4, "RuntimeRouting", RuntimeRouting],
+  [5, "RuntimeExecutionAttempts", RuntimeExecutionAttempts],
 ] as const;
 
 export const FORK_MIGRATION_TABLE = "t3_fork_migrations";

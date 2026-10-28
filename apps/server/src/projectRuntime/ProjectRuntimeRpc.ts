@@ -3,6 +3,7 @@ import {
   ProjectRuntimeError,
   ProjectRuntimeRequestError,
   RuntimeRoutingError,
+  RuntimeExecutionError,
 } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
@@ -12,11 +13,13 @@ import { WsRpcGroup } from "@t3tools/contracts";
 import * as ProjectRuntimeService from "./ProjectRuntimeService.ts";
 import * as ProjectRuntimeSourceAccess from "./ProjectRuntimeSourceAccess.ts";
 import * as RuntimeRoutingService from "../runtimeRouting/RuntimeRoutingService.ts";
+import * as RuntimeTaskExecutionService from "./RuntimeTaskExecutionService.ts";
 
 const isRuntimeError = Schema.is(ProjectRuntimeError);
 const isRuntimeRoutingError = Schema.is(RuntimeRoutingError);
+const isRuntimeExecutionError = Schema.is(RuntimeExecutionError);
 const toRpcError = (error: unknown) =>
-  isRuntimeError(error) || isRuntimeRoutingError(error)
+  isRuntimeError(error) || isRuntimeRoutingError(error) || isRuntimeExecutionError(error)
     ? error
     : new ProjectRuntimeRequestError({
         reason: Predicate.isTagged(error, "ProjectNotFoundError")
@@ -32,6 +35,7 @@ export const makeHandlers = Effect.fn("ProjectRuntimeRpc.makeHandlers")(function
   const runtime = yield* ProjectRuntimeService.ProjectRuntimeService;
   const sources = yield* ProjectRuntimeSourceAccess.ProjectRuntimeSourceAccess;
   const routing = yield* RuntimeRoutingService.RuntimeRoutingService;
+  const execution = yield* RuntimeTaskExecutionService.RuntimeTaskExecutionService;
   const actor = { actor: `user:${sessionId}` };
   return {
     [PROJECT_RUNTIME_RPC_METHODS.status]: ({ projectId }) =>
@@ -68,5 +72,11 @@ export const makeHandlers = Effect.fn("ProjectRuntimeRpc.makeHandlers")(function
       routing.saveProjectRouting(projectId, input).pipe(Effect.mapError(toRpcError)),
     [PROJECT_RUNTIME_RPC_METHODS.resolveRoute]: (input) =>
       routing.resolveRoute(input).pipe(Effect.mapError(toRpcError)),
+    [PROJECT_RUNTIME_RPC_METHODS.executeTask]: ({ projectId, ...input }) =>
+      execution.execute(projectId, input).pipe(Effect.mapError(toRpcError)),
+    [PROJECT_RUNTIME_RPC_METHODS.listExecutionAttempts]: ({ projectId, ...input }) =>
+      execution.listAttempts(projectId, input).pipe(Effect.mapError(toRpcError)),
+    [PROJECT_RUNTIME_RPC_METHODS.readExecutionAttempt]: ({ projectId, ...input }) =>
+      execution.readAttempt(projectId, input.attemptId).pipe(Effect.mapError(toRpcError)),
   } satisfies Partial<RpcGroup.HandlersFrom<RpcGroup.Rpcs<typeof WsRpcGroup>>>;
 });

@@ -24,6 +24,25 @@ export function runtimeErrorMessage(error: unknown): string {
       return "This record changed since you loaded it. Your draft is preserved. Reload the current record before saving again.";
     case "ProjectRuntimeRoutingConflictError":
       return "These worker settings changed since you loaded them. Your draft is preserved. Reload the latest worker settings before saving again.";
+    case "RuntimeExecutionRejectedError":
+      switch (
+        typeof error === "object" && error !== null && "reason" in error ? error.reason : null
+      ) {
+        case "task_not_executable":
+          return "This task cannot be executed in its current status.";
+        case "route_unavailable":
+          return "No saved worker route can currently be used for this task.";
+        case "no_default_model":
+          return "This project has no default model and no worker route selected one. Configure a worker preference first.";
+        case "provider_disabled":
+          return "The selected provider is currently unavailable or disabled for this project.";
+        case "workspace_unavailable":
+          return "The requested worktree base is not available for this project.";
+        default:
+          return "This task cannot be executed. Review its worker preference and project settings.";
+      }
+    case "RuntimeExecutionAttemptNotFoundError":
+      return "This execution attempt is no longer available.";
     case "ProjectRuntimeDisabledError":
       return "Runtime is disabled. Enable it, then reload.";
     case "ProjectRuntimeInvalidTransitionError":

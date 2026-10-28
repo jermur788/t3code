@@ -1,4 +1,6 @@
 import * as Equal from "effect/Equal";
+import { Link } from "@tanstack/react-router";
+import { randomUUID } from "../../lib/utils";
 import { useEffect, useRef, useState } from "react";
 import { useStableCallback } from "../../hooks/useStableCallback";
 import {
@@ -16,6 +18,8 @@ import {
   type RuntimeRoutingFallback,
   type RuntimeWorkerRole,
 } from "@t3tools/contracts";
+import { Alert, AlertDescription } from "../ui/alert";
+import { Badge } from "../ui/badge";
 import { Button } from "../ui/button";
 import { Select, SelectItem, SelectPopup, SelectTrigger, SelectValue } from "../ui/select";
 import {
@@ -33,7 +37,7 @@ import { useWorkerRoutingCatalog } from "./useWorkerRoutingCatalog";
 import { WorkerRoleRouteEditor } from "./WorkerRoutingEditor";
 import type { ProviderInstanceEntry } from "../../providerInstances";
 import { ROUTING_EVALUATION_CAVEAT, WorkerRouteResolutionView } from "./WorkerRouteResolution";
-import { WORKER_ROLE_ORDER, workerRoleLabel } from "./workerRouting.logic";
+import { WORKER_ROLE_ORDER, routeSourceLabel, workerRoleLabel } from "./workerRouting.logic";
 import {
   BLOCKER_CLASSIFICATION_VALUES,
   EVIDENCE_RESULT_VALUES,
@@ -452,6 +456,15 @@ function TaskEditor({
             environmentId={environmentId}
             projectId={projectId}
           />
+          {saved === null ? null : (
+            <TaskExecutionControl
+              api={api}
+              task={saved}
+              environmentId={environmentId}
+              projectId={projectId}
+              onReload={reload}
+            />
+          )}
           <RuntimeText
             label="Scope"
             multiline
@@ -854,5 +867,175 @@ function TaskWorkerEffectiveChoice({
         </>
       )}
     </div>
+  );
+}
+
+function executionStatusLabel(status: string): string {
+  switch (status) {
+    case "pending":
+      return "Pending launch";
+    case "launched":
+      return "Launched";
+    case "failed":
+      return "Failed";
+    case "reconcile_required":
+      return "Needs reconciliation";
+    default:
+      return status;
+  }
+}
+
+function TaskExecutionControl({
+  api,
+  task,
+  environmentId,
+  projectId,
+  onReload,
+}: {
+  api: ProjectRuntimeApi;
+  task: ProjectRuntimeTask;
+  environmentId: EnvironmentId;
+  projectId: ProjectId;
+  onReload: () => Promise<void>;
+}) {
+  const catalog = useWorkerRoutingCatalog({ environmentId, projectId });
+  const { result, reload } = useRuntimeLoad(
+    () => api.listExecutionAttempts({ taskId: task.taskId, limit: 1 }),
+    api.ready,
+  );
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [conflict, setConflict] = useState(false);
+  const attemptsLoading = result === null;
+  const latest = result?.ok ? (result.value.attempts[0] ?? null) : null;
+  const active =
+    latest?.status === "pending" ||
+    latest?.status === "launched" ||
+    latest?.status === "reconcile_required";
+  const executable =
+    task.status === "planned" || task.status === "ready" || task.status === "active";
+
+  const execute = async () => {
+    if (busy) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const response = await api.executeTask({
+        taskId: task.taskId,
+        expectedTaskRevision: task.revision,
+        clientRequestId: randomUUID(),
+      });
+      if (!response.ok) {
+        setError(response.message);
+        setConflict(response.conflict);
+        return;
+      }
+      setConflict(false);
+      await reload();
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <section aria-label="Task execution" className="space-y-3 rounded-lg border border-border p-3">
+      <div className="flex flex-wrap items-start justify-between gap-2">
+        <div>
+          <h5 className="text-sm font-medium">Execution</h5>
+          <p className="text-xs text-muted-foreground">
+            Starts one worker thread from this saved task. Save any edits first; execution uses the
+            saved revision and does not change it.
+          </p>
+        </div>
+        <Button
+          size="sm"
+          disabled={!api.canEdit || busy || attemptsLoading || active || !executable}
+          onClick={() => void execute()}
+          title={
+            !executable
+              ? "Only planned, ready, or active tasks can be executed."
+              : active
+                ? "This task already has an active execution attempt."
+                : undefined
+          }
+        >
+          {busy ? "Starting…" : "Execute task"}
+        </Button>
+      </div>
+
+      {error !== null ? (
+        <div className="space-y-2">
+          <Alert variant="error">
+            <AlertDescription>{error}</AlertDescription>
+          </Alert>
+          {conflict ? (
+            <Button size="sm" variant="outline" disabled={busy} onClick={() => void onReload()}>
+              Reload task before executing
+            </Button>
+          ) : null}
+        </div>
+      ) : null}
+
+      {result === null ? (
+        <p className="text-xs text-muted-foreground" role="status">
+          Loading execution attempts…
+        </p>
+      ) : !result.ok ? (
+        <div className="space-y-2">
+          <Alert variant="error">
+            <AlertDescription>{result.message}</AlertDescription>
+          </Alert>
+          <Button size="sm" variant="outline" onClick={() => void reload()}>
+            Retry execution attempts
+          </Button>
+        </div>
+      ) : latest === null ? (
+        <p className="text-xs text-muted-foreground">No execution attempts yet.</p>
+      ) : (
+        <div className="space-y-1.5 rounded-md border border-border/70 p-2.5">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div className="flex flex-wrap items-center gap-2">
+              <Badge
+                variant={
+                  latest.status === "failed"
+                    ? "error"
+                    : latest.status === "reconcile_required"
+                      ? "warning"
+                      : "secondary"
+                }
+                size="sm"
+              >
+                {executionStatusLabel(latest.status)}
+              </Badge>
+              <span className="text-xs text-muted-foreground">
+                {catalog.entries.find(
+                  (entry) => entry.instanceId === latest.modelSelection.instanceId,
+                )?.displayName ?? latest.modelSelection.instanceId}{" "}
+                · {latest.modelSelection.model}
+              </span>
+              <span className="text-xs text-muted-foreground">
+                {routeSourceLabel(latest.routeSource)}
+              </span>
+            </div>
+            {latest.status === "launched" || latest.status === "reconcile_required" ? (
+              <Link
+                to="/$environmentId/$threadId"
+                params={{ environmentId, threadId: latest.threadId }}
+                className="text-xs font-medium underline-offset-4 hover:underline"
+              >
+                Open worker thread
+              </Link>
+            ) : null}
+          </div>
+          <p className="break-words text-xs text-muted-foreground">
+            Attempt {latest.attemptId} · Revision {latest.revision} ·{" "}
+            {new Date(latest.createdAt).toLocaleString()}
+          </p>
+          {latest.failure === null ? null : (
+            <p className="break-words text-xs text-warning-foreground">{latest.failure}</p>
+          )}
+        </div>
+      )}
+    </section>
   );
 }

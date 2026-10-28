@@ -104,9 +104,22 @@ projects read as "no routing"; task routing needs no migration because it is an
 optional payload field. Fork history stays in the fork ledger, and upstream
 migration ids are untouched.
 
-## Not executed here
+## Execution bridge
 
-RTE-020 does not launch child threads, create execution attempts, write routing
-receipts, cancel or restart work, expose execution MCP tools, or add Project Home
-execution summaries. It does not add a scheduler, worktree ownership, cost/quota
-routing, cross-environment routing, or automatic role classification.
+RTE-040 adds one execution action for Runtime tasks. Execution resolves routing
+again immediately before launch, then persists a project-owned execution attempt
+before it creates the worker thread. The attempt carries the full routing
+resolution as its receipt and a deterministic task packet built from the task and
+its latest handoff.
+
+The launch seam is attempt-first: the attempt has a preallocated thread id and
+derived command/message ids, and the existing `ThreadLaunchService` receipts make
+every partial launch replayable. A crash therefore leaves a `pending` attempt, not
+an untracked worker. RTE-050 owns reconciliation, cancellation, restart recovery,
+and handoff linking.
+
+Routing is still configuration, never authorization. The resolver's selected
+route is eligible-at-resolution only; the normal provider/orchestration launch path
+rechecks availability and permissions when work starts. Execution does not add a
+second provider engine, scheduler, cost/quota routing, or cross-environment
+routing.

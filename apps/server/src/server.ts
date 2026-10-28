@@ -102,6 +102,7 @@ import * as T3ProjectFileLoader from "./project/T3ProjectFileLoader.ts";
 import * as RepositoryIdentityResolver from "./project/RepositoryIdentityResolver.ts";
 import * as ProjectRuntimeService from "./projectRuntime/ProjectRuntimeService.ts";
 import * as ProjectRuntimeSourceAccess from "./projectRuntime/ProjectRuntimeSourceAccess.ts";
+import * as RuntimeTaskExecutionService from "./projectRuntime/RuntimeTaskExecutionService.ts";
 import * as RuntimeRoutingProviderView from "./runtimeRouting/RuntimeRoutingProviderView.ts";
 import * as RuntimeRoutingService from "./runtimeRouting/RuntimeRoutingService.ts";
 import * as WorkspaceEntries from "./workspace/WorkspaceEntries.ts";
@@ -710,8 +711,11 @@ const layerProjectRuntime = ProjectRuntimeSourceAccess.layer.pipe(
   Layer.provideMerge(ProjectRuntimeService.layer),
   Layer.provideMerge(DevelopmentProfileService.layer),
   Layer.provideMerge(
-    RuntimeRoutingService.layer.pipe(Layer.provide(RuntimeRoutingProviderView.layer)),
+    RuntimeRoutingService.layer.pipe(Layer.provideMerge(RuntimeRoutingProviderView.layer)),
   ),
+);
+const layerRuntimeTaskExecution = RuntimeTaskExecutionService.layer.pipe(
+  Layer.provide(layerProjectRuntime),
 );
 
 const layerMakeRoutes = Layer.mergeAll(
@@ -741,7 +745,7 @@ const layerMakeRoutes = Layer.mergeAll(
     Layer.provide(McpOAuth.layerMcpClientAuthenticator),
   ),
 ).pipe(
-  Layer.provide(layerProjectRuntime),
+  Layer.provide(Layer.merge(layerProjectRuntime, layerRuntimeTaskExecution)),
   Layer.provide(
     PullRequestReviewGuideService.layer.pipe(Layer.provide(PullRequestReviewGuides.layer)),
   ),

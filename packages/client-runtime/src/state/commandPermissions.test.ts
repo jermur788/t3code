@@ -363,6 +363,7 @@ it.effect("uses destination operate grants for every Runtime mutation", () =>
         "removeSource",
         "createTask",
         "updateTask",
+        "executeTask",
       ] as const) {
         const permission = createCommandPermissions(runtime, PROJECT_RUNTIME_RPC_METHODS[name]);
         expect(registry.get(permission.permissionAtom(env))).toBe(true);

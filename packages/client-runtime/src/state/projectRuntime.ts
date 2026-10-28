@@ -75,5 +75,17 @@ export function createProjectRuntimeEnvironmentAtoms<R, E>(
       label: "environment-command:project-runtime:resolveRoute",
       tag: PROJECT_RUNTIME_RPC_METHODS.resolveRoute,
     }),
+    executeTask: createEnvironmentRpcCommand(runtime, {
+      label: "environment-command:project-runtime:executeTask",
+      tag: PROJECT_RUNTIME_RPC_METHODS.executeTask,
+    }),
+    listExecutionAttempts: createEnvironmentRpcCommand(runtime, {
+      label: "environment-command:project-runtime:listExecutionAttempts",
+      tag: PROJECT_RUNTIME_RPC_METHODS.listExecutionAttempts,
+    }),
+    readExecutionAttempt: createEnvironmentRpcCommand(runtime, {
+      label: "environment-command:project-runtime:readExecutionAttempt",
+      tag: PROJECT_RUNTIME_RPC_METHODS.readExecutionAttempt,
+    }),
   };
 }

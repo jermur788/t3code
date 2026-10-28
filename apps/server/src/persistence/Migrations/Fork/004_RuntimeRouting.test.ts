@@ -120,6 +120,7 @@ it.effect("adds fork routing schema to a current upstream-origin database", () =
       { migration_id: 2, name: "DevelopmentProfiles" },
       { migration_id: 3, name: "TaskHandoffState" },
       { migration_id: 4, name: "RuntimeRouting" },
+      { migration_id: 5, name: "RuntimeExecutionAttempts" },
     ]);
   }).pipe(Effect.provide(NodeSqliteClient.layer({ filename: ":memory:" }))),
 );

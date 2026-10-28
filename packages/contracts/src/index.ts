@@ -51,6 +51,7 @@ export * from "./project.ts";
 export * from "./runtimeRouting.ts";
 export * from "./projectRuntime.ts";
 export * from "./runtimeRoutingResolution.ts";
+export * from "./runtimeExecution.ts";
 export * from "./developmentProfiles.ts";
 export * from "./filesystem.ts";
 export * from "./agentSessions.ts";

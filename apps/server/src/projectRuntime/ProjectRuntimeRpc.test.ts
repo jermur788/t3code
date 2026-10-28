@@ -27,6 +27,7 @@ import * as Runtime from "./ProjectRuntimeService.ts";
 import * as Sources from "./ProjectRuntimeSourceAccess.ts";
 import * as RuntimeRoutingService from "../runtimeRouting/RuntimeRoutingService.ts";
 import * as RuntimeRoutingProviderView from "../runtimeRouting/RuntimeRoutingProviderView.ts";
+import * as RuntimeTaskExecutionService from "./RuntimeTaskExecutionService.ts";
 import {
   DEFAULT_SERVER_SETTINGS,
   ProviderInstanceId,
@@ -50,6 +51,7 @@ const routingProviderView = Layer.succeed(RuntimeRoutingProviderView.RuntimeRout
 const layer = Sources.layer.pipe(
   Layer.provideMerge(Runtime.layer.pipe(Layer.provide(DevelopmentProfileService.layer))),
   Layer.provideMerge(RuntimeRoutingService.layer.pipe(Layer.provide(routingProviderView))),
+  Layer.provideMerge(Layer.mock(RuntimeTaskExecutionService.RuntimeTaskExecutionService)({})),
   Layer.provideMerge(ProjectStore.layer),
   Layer.provideMerge(workspace),
   Layer.provideMerge(Sqlite.layerMemory),
@@ -334,6 +336,7 @@ it.effect("redacts persistence details at the user transport boundary", () =>
           }),
           Layer.mock(Sources.ProjectRuntimeSourceAccess)({}),
           Layer.mock(RuntimeRoutingService.RuntimeRoutingService)({}),
+          Layer.mock(RuntimeTaskExecutionService.RuntimeTaskExecutionService)({}),
         ),
       ),
     );

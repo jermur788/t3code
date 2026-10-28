@@ -18,6 +18,9 @@ import type {
   ProjectRuntimeHandoffReadInput,
   ProjectRuntimeRoutingSaveInput,
   RuntimeRouteResolutionInput,
+  ExecuteProjectRuntimeTaskInput,
+  ListRuntimeExecutionAttemptsInput,
+  ReadRuntimeExecutionAttemptInput,
 } from "@t3tools/contracts";
 import {
   squashAtomCommandFailure,
@@ -65,6 +68,13 @@ export function useProjectRuntimeApi(target: {
   const readRouting = useAtomCommand(commands.readRouting, { reportFailure: false });
   const saveRouting = useAtomCommand(commands.saveRouting, { reportFailure: false });
   const resolveRoute = useAtomCommand(commands.resolveRoute, { reportFailure: false });
+  const executeTask = useAtomCommand(commands.executeTask, { reportFailure: false });
+  const listExecutionAttempts = useAtomCommand(commands.listExecutionAttempts, {
+    reportFailure: false,
+  });
+  const readExecutionAttempt = useAtomCommand(commands.readExecutionAttempt, {
+    reportFailure: false,
+  });
   const canEdit = useAtomValue(commands.setEnabled.permissionAtom(target.environmentId));
   const ready = useConnectedEnvironmentIds().includes(target.environmentId);
   return {
@@ -185,6 +195,27 @@ export function useProjectRuntimeApi(target: {
     resolveRoute: async (input: Omit<RuntimeRouteResolutionInput, "projectId"> = {}) =>
       result(
         await resolveRoute({
+          environmentId: target.environmentId,
+          input: { ...input, projectId: target.projectId },
+        }),
+      ),
+    executeTask: async (input: ExecuteProjectRuntimeTaskInput) =>
+      result(
+        await executeTask({
+          environmentId: target.environmentId,
+          input: { ...input, projectId: target.projectId },
+        }),
+      ),
+    listExecutionAttempts: async (input: ListRuntimeExecutionAttemptsInput = {}) =>
+      result(
+        await listExecutionAttempts({
+          environmentId: target.environmentId,
+          input: { ...input, projectId: target.projectId },
+        }),
+      ),
+    readExecutionAttempt: async (input: ReadRuntimeExecutionAttemptInput) =>
+      result(
+        await readExecutionAttempt({
           environmentId: target.environmentId,
           input: { ...input, projectId: target.projectId },
         }),

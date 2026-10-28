@@ -122,7 +122,8 @@ describe("fork migration namespace", () => {
       const tables = yield* sql<{ readonly name: string }>`
         SELECT name FROM sqlite_master WHERE type = 'table' AND name IN (
           'project_runtime', 'project_runtime_sources', 'project_runtime_tasks',
-          'project_runtime_handoffs', 'project_runtime_routing', 'development_profiles',
+          'project_runtime_handoffs', 'project_runtime_routing',
+          'project_runtime_execution_attempts', 'development_profiles',
           'project_development_profiles'
         ) ORDER BY name
       `;
@@ -132,6 +133,7 @@ describe("fork migration namespace", () => {
           "development_profiles",
           "project_development_profiles",
           "project_runtime",
+          "project_runtime_execution_attempts",
           "project_runtime_handoffs",
           "project_runtime_routing",
           "project_runtime_sources",
@@ -212,6 +214,10 @@ describe("fork migration namespace", () => {
           {
             migration_id: 4,
             name: "RuntimeRouting",
+          },
+          {
+            migration_id: 5,
+            name: "RuntimeExecutionAttempts",
           },
         ],
       );

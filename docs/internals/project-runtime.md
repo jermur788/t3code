@@ -242,6 +242,12 @@ delegated execution, or portable T3 thread handoffs. Task `base` fields are
 descriptive JSON only; the UI labels them as notes. Runtime has no VCS imports and
 never rebinds a thread.
 
+Execution attempts are the exception on the read side: RTE-040 records that a
+Runtime task launch was attempted and which worker thread/run it produced, using
+the existing orchestration launch service rather than a second engine. The attempt
+and its routing receipt are project-owned; the thread, run, provider session, and
+cancellation mechanics stay with orchestration.
+
 Native mobile Runtime settings and dedicated Runtime CLI commands do not exist. Web
 and desktop share the settings UI; mobile and the CLI are not V1 Runtime surfaces.
 The other known limits are the writer-transaction reads and the 500-candidate search

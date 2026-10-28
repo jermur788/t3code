@@ -29,9 +29,9 @@ or portable thread handoffs.
 
 V1 includes Project Instructions, the source registry and on-demand reads, Runtime
 tasks with revision checks, immutable handoffs, agent access through T3 Code's MCP
-tools, and web/desktop settings. It does not include mobile Runtime settings,
-dedicated Runtime CLI commands, source snapshots or memory, automatic agent
-execution, or a replacement for Git, worktrees, orchestration, delegated tasks, or
+tools, one-task worker execution, and web/desktop settings. It does not include
+mobile Runtime settings, dedicated Runtime CLI commands, source snapshots or
+memory, or a replacement for Git, worktrees, orchestration, delegated tasks, or
 portable thread handoffs.
 
 ## Open Runtime
@@ -130,6 +130,26 @@ revision, and notes) describes the work's starting point. It does not create, mo
 or verify a Git branch or worktree, rebind a thread, grant ownership, or authorize
 writes. Use T3 Code's normal thread and worktree controls for that.
 
+## Execute a task
+
+A saved task can start one worker thread from its current state. Open **Edit
+task**, review the task and its **Worker preference**, then choose **Execute
+task**. T3 resolves the task, project, Development Profile, and normal T3 routing
+layers again immediately before launch. The new thread receives a deterministic
+packet containing the task and its latest handoff; routing is recorded as an
+execution receipt, not written into the prompt as instructions.
+
+Only **planned**, **ready**, and **active** tasks can execute. Execution uses the
+task revision you loaded, so a concurrent edit is refused rather than launching a
+stale task. One active attempt is allowed per task. The latest attempt shows its
+status, provider and model, routing layer, failure if any, and a link to the
+worker thread. A launched or pending attempt disables Execute; a failed attempt
+lets you start a new one. Execution attempts persist across reconnects and server
+restarts.
+
+RTE-040 does not add cancellation, restart recovery, retries, or execution history
+paging. Use the worker thread's normal T3 controls until those gates land.
+
 ## Handoffs
 
 Choose **View handoffs** on a task to see its continuation records. A handoff
@@ -155,4 +175,5 @@ in Settings.
 
 A fresh provider thread can retrieve the saved state through Runtime tools. This
 is why changing providers keeps the project's instructions, sources, tasks, and
-handoffs. Runtime itself does not start agents, create worktrees, or run commands.
+handoffs. Runtime itself starts one worker thread only through **Execute task** and
+the existing orchestration launch path; it does not run provider commands directly.
