@@ -32,8 +32,9 @@ worker.
     and message ids. Replay either completes the one launch or classifies it.
   - `launched` maps a terminal run to `completed`/`failed`/`cancelled`/
     `interrupted`; a run still active stays `launched`.
-  - `cancelling` becomes `cancelled` when the thread is gone or its run is
-    terminal; an active run stays `cancelling`.
+  - `cancelling` maps a terminal run to that run's status (`cancelled`,
+    `interrupted`, `completed`, or `failed`); a thread that is gone becomes
+    `cancelled`; an active run stays `cancelling`.
   - `reconcile_required` stays ambiguous unless a terminal run can now be read.
   - A failed thread read never becomes `failed`; it becomes
     `reconcile_required`.

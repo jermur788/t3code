@@ -126,9 +126,11 @@ the save is refused; choose **Discard draft and reload task**, then reapply your
 change. This stops one worker from silently overwriting another's work.
 
 The recorded base metadata (repository, branch, revision, worktree, upstream
-revision, and notes) describes the work's starting point. It does not create, move,
-or verify a Git branch or worktree, rebind a thread, grant ownership, or authorize
-writes. Use T3 Code's normal thread and worktree controls for that.
+revision, and notes) describes the work's starting point. For worktree-isolated
+execution, T3 uses the recorded revision (then branch, then `HEAD`) as the new
+worktree base and checks that it exists. The metadata does not move or rebind an
+existing worktree, create a branch, grant ownership, or authorize writes. Use T3
+Code's normal thread and worktree controls for that.
 
 ## Execute a task
 
@@ -144,7 +146,9 @@ task revision you loaded, so a concurrent edit is refused rather than launching 
 stale task. One active attempt is allowed per task. The latest attempt shows its
 status, provider and model, routing layer, failure if any, any linked handoff, and
 a link to the worker thread. A launched, cancelling, pending, or reconcile-required
-attempt disables Execute; terminal attempts let you start a new one.
+attempt disables Execute; terminal attempts let you start a new one. When the
+worker turn ends, choose **Recheck attempt** to refresh the recorded status; outside
+restart T3 does not poll a running worker.
 
 **Cancel execution** stops the worker through T3's normal thread stop. While T3
 waits for the turn to end, the attempt is **Cancelling** and keeps the active slot;

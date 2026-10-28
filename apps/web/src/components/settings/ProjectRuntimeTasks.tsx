@@ -937,6 +937,7 @@ function TaskExecutionControl({
       if (!response.ok) {
         setError(response.message);
         setConflict(response.conflict);
+        await reload();
         return;
       }
       setConflict(false);
@@ -955,6 +956,7 @@ function TaskExecutionControl({
       if (!response.ok) {
         setError(response.message);
         setConflict(response.conflict);
+        await reload();
         return;
       }
       setConflict(false);
@@ -1016,7 +1018,8 @@ function TaskExecutionControl({
               {latest?.status === "cancelling" ? "Cancel again" : "Cancel execution"}
             </Button>
           ) : null}
-          {(latest?.status === "launched" ||
+          {(latest?.status === "pending" ||
+            latest?.status === "launched" ||
             latest?.status === "cancelling" ||
             latest?.status === "reconcile_required") &&
           api.canEdit ? (

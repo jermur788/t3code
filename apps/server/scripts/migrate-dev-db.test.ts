@@ -7,7 +7,7 @@ import * as SqlClient from "effect/sql/SqlClient";
 
 import DevelopmentProfilesMigration from "../src/persistence/Migrations/Fork/002_DevelopmentProfiles.ts";
 import ProjectRuntimeMigration from "../src/persistence/Migrations/Fork/001_ProjectRuntime.ts";
-import { FORK_MIGRATION_TABLE } from "../src/persistence/ForkMigrations.ts";
+import { FORK_MIGRATION_TABLE, forkMigrationManifest } from "../src/persistence/ForkMigrations.ts";
 import { runMigrations } from "../src/persistence/Migrations.ts";
 import * as NodeSqliteClient from "@t3tools/shared/nodeSqliteClient";
 import { runMigrateDevDb } from "./migrate-dev-db.ts";
@@ -288,12 +288,7 @@ it.layer(NodeServices.layer)("migrate-dev-db", (it) => {
       assert.equal(state.upstream.at(-1)?.name, "ThreadMessageSearch");
       assert.deepStrictEqual(
         state.fork.map((row) => [row.migration_id, row.name]),
-        [
-          [1, "ProjectRuntime"],
-          [2, "DevelopmentProfiles"],
-          [3, "TaskHandoffState"],
-          [4, "RuntimeRouting"],
-        ],
+        forkMigrationManifest.map(([migration_id, name]) => [migration_id, name]),
       );
       assert.deepStrictEqual(state.audit, []);
       assert.deepStrictEqual(state.projects, [{ project_id: "upstream-project" }]);
@@ -389,12 +384,7 @@ it.layer(NodeServices.layer)("migrate-dev-db", (it) => {
       // Reconciled history keeps its original timestamps; newer fork work runs on top of it.
       assert.deepStrictEqual(
         state.fork.map((row) => [row.migration_id, row.name]),
-        [
-          [1, "ProjectRuntime"],
-          [2, "DevelopmentProfiles"],
-          [3, "TaskHandoffState"],
-          [4, "RuntimeRouting"],
-        ],
+        forkMigrationManifest.map(([migration_id, name]) => [migration_id, name]),
       );
       assert.deepStrictEqual(
         state.fork.slice(0, 2).map((row) => row.created_at),

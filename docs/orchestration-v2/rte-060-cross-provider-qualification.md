@@ -1,6 +1,6 @@
 # RTE-060 — Cross-Provider Qualification
 
-Status: INTEGRATED / REVIEW PASS (RTE-070 pending)
+Status: INTEGRATED / REVIEW PASS (RTE-070 verified)
 
 Implementation commit: `d62e128d3e` (`test(runtime): qualify cross-provider task execution`).
 

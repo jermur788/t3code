@@ -266,6 +266,28 @@ it.effect("persists one attempt before launching and reuses it for retries", () 
   }).pipe(Effect.provide(makeLayer(state)));
 });
 
+it.effect("replays a pending attempt with the stored launch ids", () => {
+  const state = makeState();
+  return Effect.gen(function* () {
+    const service = yield* RuntimeTaskExecutionService.RuntimeTaskExecutionService;
+    const sql = yield* SqlClient.SqlClient;
+    yield* seedDatabase;
+    const attempt = yield* service.execute(projectId, { taskId, expectedTaskRevision: 1 });
+    yield* sql`UPDATE project_runtime_execution_attempts
+      SET status = 'pending', run_id = NULL,
+        payload_json = json_set(payload_json, '$.status', 'pending', '$.runId', NULL)
+      WHERE attempt_id = ${attempt.attemptId}`;
+    assert.equal(yield* service.reconcileActiveAttempts(), 1);
+    assert.equal(state.launchCalls.length, 2);
+    assert.equal(state.launchCalls[1]?.threadId, attempt.threadId);
+    assert.equal(
+      state.launchCalls[1]?.initialMessage?.messageId,
+      state.launchCalls[0]?.initialMessage?.messageId,
+    );
+    assert.equal((yield* service.readAttempt(projectId, attempt.attemptId)).status, "launched");
+  }).pipe(Effect.provide(makeLayer(state)));
+});
+
 it.effect("does not launch when routing is unavailable", () => {
   const state = makeState({
     resolution: {

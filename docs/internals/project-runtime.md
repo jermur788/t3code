@@ -238,9 +238,10 @@ path so Runtime cleanup stays atomic with the event sink.
 ## Boundaries and deferred work
 
 Runtime does not own Git branches, worktree creation or binding, orchestration,
-delegated execution, or portable T3 thread handoffs. Task `base` fields are
-descriptive JSON only; the UI labels them as notes. Runtime has no VCS imports and
-never rebinds a thread.
+delegated execution, or portable T3 thread handoffs. Task `base` fields describe
+the recorded starting point; worktree-isolated execution uses the recorded revision
+or branch (then `HEAD`) as a new worktree base and checks it, but Runtime has no VCS
+imports and never moves or rebinds an existing worktree or thread.
 
 Execution attempts are the exception on the read side: RTE-040 records that a
 Runtime task launch was attempted and which worker thread/run it produced, using
