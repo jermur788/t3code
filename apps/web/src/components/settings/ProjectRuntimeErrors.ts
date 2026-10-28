@@ -38,11 +38,15 @@ export function runtimeErrorMessage(error: unknown): string {
           return "The selected provider is currently unavailable or disabled for this project.";
         case "workspace_unavailable":
           return "The requested worktree base is not available for this project.";
+        case "cancellation_failed":
+          return "Cancellation could not be requested. Recheck the attempt before trying again.";
         default:
           return "This task cannot be executed. Review its worker preference and project settings.";
       }
     case "RuntimeExecutionAttemptNotFoundError":
       return "This execution attempt is no longer available.";
+    case "RuntimeExecutionAttemptConflictError":
+      return "This execution attempt changed since you loaded it. Refresh the attempt before trying again.";
     case "ProjectRuntimeDisabledError":
       return "Runtime is disabled. Enable it, then reload.";
     case "ProjectRuntimeInvalidTransitionError":

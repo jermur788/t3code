@@ -224,6 +224,16 @@ function setup({ enabled = true, canEdit = true }: { enabled?: boolean; canEdit?
       message: "Execution is not configured in this test.",
       conflict: false,
     })),
+    cancelExecutionAttempt: vi.fn(async (): Promise<RuntimeResult<RuntimeExecutionAttempt>> => ({
+      ok: false as const,
+      message: "Cancellation is not configured in this test.",
+      conflict: false,
+    })),
+    reconcileExecutionAttempt: vi.fn(async (): Promise<RuntimeResult<RuntimeExecutionAttempt>> => ({
+      ok: false as const,
+      message: "Reconciliation is not configured in this test.",
+      conflict: false,
+    })),
     resolveRoute: vi.fn(async (input?: { taskId?: string }) => {
       const saved = input?.taskId === undefined ? undefined : project.tasks[0];
       const route = saved?.routing ?? undefined;
@@ -1120,4 +1130,20 @@ it("executes an eligible task, disables re-entry, and links the worker thread", 
   await expect
     .element(screen.getByRole("button", { name: "Execute task", exact: true }))
     .toBeDisabled();
+
+  const cancelling = {
+    ...attempt,
+    status: "cancelling",
+    revision: 3,
+    cancelRequestedAt: time,
+  } as unknown as RuntimeExecutionAttempt;
+  vi.mocked(t.api.cancelExecutionAttempt).mockImplementation(async () => {
+    attempts = [cancelling];
+    return ok(cancelling);
+  });
+  await userEvent.click(screen.getByRole("button", { name: "Cancel execution", exact: true }));
+  await expect.element(screen.getByText("Cancelling", { exact: true })).toBeVisible();
+  await expect
+    .element(screen.getByRole("button", { name: "Cancel again", exact: true }))
+    .toBeVisible();
 });

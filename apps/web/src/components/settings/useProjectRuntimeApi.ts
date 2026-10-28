@@ -21,6 +21,8 @@ import type {
   ExecuteProjectRuntimeTaskInput,
   ListRuntimeExecutionAttemptsInput,
   ReadRuntimeExecutionAttemptInput,
+  CancelRuntimeExecutionAttemptInput,
+  ReconcileRuntimeExecutionAttemptInput,
 } from "@t3tools/contracts";
 import {
   squashAtomCommandFailure,
@@ -73,6 +75,12 @@ export function useProjectRuntimeApi(target: {
     reportFailure: false,
   });
   const readExecutionAttempt = useAtomCommand(commands.readExecutionAttempt, {
+    reportFailure: false,
+  });
+  const cancelExecutionAttempt = useAtomCommand(commands.cancelExecutionAttempt, {
+    reportFailure: false,
+  });
+  const reconcileExecutionAttempt = useAtomCommand(commands.reconcileExecutionAttempt, {
     reportFailure: false,
   });
   const canEdit = useAtomValue(commands.setEnabled.permissionAtom(target.environmentId));
@@ -216,6 +224,20 @@ export function useProjectRuntimeApi(target: {
     readExecutionAttempt: async (input: ReadRuntimeExecutionAttemptInput) =>
       result(
         await readExecutionAttempt({
+          environmentId: target.environmentId,
+          input: { ...input, projectId: target.projectId },
+        }),
+      ),
+    cancelExecutionAttempt: async (input: CancelRuntimeExecutionAttemptInput) =>
+      result(
+        await cancelExecutionAttempt({
+          environmentId: target.environmentId,
+          input: { ...input, projectId: target.projectId },
+        }),
+      ),
+    reconcileExecutionAttempt: async (input: ReconcileRuntimeExecutionAttemptInput) =>
+      result(
+        await reconcileExecutionAttempt({
           environmentId: target.environmentId,
           input: { ...input, projectId: target.projectId },
         }),

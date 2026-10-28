@@ -35,6 +35,8 @@ import {
   ExecuteProjectRuntimeTaskInput,
   ListRuntimeExecutionAttemptsInput,
   ReadRuntimeExecutionAttemptInput,
+  CancelRuntimeExecutionAttemptInput,
+  ReconcileRuntimeExecutionAttemptInput,
   RuntimeExecutionAttempt,
   RuntimeExecutionAttemptListResult,
   RuntimeExecutionError,
@@ -61,6 +63,8 @@ export const PROJECT_RUNTIME_RPC_METHODS = {
   executeTask: "projectRuntime.executeTask",
   listExecutionAttempts: "projectRuntime.listExecutionAttempts",
   readExecutionAttempt: "projectRuntime.readExecutionAttempt",
+  cancelExecutionAttempt: "projectRuntime.cancelExecutionAttempt",
+  reconcileExecutionAttempt: "projectRuntime.reconcileExecutionAttempt",
 } as const;
 
 export class ProjectRuntimeRequestError extends Schema.TaggedError<ProjectRuntimeRequestError>()(
@@ -183,6 +187,22 @@ export const PROJECT_RUNTIME_RPCS = [
   }),
   Rpc.make(PROJECT_RUNTIME_RPC_METHODS.readExecutionAttempt, {
     payload: Schema.Struct({ projectId: ProjectId, ...ReadRuntimeExecutionAttemptInput.fields }),
+    success: RuntimeExecutionAttempt,
+    error,
+  }),
+  Rpc.make(PROJECT_RUNTIME_RPC_METHODS.cancelExecutionAttempt, {
+    payload: Schema.Struct({
+      projectId: ProjectId,
+      ...CancelRuntimeExecutionAttemptInput.fields,
+    }),
+    success: RuntimeExecutionAttempt,
+    error,
+  }),
+  Rpc.make(PROJECT_RUNTIME_RPC_METHODS.reconcileExecutionAttempt, {
+    payload: Schema.Struct({
+      projectId: ProjectId,
+      ...ReconcileRuntimeExecutionAttemptInput.fields,
+    }),
     success: RuntimeExecutionAttempt,
     error,
   }),

@@ -876,8 +876,16 @@ function executionStatusLabel(status: string): string {
       return "Pending launch";
     case "launched":
       return "Launched";
+    case "cancelling":
+      return "Cancelling";
+    case "completed":
+      return "Completed";
     case "failed":
       return "Failed";
+    case "cancelled":
+      return "Cancelled";
+    case "interrupted":
+      return "Interrupted";
     case "reconcile_required":
       return "Needs reconciliation";
     default:
@@ -911,9 +919,50 @@ function TaskExecutionControl({
   const active =
     latest?.status === "pending" ||
     latest?.status === "launched" ||
+    latest?.status === "cancelling" ||
     latest?.status === "reconcile_required";
   const executable =
     task.status === "planned" || task.status === "ready" || task.status === "active";
+
+  const cancel = async () => {
+    if (latest === null || busy) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const response = await api.cancelExecutionAttempt({
+        attemptId: latest.attemptId,
+        expectedRevision: latest.revision,
+        reason: "Cancelled from Runtime task settings.",
+      });
+      if (!response.ok) {
+        setError(response.message);
+        setConflict(response.conflict);
+        return;
+      }
+      setConflict(false);
+      await reload();
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const reconcile = async () => {
+    if (latest === null || busy) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const response = await api.reconcileExecutionAttempt({ attemptId: latest.attemptId });
+      if (!response.ok) {
+        setError(response.message);
+        setConflict(response.conflict);
+        return;
+      }
+      setConflict(false);
+      await reload();
+    } finally {
+      setBusy(false);
+    }
+  };
 
   const execute = async () => {
     if (busy) return;
@@ -947,20 +996,35 @@ function TaskExecutionControl({
             saved revision and does not change it.
           </p>
         </div>
-        <Button
-          size="sm"
-          disabled={!api.canEdit || busy || attemptsLoading || active || !executable}
-          onClick={() => void execute()}
-          title={
-            !executable
-              ? "Only planned, ready, or active tasks can be executed."
-              : active
-                ? "This task already has an active execution attempt."
-                : undefined
-          }
-        >
-          {busy ? "Starting…" : "Execute task"}
-        </Button>
+        <div className="flex flex-wrap gap-2">
+          <Button
+            size="sm"
+            disabled={!api.canEdit || busy || attemptsLoading || active || !executable}
+            onClick={() => void execute()}
+            title={
+              !executable
+                ? "Only planned, ready, or active tasks can be executed."
+                : active
+                  ? "This task already has an active execution attempt."
+                  : undefined
+            }
+          >
+            {busy ? "Working…" : "Execute task"}
+          </Button>
+          {active && api.canEdit ? (
+            <Button size="sm" variant="outline" disabled={busy} onClick={() => void cancel()}>
+              {latest?.status === "cancelling" ? "Cancel again" : "Cancel execution"}
+            </Button>
+          ) : null}
+          {(latest?.status === "launched" ||
+            latest?.status === "cancelling" ||
+            latest?.status === "reconcile_required") &&
+          api.canEdit ? (
+            <Button size="sm" variant="outline" disabled={busy} onClick={() => void reconcile()}>
+              Recheck attempt
+            </Button>
+          ) : null}
+        </div>
       </div>
 
       {error !== null ? (
@@ -999,9 +1063,11 @@ function TaskExecutionControl({
                 variant={
                   latest.status === "failed"
                     ? "error"
-                    : latest.status === "reconcile_required"
+                    : latest.status === "reconcile_required" || latest.status === "cancelling"
                       ? "warning"
-                      : "secondary"
+                      : latest.status === "completed"
+                        ? "success"
+                        : "secondary"
                 }
                 size="sm"
               >
@@ -1017,7 +1083,12 @@ function TaskExecutionControl({
                 {routeSourceLabel(latest.routeSource)}
               </span>
             </div>
-            {latest.status === "launched" || latest.status === "reconcile_required" ? (
+            {latest.status === "launched" ||
+            latest.status === "cancelling" ||
+            latest.status === "completed" ||
+            latest.status === "cancelled" ||
+            latest.status === "interrupted" ||
+            latest.status === "reconcile_required" ? (
               <Link
                 to="/$environmentId/$threadId"
                 params={{ environmentId, threadId: latest.threadId }}
@@ -1030,7 +1101,15 @@ function TaskExecutionControl({
           <p className="break-words text-xs text-muted-foreground">
             Attempt {latest.attemptId} · Revision {latest.revision} ·{" "}
             {new Date(latest.createdAt).toLocaleString()}
+            {latest.cancelRequestedAt == null
+              ? ""
+              : ` · Cancellation requested ${new Date(latest.cancelRequestedAt).toLocaleString()}`}
           </p>
+          {latest.handoffId == null ? null : (
+            <p className="break-words text-xs text-muted-foreground">
+              Linked handoff: {latest.handoffId}
+            </p>
+          )}
           {latest.failure === null ? null : (
             <p className="break-words text-xs text-warning-foreground">{latest.failure}</p>
           )}

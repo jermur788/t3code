@@ -47,6 +47,8 @@ const RPC_AGGREGATES = {
   [PROJECT_RUNTIME_RPC_METHODS.executeTask]: "projectRuntime",
   [PROJECT_RUNTIME_RPC_METHODS.listExecutionAttempts]: "projectRuntime",
   [PROJECT_RUNTIME_RPC_METHODS.readExecutionAttempt]: "projectRuntime",
+  [PROJECT_RUNTIME_RPC_METHODS.cancelExecutionAttempt]: "projectRuntime",
+  [PROJECT_RUNTIME_RPC_METHODS.reconcileExecutionAttempt]: "projectRuntime",
 
   [ORCHESTRATION_V2_WS_METHODS.dispatchCommand]: "orchestrationV2",
   [ORCHESTRATION_V2_WS_METHODS.getWorkflowScript]: "orchestration",

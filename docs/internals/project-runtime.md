@@ -244,9 +244,12 @@ never rebinds a thread.
 
 Execution attempts are the exception on the read side: RTE-040 records that a
 Runtime task launch was attempted and which worker thread/run it produced, using
-the existing orchestration launch service rather than a second engine. The attempt
-and its routing receipt are project-owned; the thread, run, provider session, and
-cancellation mechanics stay with orchestration.
+the existing orchestration launch service rather than a second engine. RTE-050
+reconciles those attempts against their thread/run state at startup, links a
+handoff written by the worker thread, and cancels through the existing
+orchestration thread-stop command. The attempt and its routing receipt are
+project-owned; the thread, run, provider session, and cancellation mechanics stay
+with orchestration.
 
 Native mobile Runtime settings and dedicated Runtime CLI commands do not exist. Web
 and desktop share the settings UI; mobile and the CLI are not V1 Runtime surfaces.

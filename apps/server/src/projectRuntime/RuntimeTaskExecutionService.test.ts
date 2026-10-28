@@ -117,6 +117,10 @@ interface State {
   launchError: Error | null;
   threadExists: boolean;
   threadShellError: Error | null;
+  runs: ReadonlyArray<{ readonly id: string; readonly status: string }>;
+  projectionError: Error | null;
+  stopCalls: Array<{ readonly threadId: string }>;
+  dispatchError: Error | null;
 }
 
 const makeState = (overrides: Partial<State> = {}): State => ({
@@ -125,6 +129,10 @@ const makeState = (overrides: Partial<State> = {}): State => ({
   launchError: null,
   threadExists: false,
   threadShellError: null,
+  runs: [],
+  projectionError: null,
+  stopCalls: [],
+  dispatchError: null,
   ...overrides,
 });
 
@@ -195,6 +203,17 @@ const makeLayer = (state: State) =>
           state.threadShellError !== null
             ? Effect.fail(state.threadShellError as never)
             : Effect.succeed(state.threadExists ? ({} as never) : null),
+        getThreadProjection: () =>
+          state.projectionError !== null
+            ? Effect.fail(state.projectionError as never)
+            : Effect.succeed({ runs: state.runs } as never),
+        dispatch: (command) =>
+          state.dispatchError !== null
+            ? Effect.fail(state.dispatchError as never)
+            : Effect.sync(() => {
+                if ("threadId" in command) state.stopCalls.push({ threadId: command.threadId });
+                return {} as never;
+              }),
       }),
     ),
     Layer.provideMerge(SqlitePersistence.layerMemory),
@@ -202,7 +221,10 @@ const makeLayer = (state: State) =>
   );
 
 it.effect("persists one attempt before launching and reuses it for retries", () => {
-  const state = makeState();
+  const state = makeState({
+    threadExists: true,
+    runs: [{ id: "run-1", status: "running" }],
+  });
   return Effect.gen(function* () {
     const service = yield* RuntimeTaskExecutionService.RuntimeTaskExecutionService;
     yield* seedDatabase;
@@ -342,5 +364,203 @@ it.effect("treats a failed shell read after launch failure as ambiguous", () => 
     });
     assert.equal(retried.attemptId, ambiguous.attemptId);
     assert.equal(state.launchCalls.length, 1);
+  }).pipe(Effect.provide(makeLayer(state)));
+});
+
+it.effect("cancels a launched attempt and reconciles its terminal run", () => {
+  const state = makeState({
+    threadExists: true,
+    runs: [{ id: "run-1", status: "running" }],
+  });
+  return Effect.gen(function* () {
+    const service = yield* RuntimeTaskExecutionService.RuntimeTaskExecutionService;
+    yield* seedDatabase;
+    const attempt = yield* service.execute(projectId, { taskId, expectedTaskRevision: 1 });
+    const cancelling = yield* service.cancelAttempt(
+      projectId,
+      attempt.attemptId,
+      attempt.revision,
+      "test cancel",
+    );
+    assert.equal(cancelling.status, "cancelling");
+    assert.isNotNull(cancelling.cancelRequestedAt);
+    assert.equal(state.stopCalls.length, 1);
+
+    state.runs = [{ id: "run-1", status: "cancelled" }];
+    const reconciled = yield* service.reconcileAttempt(projectId, attempt.attemptId);
+    assert.equal(reconciled.status, "cancelled");
+  }).pipe(Effect.provide(makeLayer(state)));
+});
+
+it.effect("reconciles a launched attempt to completed", () => {
+  const state = makeState({
+    threadExists: true,
+    runs: [{ id: "run-1", status: "completed" }],
+  });
+  return Effect.gen(function* () {
+    const service = yield* RuntimeTaskExecutionService.RuntimeTaskExecutionService;
+    yield* seedDatabase;
+    const attempt = yield* service.execute(projectId, { taskId, expectedTaskRevision: 1 });
+    const reconciled = yield* service.reconcileAttempt(projectId, attempt.attemptId);
+    assert.equal(reconciled.status, "completed");
+    assert.isNull(reconciled.failure);
+  }).pipe(Effect.provide(makeLayer(state)));
+});
+
+it.effect("keeps an attempt ambiguous when reconciliation cannot read its thread", () => {
+  const state = makeState({
+    threadExists: true,
+    threadShellError: new Error("shell read failed"),
+  });
+  return Effect.gen(function* () {
+    const service = yield* RuntimeTaskExecutionService.RuntimeTaskExecutionService;
+    yield* seedDatabase;
+    const attempt = yield* service.execute(projectId, { taskId, expectedTaskRevision: 1 });
+    const reconciled = yield* service.reconcileAttempt(projectId, attempt.attemptId);
+    assert.equal(reconciled.status, "reconcile_required");
+  }).pipe(Effect.provide(makeLayer(state)));
+});
+
+it.effect("cancels an attempt whose thread is already gone", () => {
+  const state = makeState({ threadExists: false });
+  return Effect.gen(function* () {
+    const service = yield* RuntimeTaskExecutionService.RuntimeTaskExecutionService;
+    yield* seedDatabase;
+    const attempt = yield* service.execute(projectId, { taskId, expectedTaskRevision: 1 });
+    const cancelled = yield* service.cancelAttempt(projectId, attempt.attemptId, attempt.revision);
+    assert.equal(cancelled.status, "cancelled");
+    assert.equal(state.stopCalls.length, 0);
+  }).pipe(Effect.provide(makeLayer(state)));
+});
+
+it.effect("links the handoff written by the worker thread", () => {
+  const state = makeState({
+    threadExists: true,
+    runs: [{ id: "run-1", status: "completed" }],
+  });
+  return Effect.gen(function* () {
+    const service = yield* RuntimeTaskExecutionService.RuntimeTaskExecutionService;
+    const sql = yield* SqlClient.SqlClient;
+    yield* seedDatabase;
+    const attempt = yield* service.execute(projectId, { taskId, expectedTaskRevision: 1 });
+    yield* sql`INSERT INTO project_runtime_handoffs
+      (handoff_id, project_id, task_id, created_at, payload_json)
+      VALUES ('handoff-1', ${projectId}, ${taskId}, ${timestamp},
+        ${JSON.stringify({ threadId: attempt.threadId })})`;
+    const reconciled = yield* service.reconcileAttempt(projectId, attempt.attemptId);
+    assert.equal(reconciled.handoffId, "handoff-1");
+  }).pipe(Effect.provide(makeLayer(state)));
+});
+
+it.effect("never revives a terminal attempt through reconciliation", () => {
+  const state = makeState({
+    threadExists: true,
+    runs: [{ id: "run-1", status: "completed" }],
+  });
+  return Effect.gen(function* () {
+    const service = yield* RuntimeTaskExecutionService.RuntimeTaskExecutionService;
+    yield* seedDatabase;
+    const attempt = yield* service.execute(projectId, { taskId, expectedTaskRevision: 1 });
+    const completed = yield* service.reconcileAttempt(projectId, attempt.attemptId);
+    assert.equal(completed.status, "completed");
+    state.threadExists = false;
+    const reconciledAgain = yield* service.reconcileAttempt(projectId, attempt.attemptId);
+    assert.equal(reconciledAgain.status, "completed");
+  }).pipe(Effect.provide(makeLayer(state)));
+});
+
+it.effect("a terminal attempt releases the active slot for a new execute", () => {
+  const state = makeState({
+    threadExists: true,
+    runs: [{ id: "run-1", status: "completed" }],
+  });
+  return Effect.gen(function* () {
+    const service = yield* RuntimeTaskExecutionService.RuntimeTaskExecutionService;
+    yield* seedDatabase;
+    const first = yield* service.execute(projectId, {
+      taskId,
+      expectedTaskRevision: 1,
+      clientRequestId: "request-1",
+    });
+    const second = yield* service.execute(projectId, {
+      taskId,
+      expectedTaskRevision: 1,
+      clientRequestId: "request-2",
+    });
+    assert.notEqual(second.attemptId, first.attemptId);
+    assert.equal(second.status, "launched");
+    assert.equal(state.launchCalls.length, 2);
+  }).pipe(Effect.provide(makeLayer(state)));
+});
+
+it.effect("does not stop or rewrite an already terminal attempt", () => {
+  const state = makeState({
+    threadExists: true,
+    runs: [{ id: "run-1", status: "completed" }],
+  });
+  return Effect.gen(function* () {
+    const service = yield* RuntimeTaskExecutionService.RuntimeTaskExecutionService;
+    yield* seedDatabase;
+    const attempt = yield* service.execute(projectId, { taskId, expectedTaskRevision: 1 });
+    const completed = yield* service.reconcileAttempt(projectId, attempt.attemptId);
+    const cancelled = yield* service.cancelAttempt(
+      projectId,
+      completed.attemptId,
+      completed.revision,
+    );
+    assert.equal(cancelled.status, "completed");
+    assert.equal(state.stopCalls.length, 0);
+  }).pipe(Effect.provide(makeLayer(state)));
+});
+
+it.effect("marks a failed cancellation dispatch as reconcile-required", () => {
+  const state = makeState({
+    threadExists: true,
+    runs: [{ id: "run-1", status: "running" }],
+    dispatchError: new Error("dispatch failed"),
+  });
+  return Effect.gen(function* () {
+    const service = yield* RuntimeTaskExecutionService.RuntimeTaskExecutionService;
+    yield* seedDatabase;
+    const attempt = yield* service.execute(projectId, { taskId, expectedTaskRevision: 1 });
+    const cancelled = yield* service.cancelAttempt(projectId, attempt.attemptId, attempt.revision);
+    assert.equal(cancelled.status, "reconcile_required");
+    assert.equal(state.stopCalls.length, 0);
+  }).pipe(Effect.provide(makeLayer(state)));
+});
+
+it.effect("rejects a stale cancellation revision", () => {
+  const state = makeState({
+    threadExists: true,
+    runs: [{ id: "run-1", status: "running" }],
+  });
+  return Effect.gen(function* () {
+    const service = yield* RuntimeTaskExecutionService.RuntimeTaskExecutionService;
+    yield* seedDatabase;
+    const attempt = yield* service.execute(projectId, { taskId, expectedTaskRevision: 1 });
+    const failure = yield* service
+      .cancelAttempt(projectId, attempt.attemptId, attempt.revision - 1)
+      .pipe(Effect.flip);
+    assert.equal(failure._tag, "RuntimeExecutionAttemptConflictError");
+    assert.equal(state.stopCalls.length, 0);
+  }).pipe(Effect.provide(makeLayer(state)));
+});
+
+it.effect("ignores a handoff from another thread", () => {
+  const state = makeState({
+    threadExists: true,
+    runs: [{ id: "run-1", status: "completed" }],
+  });
+  return Effect.gen(function* () {
+    const service = yield* RuntimeTaskExecutionService.RuntimeTaskExecutionService;
+    const sql = yield* SqlClient.SqlClient;
+    yield* seedDatabase;
+    const attempt = yield* service.execute(projectId, { taskId, expectedTaskRevision: 1 });
+    yield* sql`INSERT INTO project_runtime_handoffs
+      (handoff_id, project_id, task_id, created_at, payload_json)
+      VALUES ('wrong-thread', ${projectId}, ${taskId}, ${timestamp},
+        ${JSON.stringify({ threadId: "someone-else" })})`;
+    const reconciled = yield* service.reconcileAttempt(projectId, attempt.attemptId);
+    assert.isNull(reconciled.handoffId ?? null);
   }).pipe(Effect.provide(makeLayer(state)));
 });

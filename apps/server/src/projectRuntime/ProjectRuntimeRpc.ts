@@ -78,5 +78,11 @@ export const makeHandlers = Effect.fn("ProjectRuntimeRpc.makeHandlers")(function
       execution.listAttempts(projectId, input).pipe(Effect.mapError(toRpcError)),
     [PROJECT_RUNTIME_RPC_METHODS.readExecutionAttempt]: ({ projectId, ...input }) =>
       execution.readAttempt(projectId, input.attemptId).pipe(Effect.mapError(toRpcError)),
+    [PROJECT_RUNTIME_RPC_METHODS.cancelExecutionAttempt]: ({ projectId, ...input }) =>
+      execution
+        .cancelAttempt(projectId, input.attemptId, input.expectedRevision, input.reason)
+        .pipe(Effect.mapError(toRpcError)),
+    [PROJECT_RUNTIME_RPC_METHODS.reconcileExecutionAttempt]: ({ projectId, ...input }) =>
+      execution.reconcileAttempt(projectId, input.attemptId).pipe(Effect.mapError(toRpcError)),
   } satisfies Partial<RpcGroup.HandlersFrom<RpcGroup.Rpcs<typeof WsRpcGroup>>>;
 });

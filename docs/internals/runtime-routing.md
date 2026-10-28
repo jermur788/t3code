@@ -115,8 +115,15 @@ its latest handoff.
 The launch seam is attempt-first: the attempt has a preallocated thread id and
 derived command/message ids, and the existing `ThreadLaunchService` receipts make
 every partial launch replayable. A crash therefore leaves a `pending` attempt, not
-an untracked worker. RTE-050 owns reconciliation, cancellation, restart recovery,
-and handoff linking.
+an untracked worker.
+
+RTE-050 reconciles active attempts at startup. A pending attempt replays its one
+launch with the stored ids; launched/cancelling attempts map the existing run's
+terminal state; an unreadable thread becomes `reconcile_required` rather than
+failed, so another worker cannot start. Cancellation uses the existing
+orchestration thread-stop command and is compare-and-set on the attempt revision.
+When a terminal attempt has a handoff from its worker thread, reconciliation links
+that handoff id without rewriting the handoff or task.
 
 Routing is still configuration, never authorization. The resolver's selected
 route is eligible-at-resolution only; the normal provider/orchestration launch path

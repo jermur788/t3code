@@ -36,7 +36,11 @@ const RequestKey = TrimmedNonEmptyString.check(
 export const RuntimeExecutionAttemptStatus = Schema.Literals([
   "pending",
   "launched",
+  "cancelling",
+  "completed",
   "failed",
+  "cancelled",
+  "interrupted",
   "reconcile_required",
 ]);
 export type RuntimeExecutionAttemptStatus = typeof RuntimeExecutionAttemptStatus.Type;
@@ -90,6 +94,8 @@ export const RuntimeExecutionAttemptSummary = Schema.Struct({
   failure: Schema.NullOr(
     Schema.String.check(Schema.isMaxLength(RUNTIME_EXECUTION_BOUNDS.failureMaxLength)),
   ),
+  handoffId: Schema.optionalKey(Schema.NullOr(ProjectRuntimeHandoffId)),
+  cancelRequestedAt: Schema.optionalKey(Schema.NullOr(IsoDateTime)),
   createdAt: IsoDateTime,
   updatedAt: IsoDateTime,
 });
@@ -130,6 +136,21 @@ export const ReadRuntimeExecutionAttemptInput = Schema.Struct({
 });
 export type ReadRuntimeExecutionAttemptInput = typeof ReadRuntimeExecutionAttemptInput.Type;
 
+export const CancelRuntimeExecutionAttemptInput = Schema.Struct({
+  attemptId: RuntimeExecutionAttemptId,
+  expectedRevision: PositiveInt,
+  reason: Schema.optionalKey(
+    Schema.String.check(Schema.isMaxLength(RUNTIME_EXECUTION_BOUNDS.failureMaxLength)),
+  ),
+});
+export type CancelRuntimeExecutionAttemptInput = typeof CancelRuntimeExecutionAttemptInput.Type;
+
+export const ReconcileRuntimeExecutionAttemptInput = Schema.Struct({
+  attemptId: RuntimeExecutionAttemptId,
+});
+export type ReconcileRuntimeExecutionAttemptInput =
+  typeof ReconcileRuntimeExecutionAttemptInput.Type;
+
 export const RuntimeExecutionRejectionReason = Schema.Literals([
   "runtime_disabled",
   "task_not_executable",
@@ -137,6 +158,7 @@ export const RuntimeExecutionRejectionReason = Schema.Literals([
   "no_default_model",
   "provider_disabled",
   "workspace_unavailable",
+  "cancellation_failed",
 ]);
 export type RuntimeExecutionRejectionReason = typeof RuntimeExecutionRejectionReason.Type;
 
@@ -156,6 +178,20 @@ export class RuntimeExecutionRejectedError extends Schema.TaggedError<RuntimeExe
   }
 }
 
+export class RuntimeExecutionAttemptConflictError extends Schema.TaggedError<RuntimeExecutionAttemptConflictError>()(
+  "RuntimeExecutionAttemptConflictError",
+  {
+    projectId: ProjectId,
+    attemptId: RuntimeExecutionAttemptId,
+    expectedRevision: PositiveInt,
+    currentRevision: PositiveInt,
+  },
+) {
+  override get message(): string {
+    return `Execution attempt ${this.attemptId} is at revision ${this.currentRevision}, not the expected revision ${this.expectedRevision}.`;
+  }
+}
+
 export class RuntimeExecutionAttemptNotFoundError extends Schema.TaggedError<RuntimeExecutionAttemptNotFoundError>()(
   "RuntimeExecutionAttemptNotFoundError",
   {
@@ -171,5 +207,6 @@ export class RuntimeExecutionAttemptNotFoundError extends Schema.TaggedError<Run
 export const RuntimeExecutionError = Schema.Union([
   RuntimeExecutionRejectedError,
   RuntimeExecutionAttemptNotFoundError,
+  RuntimeExecutionAttemptConflictError,
 ]);
 export type RuntimeExecutionError = typeof RuntimeExecutionError.Type;

@@ -142,13 +142,19 @@ execution receipt, not written into the prompt as instructions.
 Only **planned**, **ready**, and **active** tasks can execute. Execution uses the
 task revision you loaded, so a concurrent edit is refused rather than launching a
 stale task. One active attempt is allowed per task. The latest attempt shows its
-status, provider and model, routing layer, failure if any, and a link to the
-worker thread. A launched or pending attempt disables Execute; a failed attempt
-lets you start a new one. Execution attempts persist across reconnects and server
-restarts.
+status, provider and model, routing layer, failure if any, any linked handoff, and
+a link to the worker thread. A launched, cancelling, pending, or reconcile-required
+attempt disables Execute; terminal attempts let you start a new one.
 
-RTE-040 does not add cancellation, restart recovery, retries, or execution history
-paging. Use the worker thread's normal T3 controls until those gates land.
+**Cancel execution** stops the worker through T3's normal thread stop. While T3
+waits for the turn to end, the attempt is **Cancelling** and keeps the active slot;
+choose **Cancel again** if needed. After a restart, T3 reconciles attempts against
+their existing threads and runs. A pending launch is resumed with the same ids; a
+finished run becomes Completed, Failed, Cancelled, or Interrupted; an attempt whose
+thread cannot be verified stays **Needs reconciliation** and blocks a second
+worker rather than guessing. Use **Recheck attempt** after the environment
+recovers. A handoff written from the worker thread is linked to the attempt on
+reconciliation.
 
 ## Handoffs
 

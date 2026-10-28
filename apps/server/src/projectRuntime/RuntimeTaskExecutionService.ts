@@ -9,11 +9,13 @@ import {
   ProjectRuntimeNotFoundError,
   type ProjectRuntimeTask,
   type ProjectRuntimeTaskId,
+  type OrchestrationV2Run,
   RuntimeExecutionAttempt,
   type RuntimeExecutionAttemptId,
   type RuntimeExecutionAttemptListResult,
   type RuntimeExecutionAttemptSummary,
   type RuntimeExecutionLaunch,
+  RuntimeExecutionAttemptConflictError,
   RuntimeExecutionAttemptNotFoundError,
   RuntimeExecutionRejectedError,
   type RuntimeExecutionRoutingReceipt,
@@ -65,11 +67,18 @@ type LaunchError = Effect.Error<
 type ThreadError = Effect.Error<
   ReturnType<ThreadManagementService.ThreadManagementService["Service"]["getThreadShell"]>
 >;
+type ThreadProjectionError = Effect.Error<
+  ReturnType<ThreadManagementService.ThreadManagementService["Service"]["getThreadProjection"]>
+>;
+type ThreadDispatchError = Effect.Error<
+  ReturnType<ThreadManagementService.ThreadManagementService["Service"]["dispatch"]>
+>;
 
 type ServiceError =
   | RuntimeServiceError
   | RoutingServiceError
   | RuntimeExecutionRejectedError
+  | RuntimeExecutionAttemptConflictError
   | RuntimeExecutionAttemptNotFoundError
   | PersistenceSqlError
   | Schema.SchemaError
@@ -77,6 +86,8 @@ type ServiceError =
   | ProjectNotFoundError
   | LaunchError
   | ThreadError
+  | ThreadProjectionError
+  | ThreadDispatchError
   | IdAllocator.IdAllocatorV2Error
   | PlatformError.PlatformError;
 type Result<A> = Effect.Effect<A, ServiceError>;
@@ -100,6 +111,19 @@ const EXECUTABLE_TASK_STATUSES = new Set<ProjectRuntimeTask["status"]>([
   "ready",
   "active",
 ]);
+const ACTIVE_ATTEMPT_STATUSES = new Set<AttemptStatus>([
+  "pending",
+  "launched",
+  "cancelling",
+  "reconcile_required",
+]);
+const TERMINAL_ATTEMPT_STATUSES = new Set<AttemptStatus>([
+  "completed",
+  "failed",
+  "cancelled",
+  "interrupted",
+]);
+const isActiveAttempt = (status: AttemptStatus) => ACTIVE_ATTEMPT_STATUSES.has(status);
 
 const now = DateTime.now.pipe(Effect.map(DateTime.formatIso));
 const asAttemptId = (value: string) => value as RuntimeExecutionAttemptId;
@@ -177,6 +201,17 @@ export class RuntimeTaskExecutionService extends Context.Service<
       projectId: ProjectId,
       attemptId: RuntimeExecutionAttemptId,
     ) => Result<RuntimeExecutionAttempt>;
+    readonly cancelAttempt: (
+      projectId: ProjectId,
+      attemptId: RuntimeExecutionAttemptId,
+      expectedRevision: number,
+      reason?: string,
+    ) => Result<RuntimeExecutionAttempt>;
+    readonly reconcileAttempt: (
+      projectId: ProjectId,
+      attemptId: RuntimeExecutionAttemptId,
+    ) => Result<RuntimeExecutionAttempt>;
+    readonly reconcileActiveAttempts: () => Result<number>;
   }
 >()("t3/projectRuntime/RuntimeTaskExecutionService") {}
 
@@ -241,7 +276,7 @@ const make = Effect.gen(function* () {
   ) {
     const rows = yield* sql<AttemptRow>`SELECT * FROM project_runtime_execution_attempts
       WHERE project_id = ${projectId} AND task_id = ${taskId}
-        AND status IN ('pending', 'launched', 'reconcile_required')
+        AND status IN ('pending', 'launched', 'cancelling', 'reconcile_required')
       ORDER BY created_at DESC, attempt_id DESC LIMIT 1`;
     return rows[0] === undefined ? null : yield* decodeRow(rows[0]);
   });
@@ -251,16 +286,24 @@ const make = Effect.gen(function* () {
     readonly status: AttemptStatus;
     readonly runId: string | null;
     readonly failure: string | null;
+    readonly handoffId?: string | null;
+    readonly cancelRequestedAt?: string | null;
   }) {
     const timestamp = yield* now;
-    const next: RuntimeExecutionAttempt = {
+    const next = {
       ...input.attempt,
       status: input.status,
       revision: input.attempt.revision + 1,
       runId: input.runId,
       failure: input.failure,
       updatedAt: timestamp,
-    };
+    } as { -readonly [K in keyof RuntimeExecutionAttempt]: RuntimeExecutionAttempt[K] };
+    if (input.handoffId !== undefined) {
+      next.handoffId = input.handoffId as NonNullable<RuntimeExecutionAttempt["handoffId"]> | null;
+    }
+    if (input.cancelRequestedAt !== undefined) {
+      next.cancelRequestedAt = input.cancelRequestedAt;
+    }
     const payload = yield* encodeAttempt(next);
     const changed = yield* sql`UPDATE project_runtime_execution_attempts
       SET status = ${next.status}, revision = ${next.revision}, run_id = ${next.runId},
@@ -426,6 +469,282 @@ const make = Effect.gen(function* () {
     );
   });
 
+  const attemptStatusForRun = (status: OrchestrationV2Run["status"]): AttemptStatus | null => {
+    switch (status) {
+      case "completed":
+        return "completed";
+      case "failed":
+        return "failed";
+      case "cancelled":
+        return "cancelled";
+      case "interrupted":
+      case "rolled_back":
+        return "interrupted";
+      default:
+        return null;
+    }
+  };
+
+  const handoffForAttempt = Effect.fn("RuntimeTaskExecutionService.handoffForAttempt")(function* (
+    attempt: RuntimeExecutionAttempt,
+  ) {
+    const rows = yield* sql<{ readonly handoff_id: string }>`SELECT handoff_id
+        FROM project_runtime_handoffs
+        WHERE project_id = ${attempt.projectId} AND task_id = ${attempt.taskId}
+          AND json_extract(payload_json, '$.threadId') = ${attempt.threadId}
+        ORDER BY created_at DESC, handoff_id DESC
+        LIMIT 1`;
+    return rows[0]?.handoff_id ?? null;
+  });
+
+  const reconcileAttemptRow = Effect.fn("RuntimeTaskExecutionService.reconcileAttemptRow")(
+    function* (attempt: RuntimeExecutionAttempt) {
+      if (TERMINAL_ATTEMPT_STATUSES.has(attempt.status)) {
+        const handoffId = yield* handoffForAttempt(attempt);
+        return handoffId === null || handoffId === (attempt.handoffId ?? null)
+          ? attempt
+          : yield* updateAttempt({
+              attempt,
+              status: attempt.status,
+              runId: attempt.runId,
+              failure: attempt.failure,
+              handoffId,
+            });
+      }
+      // A pending attempt has not necessarily reached thread.create. Replaying the
+      // same command/thread/message ids completes or resumes that one launch.
+      if (attempt.status === "pending") return yield* launchAttempt(attempt);
+
+      const shell = yield* threads.getThreadShell(attempt.threadId).pipe(
+        Effect.asSome,
+        Effect.orElseSucceed(() => Option.none()),
+      );
+      if (Option.isNone(shell)) {
+        return attempt.status === "reconcile_required"
+          ? attempt
+          : yield* updateAttempt({
+              attempt,
+              status: "reconcile_required",
+              runId: attempt.runId,
+              failure: "T3 could not verify whether the worker thread still exists.",
+            });
+      }
+      if (shell.value === null) {
+        if (attempt.status === "cancelling") {
+          return yield* updateAttempt({
+            attempt,
+            status: "cancelled",
+            runId: attempt.runId,
+            failure: null,
+          });
+        }
+        if (attempt.status === "reconcile_required") return attempt;
+        return yield* updateAttempt({
+          attempt,
+          status: "reconcile_required",
+          runId: attempt.runId,
+          failure: "The worker thread no longer exists; reconcile this attempt before retrying.",
+        });
+      }
+
+      const projection = yield* threads.getThreadProjection(attempt.threadId);
+      const expectedMessageId = MessageId.make(`message:runtime-execution:${attempt.attemptId}`);
+      const run =
+        attempt.runId === null
+          ? projection.runs.find((candidate) => candidate.userMessageId === expectedMessageId)
+          : projection.runs.find((candidate) => candidate.id === attempt.runId);
+      const handoffId = yield* handoffForAttempt(attempt);
+      if (run === undefined) {
+        if (attempt.status === "cancelling") {
+          return yield* updateAttempt({
+            attempt,
+            status: "cancelled",
+            runId: null,
+            failure: null,
+            handoffId,
+          });
+        }
+        if (attempt.status === "reconcile_required") return attempt;
+        return yield* updateAttempt({
+          attempt,
+          status: "reconcile_required",
+          runId: null,
+          failure: "The worker thread has no run; reconcile this attempt before retrying.",
+          handoffId,
+        });
+      }
+
+      const terminal = attemptStatusForRun(run.status);
+      if (terminal !== null) {
+        return yield* updateAttempt({
+          attempt,
+          status: terminal,
+          runId: run.id,
+          failure: terminal === "failed" ? (attempt.failure ?? "The worker turn failed.") : null,
+          handoffId,
+        });
+      }
+
+      if (attempt.status === "launched") {
+        return run.id === attempt.runId && handoffId === (attempt.handoffId ?? null)
+          ? attempt
+          : yield* updateAttempt({
+              attempt,
+              status: "launched",
+              runId: run.id,
+              failure: null,
+              handoffId,
+            });
+      }
+      if (attempt.status === "cancelling") {
+        return run.id === attempt.runId && handoffId === (attempt.handoffId ?? null)
+          ? attempt
+          : yield* updateAttempt({
+              attempt,
+              status: "cancelling",
+              runId: run.id,
+              failure: null,
+              handoffId,
+            });
+      }
+      if (attempt.status === "reconcile_required") {
+        return run.id === attempt.runId &&
+          handoffId === (attempt.handoffId ?? null) &&
+          attempt.failure !== null
+          ? attempt
+          : yield* updateAttempt({
+              attempt,
+              status: "reconcile_required",
+              runId: run.id,
+              failure: attempt.failure,
+              handoffId,
+            });
+      }
+      return attempt;
+    },
+  );
+
+  const reconcileAttempt: RuntimeTaskExecutionService["Service"]["reconcileAttempt"] = Effect.fn(
+    "RuntimeTaskExecutionService.reconcileAttempt",
+  )(function* (projectId, attemptId) {
+    return yield* lane.withPermits(1)(
+      Effect.gen(function* () {
+        yield* runtime.getStatus(projectId);
+        const attempt = yield* readAttemptRow(projectId, attemptId);
+        return yield* reconcileAttemptRow(attempt);
+      }),
+    );
+  });
+
+  const reconcileActiveAttempts: RuntimeTaskExecutionService["Service"]["reconcileActiveAttempts"] =
+    Effect.fn("RuntimeTaskExecutionService.reconcileActiveAttempts")(function* () {
+      const rows = yield* sql<AttemptRow>`SELECT * FROM project_runtime_execution_attempts
+        WHERE status IN ('pending', 'launched', 'cancelling', 'reconcile_required')
+        ORDER BY created_at, attempt_id`;
+      yield* Effect.forEach(
+        rows,
+        (row) =>
+          Effect.gen(function* () {
+            const attempt = yield* decodeRow(row);
+            return yield* lane.withPermits(1)(reconcileAttemptRow(attempt));
+          }).pipe(
+            Effect.catchCause((cause) =>
+              Effect.logWarning("runtime-execution.reconcile-failed", {
+                attemptId: row.attempt_id,
+                cause,
+              }),
+            ),
+          ),
+        { concurrency: 1, discard: true },
+      );
+      return rows.length;
+    });
+
+  const cancelAttempt: RuntimeTaskExecutionService["Service"]["cancelAttempt"] = Effect.fn(
+    "RuntimeTaskExecutionService.cancelAttempt",
+  )(function* (projectId, attemptId, expectedRevision, reason) {
+    return yield* lane.withPermits(1)(
+      Effect.gen(function* () {
+        yield* runtime.getStatus(projectId);
+        const attempt = yield* readAttemptRow(projectId, attemptId);
+        if (attempt.revision !== expectedRevision) {
+          return yield* new RuntimeExecutionAttemptConflictError({
+            projectId,
+            attemptId,
+            expectedRevision,
+            currentRevision: attempt.revision,
+          });
+        }
+        if (
+          attempt.status === "completed" ||
+          attempt.status === "failed" ||
+          attempt.status === "cancelled" ||
+          attempt.status === "interrupted"
+        ) {
+          return attempt;
+        }
+
+        const shell = yield* threads.getThreadShell(attempt.threadId).pipe(
+          Effect.asSome,
+          Effect.orElseSucceed(() => Option.none()),
+        );
+        if (Option.isNone(shell)) {
+          return yield* updateAttempt({
+            attempt,
+            status: "reconcile_required",
+            runId: attempt.runId,
+            failure: "T3 could not verify the worker thread while cancelling.",
+          });
+        }
+        if (shell.value === null) {
+          return yield* updateAttempt({
+            attempt,
+            status: "cancelled",
+            runId: attempt.runId,
+            failure: null,
+          });
+        }
+
+        const timestamp = yield* now;
+        const commandId = CommandId.make(
+          `command:runtime-execution:${attempt.attemptId}:cancel:${yield* crypto.randomUUIDv4()}`,
+        );
+        const dispatched = yield* threads
+          .dispatch({
+            type: "thread.stop",
+            commandId,
+            threadId: attempt.threadId,
+            stopDelegatedTasks: false,
+            ...(reason === undefined ? {} : { reason }),
+          })
+          .pipe(
+            Effect.as(true),
+            Effect.catch((cause) =>
+              Effect.logWarning("runtime-execution.cancel-failed", {
+                attemptId: attempt.attemptId,
+                cause,
+              }).pipe(Effect.as(false)),
+            ),
+          );
+        if (!dispatched) {
+          return yield* updateAttempt({
+            attempt,
+            status: "reconcile_required",
+            runId: attempt.runId,
+            failure: "T3 could not request cancellation; reconcile this attempt.",
+          });
+        }
+        return yield* updateAttempt({
+          attempt,
+          status: "cancelling",
+          runId: attempt.runId,
+          failure: null,
+          cancelRequestedAt: timestamp,
+        });
+      }),
+    );
+  });
+
   const execute: RuntimeTaskExecutionService["Service"]["execute"] = Effect.fn(
     "RuntimeTaskExecutionService.execute",
   )(function* (projectId, input) {
@@ -460,7 +779,9 @@ const make = Effect.gen(function* () {
 
         const active = yield* readActive(projectId, task.taskId);
         if (active !== null) {
-          return active.status === "pending" ? yield* launchAttempt(active) : active;
+          if (active.status === "pending") return yield* launchAttempt(active);
+          const reconciled = yield* reconcileAttemptRow(active);
+          if (isActiveAttempt(reconciled.status)) return reconciled;
         }
 
         const resolved = yield* resolveLaunch(projectId, task);
@@ -580,6 +901,9 @@ const make = Effect.gen(function* () {
     execute,
     listAttempts,
     readAttempt,
+    cancelAttempt,
+    reconcileAttempt,
+    reconcileActiveAttempts,
   });
 });
 

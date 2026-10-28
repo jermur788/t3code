@@ -717,6 +717,22 @@ const layerProjectRuntime = ProjectRuntimeSourceAccess.layer.pipe(
 const layerRuntimeTaskExecution = RuntimeTaskExecutionService.layer.pipe(
   Layer.provide(layerProjectRuntime),
 );
+const layerRuntimeExecutionReconcile = Layer.effectDiscard(
+  Effect.gen(function* () {
+    const execution = yield* RuntimeTaskExecutionService.RuntimeTaskExecutionService;
+    yield* execution.reconcileActiveAttempts().pipe(
+      Effect.tap((count) =>
+        count === 0
+          ? Effect.void
+          : Effect.logInfo("Reconciled Runtime execution attempts on startup", { count }),
+      ),
+      Effect.catchCause((cause) =>
+        Effect.logWarning("Failed to reconcile Runtime execution attempts on startup", { cause }),
+      ),
+      Effect.forkScoped,
+    );
+  }),
+);
 
 const layerMakeRoutes = Layer.mergeAll(
   Layer.mergeAll(
@@ -738,6 +754,7 @@ const layerMakeRoutes = Layer.mergeAll(
     DeviceHubProxy.layer,
     ServerBrowserStream.routeLayer,
     ServerHttp.layerStaticAndDevRoute,
+    layerRuntimeExecutionReconcile,
     Ws.layer,
   ),
   McpHttpServer.layer.pipe(

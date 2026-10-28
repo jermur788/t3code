@@ -219,6 +219,10 @@ describe("fork migration namespace", () => {
             migration_id: 5,
             name: "RuntimeExecutionAttempts",
           },
+          {
+            migration_id: 6,
+            name: "RuntimeExecutionCancellation",
+          },
         ],
       );
       assert.deepStrictEqual(

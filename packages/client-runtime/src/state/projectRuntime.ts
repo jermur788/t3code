@@ -87,5 +87,13 @@ export function createProjectRuntimeEnvironmentAtoms<R, E>(
       label: "environment-command:project-runtime:readExecutionAttempt",
       tag: PROJECT_RUNTIME_RPC_METHODS.readExecutionAttempt,
     }),
+    cancelExecutionAttempt: createEnvironmentRpcCommand(runtime, {
+      label: "environment-command:project-runtime:cancelExecutionAttempt",
+      tag: PROJECT_RUNTIME_RPC_METHODS.cancelExecutionAttempt,
+    }),
+    reconcileExecutionAttempt: createEnvironmentRpcCommand(runtime, {
+      label: "environment-command:project-runtime:reconcileExecutionAttempt",
+      tag: PROJECT_RUNTIME_RPC_METHODS.reconcileExecutionAttempt,
+    }),
   };
 }
