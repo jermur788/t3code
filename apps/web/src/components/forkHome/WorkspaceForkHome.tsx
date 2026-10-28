@@ -31,10 +31,13 @@ import {
   projectOptionLabel,
   selectedForkProject,
   selectionForProject,
+  summarizeHandoffs,
   summarizeInstructions,
+  summarizeProfile,
   summarizeSources,
+  summarizeTasks,
 } from "./forkHome.logic";
-import { useForkHomeRuntime } from "./useForkHomeData";
+import { useForkHomeProfile, useForkHomeRuntime } from "./useForkHomeData";
 
 const OPTION_SEPARATOR = "\u0000";
 
@@ -202,6 +205,13 @@ export function WorkspaceForkHome({
                       >
                         Project settings
                       </Button>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        render={<Link to="/" search={{ classic: 1 }} />}
+                      >
+                        Classic T3 Home
+                      </Button>
                     </div>
                   ) : null}
                 </div>
@@ -249,12 +259,28 @@ function WorkspaceProjectSummary({
   readonly settingsSearch: SettingsScopeSearch;
 }) {
   const runtime = useForkHomeRuntime({ environmentId, projectId, environmentLabel });
+  const profile = useForkHomeProfile({ environmentId, projectId, environmentLabel });
   const instructions =
     runtime.data.instructions.status === "ready"
       ? summarizeInstructions(runtime.data.instructions.value)
       : null;
   const sources =
     runtime.data.sources.status === "ready" ? summarizeSources(runtime.data.sources.value) : null;
+  const profileSummary =
+    profile.data.status === "ready" ? summarizeProfile(profile.data.value) : null;
+  const handoffResult =
+    runtime.data.handoffs.status === "ready" ? runtime.data.handoffs.value : null;
+  const taskSummary =
+    runtime.data.tasks.status === "ready"
+      ? summarizeTasks(runtime.data.tasks.value, handoffResult)
+      : null;
+  const handoffSummary =
+    handoffResult === null
+      ? null
+      : summarizeHandoffs(
+          handoffResult,
+          runtime.data.tasks.status === "ready" ? runtime.data.tasks.value.tasks : [],
+        );
 
   return (
     <div className="space-y-4">
@@ -326,6 +352,46 @@ function WorkspaceProjectSummary({
           Development Profiles, worker routing, Runtime tasks, handoffs, executions, verification,
           and recovery remain available without changing Workspace mode.
         </p>
+        <dl className="mt-3 grid gap-2 text-xs text-muted-foreground sm:grid-cols-2">
+          <div className="rounded-md border border-border/60 p-2">
+            <dt className="font-medium text-foreground">Development Profile</dt>
+            <dd className="mt-1">
+              {profile.data.status === "loading"
+                ? "Loading…"
+                : profile.data.status === "unavailable"
+                  ? "Unavailable"
+                  : profileSummary?.profileName ?? "No profile assigned"}
+            </dd>
+          </div>
+          <div className="rounded-md border border-border/60 p-2">
+            <dt className="font-medium text-foreground">Project Runtime</dt>
+            <dd className="mt-1">
+              {runtime.data.status.status === "loading"
+                ? "Loading…"
+                : runtime.data.status.status === "unavailable"
+                  ? "Unavailable"
+                  : runtime.data.status.value.enabled
+                    ? `Enabled · revision ${runtime.data.status.value.revision}`
+                    : "Disabled"}
+            </dd>
+          </div>
+          <div className="rounded-md border border-border/60 p-2">
+            <dt className="font-medium text-foreground">Project State</dt>
+            <dd className="mt-1">
+              {taskSummary === null
+                ? "Loading or unavailable"
+                : `${taskSummary.active} active · ${taskSummary.blocked} blocked · ${taskSummary.review} review`}
+            </dd>
+          </div>
+          <div className="rounded-md border border-border/60 p-2">
+            <dt className="font-medium text-foreground">Tasks & Handoffs</dt>
+            <dd className="mt-1">
+              {taskSummary === null
+                ? "Loading or unavailable"
+                : `${taskSummary.total} task${taskSummary.total === 1 ? "" : "s"} · ${handoffSummary?.total ?? "…"} handoff${handoffSummary?.total === 1 ? "" : "s"}`}
+            </dd>
+          </div>
+        </dl>
         <div className="mt-3 flex flex-wrap gap-2">
           <Button
             size="xs"
