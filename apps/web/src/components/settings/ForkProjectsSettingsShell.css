@@ -1,0 +1,6 @@
+[data-fork-project-settings="workspace-simple"] #development-profile,
+[data-fork-project-settings="workspace-simple"] #project-worker-preferences,
+[data-fork-project-settings="workspace-simple"] #project-runtime-state,
+[data-fork-project-settings="workspace-simple"] #project-runtime-tasks {
+  display: none;
+}
