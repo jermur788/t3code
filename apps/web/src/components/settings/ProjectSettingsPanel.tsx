@@ -1,3 +1,4 @@
+import { ProjectWorkerPreferencesSettings } from "./ProjectWorkerPreferencesSettings";
 import { ProjectRuntimeSettings } from "./ProjectRuntimeSettings";
 import { useComposerMenuState } from "../chat/useComposerMenuState";
 import { useOrchestrationCommand } from "../../state/use-orchestration-command";
@@ -564,6 +565,7 @@ function ProjectDetail({
         </SettingsSection>
         <ProjectDefaultsSettings category="project" />
         <DevelopmentProfilesProjectSettings members={group.memberProjects} />
+        <ProjectWorkerPreferencesSettings members={group.memberProjects} />
         <ProjectRuntimeSettings members={group.memberProjects} />
 
         <ProjectActionsSettings />

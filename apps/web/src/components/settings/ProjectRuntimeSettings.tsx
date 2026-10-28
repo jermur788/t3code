@@ -105,7 +105,11 @@ function RuntimeProject({ member }: { member: SidebarProjectGroupMember }) {
             <>
               <ProjectRuntimeInstructions api={api} />
               <ProjectRuntimeSources api={api} />
-              <ProjectRuntimeTasks api={api} />
+              <ProjectRuntimeTasks
+                api={api}
+                environmentId={member.environmentId}
+                projectId={member.id}
+              />
             </>
           ) : (
             <>

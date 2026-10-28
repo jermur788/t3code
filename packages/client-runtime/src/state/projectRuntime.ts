@@ -63,5 +63,17 @@ export function createProjectRuntimeEnvironmentAtoms<R, E>(
       label: "environment-command:project-runtime:readHandoff",
       tag: PROJECT_RUNTIME_RPC_METHODS.readHandoff,
     }),
+    readRouting: createEnvironmentRpcCommand(runtime, {
+      label: "environment-command:project-runtime:readRouting",
+      tag: PROJECT_RUNTIME_RPC_METHODS.readRouting,
+    }),
+    saveRouting: createEnvironmentRpcCommand(runtime, {
+      label: "environment-command:project-runtime:saveRouting",
+      tag: PROJECT_RUNTIME_RPC_METHODS.saveRouting,
+    }),
+    resolveRoute: createEnvironmentRpcCommand(runtime, {
+      label: "environment-command:project-runtime:resolveRoute",
+      tag: PROJECT_RUNTIME_RPC_METHODS.resolveRoute,
+    }),
   };
 }

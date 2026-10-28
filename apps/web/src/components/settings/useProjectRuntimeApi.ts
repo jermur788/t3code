@@ -16,6 +16,8 @@ import type {
   ProjectRuntimeTaskUpdateInput,
   ProjectRuntimeHandoffListInput,
   ProjectRuntimeHandoffReadInput,
+  ProjectRuntimeRoutingSaveInput,
+  RuntimeRouteResolutionInput,
 } from "@t3tools/contracts";
 import {
   squashAtomCommandFailure,
@@ -38,7 +40,8 @@ function result<A, E>(value: AtomCommandResult<A, E>): RuntimeResult<A> {
       typeof error === "object" &&
       error !== null &&
       "_tag" in error &&
-      error._tag === "ProjectRuntimeConflictError",
+      (error._tag === "ProjectRuntimeConflictError" ||
+        error._tag === "ProjectRuntimeRoutingConflictError"),
   };
 }
 export function useProjectRuntimeApi(target: {
@@ -59,6 +62,9 @@ export function useProjectRuntimeApi(target: {
   const updateTask = useAtomCommand(commands.updateTask, { reportFailure: false });
   const listHandoffs = useAtomCommand(commands.listHandoffs, { reportFailure: false });
   const readHandoff = useAtomCommand(commands.readHandoff, { reportFailure: false });
+  const readRouting = useAtomCommand(commands.readRouting, { reportFailure: false });
+  const saveRouting = useAtomCommand(commands.saveRouting, { reportFailure: false });
+  const resolveRoute = useAtomCommand(commands.resolveRoute, { reportFailure: false });
   const canEdit = useAtomValue(commands.setEnabled.permissionAtom(target.environmentId));
   const ready = useConnectedEnvironmentIds().includes(target.environmentId);
   return {
@@ -158,6 +164,27 @@ export function useProjectRuntimeApi(target: {
     readHandoff: async (input: ProjectRuntimeHandoffReadInput) =>
       result(
         await readHandoff({
+          environmentId: target.environmentId,
+          input: { ...input, projectId: target.projectId },
+        }),
+      ),
+    readRouting: async () =>
+      result(
+        await readRouting({
+          environmentId: target.environmentId,
+          input: { projectId: target.projectId },
+        }),
+      ),
+    saveRouting: async (input: ProjectRuntimeRoutingSaveInput) =>
+      result(
+        await saveRouting({
+          environmentId: target.environmentId,
+          input: { ...input, projectId: target.projectId },
+        }),
+      ),
+    resolveRoute: async (input: Omit<RuntimeRouteResolutionInput, "projectId"> = {}) =>
+      result(
+        await resolveRoute({
           environmentId: target.environmentId,
           input: { ...input, projectId: target.projectId },
         }),

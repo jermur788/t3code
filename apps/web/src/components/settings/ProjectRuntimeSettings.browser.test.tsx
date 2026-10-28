@@ -8,6 +8,7 @@ import {
   ProjectRuntimeHandoffId,
   ProviderInstanceId,
   ThreadId,
+  type RuntimeRouteResolution,
   type ProjectRuntimeTask,
   type ProjectRuntimeSource,
   type ProjectRuntimeHandoff,
@@ -22,6 +23,46 @@ import type { ProjectRuntimeApi, RuntimeResult } from "./useProjectRuntimeApi";
 const mock = vi.hoisted(() => ({ useApi: vi.fn() }));
 vi.mock("./useProjectRuntimeApi", () => ({ useProjectRuntimeApi: mock.useApi }));
 vi.mock("./SettingsScopeSentence", () => ({ SettingsScopeSentence: () => null }));
+vi.mock("../chat/ProviderModelPicker", () => ({
+  ProviderModelPicker: (props: { triggerAriaLabel?: string; model: string }) => (
+    <button type="button" aria-label={props.triggerAriaLabel}>
+      {props.model}
+    </button>
+  ),
+}));
+vi.mock("./useWorkerRoutingCatalog", () => ({
+  useWorkerRoutingCatalog: () => ({
+    entries: [
+      {
+        instanceId: "codex",
+        driverKind: "codex",
+        displayName: "Codex",
+        enabled: true,
+        installed: true,
+        status: "ready",
+        isDefault: true,
+        isAvailable: true,
+        snapshot: {
+          instanceId: "codex",
+          driver: "codex",
+          enabled: true,
+          installed: true,
+          status: "ready",
+          auth: { status: "authenticated" },
+          version: null,
+          checkedAt: "2026-10-23T12:00:00.000Z",
+          models: [{ slug: "gpt-6-astra", name: "GPT-6 Astra", isCustom: false }],
+          slashCommands: [],
+          skills: [],
+        },
+        models: [{ slug: "gpt-6-astra", name: "GPT-6 Astra", isCustom: false }],
+      },
+    ],
+    modelOptionsByInstance: new Map([
+      ["codex", [{ slug: "gpt-6-astra", name: "GPT-6 Astra", isCustom: false }]],
+    ]),
+  }),
+}));
 import { ProjectRuntimeSettings } from "./ProjectRuntimeSettings";
 import { SettingsPageContainer } from "./settingsLayout";
 
@@ -157,6 +198,65 @@ function setup({ enabled = true, canEdit = true }: { enabled?: boolean; canEdit?
     }),
     listHandoffs: vi.fn(async () => ok({ handoffs: [...project.handoffs], nextCursor: null })),
     readHandoff: vi.fn(async () => ok(project.handoffs[0]!)),
+    readRouting: vi.fn(async () => ok(null)),
+    saveRouting: vi.fn(async (input) =>
+      ok({
+        projectId: a.id,
+        routing: input.routing,
+        revision: 1,
+        createdAt: time,
+        updatedAt: time,
+      }),
+    ),
+    resolveRoute: vi.fn(async (input?: { taskId?: string }) => {
+      const saved = input?.taskId === undefined ? undefined : project.tasks[0];
+      const route = saved?.routing ?? undefined;
+      if (saved !== undefined && route != null) {
+        return ok({
+          projectId: a.id,
+          taskId: saved.taskId,
+          role: route.role,
+          status: "resolved" as const,
+          source: "task" as const,
+          selected: {
+            source: "task" as const,
+            candidateIndex: 0,
+            candidate: { providerInstanceId: "codex", model: "gpt-6-astra" },
+            providerInstanceId: "codex",
+            driverKind: "codex",
+            model: "gpt-6-astra",
+            isolation: "shared" as const,
+            eligibility: "eligible-at-resolution" as const,
+          },
+          inheritedFrom: null,
+          rejected: [],
+          failure: null,
+          revisions: {
+            task: saved.revision + 10,
+            projectRouting: 0,
+            profile: null,
+            assignment: null,
+          },
+        } as unknown as RuntimeRouteResolution);
+      }
+      return ok({
+        projectId: a.id,
+        taskId: saved?.taskId ?? null,
+        role: route?.role ?? ("implementation" as const),
+        status: "inherited" as const,
+        source: "inherit" as const,
+        selected: null,
+        inheritedFrom: null,
+        rejected: [],
+        failure: null,
+        revisions: {
+          task: saved?.revision ?? null,
+          projectRouting: 0,
+          profile: null,
+          assignment: null,
+        },
+      } as unknown as RuntimeRouteResolution);
+    }),
   };
   mock.useApi.mockImplementation(() => api);
   return { api, project, other, source, task };
@@ -865,4 +965,64 @@ it("waits for the concrete environment connection before loading Runtime", async
   mock.useApi.mockImplementation(() => ({ ...t.api, ready: true }));
   await screen.rerender(<ProjectRuntimeSettings members={[{ ...a }]} />);
   await expect.element(screen.getByText("Runtime enabled", { exact: true })).toBeVisible();
+});
+
+it("sets a task worker role, saves an ordered candidate, shows the task layer, then clears it", async () => {
+  const t = setup();
+  t.project.tasks = [t.task];
+  await using screen = await render(<ProjectRuntimeSettings members={[a]} />);
+  await expect.element(screen.getByText("Review work", { exact: true })).toBeVisible();
+  await userEvent.click(screen.getByRole("button", { name: "Edit task", exact: true }));
+
+  await userEvent.click(screen.getByRole("combobox", { name: "Task worker role", exact: true }));
+  await userEvent.click(screen.getByRole("option", { name: "Review", exact: true }));
+  await userEvent.click(
+    screen.getByRole("button", { name: "Add alternative worker for Review", exact: true }),
+  );
+  await userEvent.click(screen.getByRole("combobox", { name: "Fallback for Review", exact: true }));
+  await userEvent.click(
+    screen.getByRole("option", { name: "Fail instead of using another worker", exact: true }),
+  );
+  await userEvent.click(screen.getByRole("button", { name: "Save task", exact: true }));
+
+  expect(t.api.updateTask).toHaveBeenLastCalledWith(
+    expect.objectContaining({
+      taskId: t.task.taskId,
+      expectedRevision: 1,
+      routing: {
+        role: "review",
+        candidates: [{ providerInstanceId: "codex", model: "gpt-6-astra" }],
+        fallback: "fail",
+      },
+    }),
+  );
+  await expect
+    .element(screen.getByText("Worker preference: Review · 1 preferred worker", { exact: true }))
+    .toBeVisible();
+
+  await userEvent.click(screen.getByRole("button", { name: "Edit task", exact: true }));
+  await expect
+    .element(screen.getByText("Effective worker choice: Task setting", { exact: true }))
+    .toBeVisible();
+  await expect
+    .element(screen.getByText("Resolved from task revision 12", { exact: false }))
+    .toBeVisible();
+  await userEvent.click(
+    screen.getByRole("button", { name: "Clear task worker preference", exact: true }),
+  );
+  await expect
+    .element(
+      screen.getByText("Unsaved worker changes are not reflected here until you save the task.", {
+        exact: true,
+      }),
+    )
+    .toBeVisible();
+  await userEvent.click(screen.getByRole("button", { name: "Save task", exact: true }));
+
+  expect(t.api.updateTask).toHaveBeenLastCalledWith(
+    expect.objectContaining({ taskId: t.task.taskId, routing: null }),
+  );
+  await expect
+    .element(screen.getByText("Worker preference: Project or Development Profile", { exact: true }))
+    .toBeVisible();
 });

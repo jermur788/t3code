@@ -4,7 +4,9 @@ import type {
   DevelopmentProfileId,
   DevelopmentProfileProject,
   EnvironmentId,
+  RuntimeProfileRoutingPolicy,
 } from "@t3tools/contracts";
+import * as Equal from "effect/Equal";
 import { useEffect, useState } from "react";
 
 import { useStableCallback } from "../../hooks/useStableCallback";
@@ -19,6 +21,8 @@ import {
   useDevelopmentProfilesApi,
   type DevelopmentProfilesApi,
 } from "./useDevelopmentProfilesApi";
+import { useWorkerRoutingCatalog } from "./useWorkerRoutingCatalog";
+import { WorkerRoutingEditor } from "./WorkerRoutingEditor";
 
 export function DevelopmentProfilesSettings() {
   const { environment } = useSettingsScope();
@@ -49,7 +53,11 @@ interface ProfileDraft {
   readonly baseline: DevelopmentProfile;
   readonly name: string;
   readonly instructions: string;
+  readonly routing: RuntimeProfileRoutingPolicy;
 }
+
+const EMPTY_PROFILE_ROUTING: RuntimeProfileRoutingPolicy = { roleRoutes: [] };
+const PROFILE_FALLBACK_OPTIONS = ["inherit", "fail"] as const;
 
 function DevelopmentProfilesPanel({
   environmentId,
@@ -242,6 +250,7 @@ function DevelopmentProfilesPanel({
               {createOpen && api.canEdit ? (
                 <DevelopmentProfileCreateForm
                   api={api}
+                  environmentId={environmentId}
                   onCancel={() => setCreateOpen(false)}
                   onCreated={(profile) => {
                     replaceProfile(profile);
@@ -254,6 +263,7 @@ function DevelopmentProfilesPanel({
                 <DevelopmentProfileEditor
                   key={selectedProfile.profileId}
                   api={api}
+                  environmentId={environmentId}
                   canEdit={api.canEdit}
                   profile={selectedProfile}
                   usage={selectedUsage}
@@ -278,21 +288,25 @@ function DevelopmentProfilesPanel({
 
 function DevelopmentProfileCreateForm({
   api,
+  environmentId,
   onCancel,
   onCreated,
 }: {
   api: DevelopmentProfilesApi;
+  environmentId: EnvironmentId;
   onCancel: () => void;
   onCreated: (profile: DevelopmentProfile) => void;
 }) {
   const [name, setName] = useState("");
   const [instructions, setInstructions] = useState("");
+  const [routing, setRouting] = useState<RuntimeProfileRoutingPolicy>(EMPTY_PROFILE_ROUTING);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const catalog = useWorkerRoutingCatalog({ environmentId, projectId: null });
 
   const create = async () => {
     setBusy(true);
-    const created = await api.create({ name: name.trim(), instructions });
+    const created = await api.create({ name: name.trim(), instructions, routing });
     setBusy(false);
     if (!created.ok) {
       setError(created.message);
@@ -325,6 +339,26 @@ function DevelopmentProfileCreateForm({
           disabled={busy}
         />
       </label>
+      <details className="rounded-lg border border-border p-3">
+        <summary className="cursor-pointer text-sm font-medium">
+          Worker preferences (optional)
+        </summary>
+        <div className="mt-3 space-y-3">
+          <p className="text-xs text-muted-foreground">
+            Prefer providers or models for a kind of work. Roles without a preference use normal T3
+            behaviour.
+          </p>
+          <WorkerRoutingEditor
+            policy={routing}
+            fallbackOptions={PROFILE_FALLBACK_OPTIONS}
+            catalog={catalog}
+            environmentId={environmentId}
+            disabled={busy}
+            idPrefix="new-profile-worker"
+            onChange={setRouting}
+          />
+        </div>
+      </details>
       {error !== null ? (
         <Alert variant="error">
           <AlertDescription>{error}</AlertDescription>
@@ -344,6 +378,7 @@ function DevelopmentProfileCreateForm({
 
 function DevelopmentProfileEditor({
   api,
+  environmentId,
   canEdit,
   profile,
   usage,
@@ -352,6 +387,7 @@ function DevelopmentProfileEditor({
   onDeleted,
 }: {
   api: DevelopmentProfilesApi;
+  environmentId: EnvironmentId;
   canEdit: boolean;
   profile: DevelopmentProfile;
   usage: ProfileUsage | null;
@@ -363,29 +399,34 @@ function DevelopmentProfileEditor({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [conflict, setConflict] = useState(false);
+  const catalog = useWorkerRoutingCatalog({ environmentId, projectId: null });
 
   const displayed = draft ?? {
     baseline: profile,
     name: profile.name,
     instructions: profile.instructions,
+    routing: profile.routing,
   };
   const baseline = displayed.baseline;
   const dirty =
     draft !== null &&
     (draft.name.trim() !== draft.baseline.name ||
-      draft.instructions !== draft.baseline.instructions);
+      draft.instructions !== draft.baseline.instructions ||
+      !Equal.equals(draft.routing, draft.baseline.routing));
 
-  const editDraft = (change: Partial<Pick<ProfileDraft, "name" | "instructions">>) => {
+  const editDraft = (change: Partial<Pick<ProfileDraft, "name" | "instructions" | "routing">>) => {
     setDraft((current) => {
       const base = current ?? {
         baseline: profile,
         name: profile.name,
         instructions: profile.instructions,
+        routing: profile.routing,
       };
       const next = { ...base, ...change };
       return !conflict &&
         next.name === next.baseline.name &&
-        next.instructions === next.baseline.instructions
+        next.instructions === next.baseline.instructions &&
+        Equal.equals(next.routing, next.baseline.routing)
         ? null
         : next;
     });
@@ -403,6 +444,7 @@ function DevelopmentProfileEditor({
       profileId: baseline.profileId,
       name: displayed.name.trim(),
       instructions: displayed.instructions,
+      routing: displayed.routing,
       expectedRevision: baseline.revision,
     });
     setBusy(false);
@@ -499,6 +541,31 @@ function DevelopmentProfileEditor({
         {DEVELOPMENT_PROFILE_BOUNDS.instructionsMaxLength.toLocaleString()} characters · Saved only
         when you choose Save profile
       </p>
+      <section
+        aria-label="Profile worker preferences"
+        className="space-y-3 rounded-lg border border-border p-3"
+      >
+        <div>
+          <h4 className="text-sm font-medium">Worker preferences</h4>
+          <p className="text-xs text-muted-foreground">
+            Applied when neither the task nor the project chooses a worker for that role. Any role
+            without a preference uses normal T3 behaviour.
+          </p>
+        </div>
+        <WorkerRoutingEditor
+          policy={displayed.routing}
+          fallbackOptions={PROFILE_FALLBACK_OPTIONS}
+          catalog={catalog}
+          environmentId={environmentId}
+          disabled={!canEdit || busy}
+          idPrefix={`profile-worker:${baseline.profileId}`}
+          onChange={(routing) => editDraft({ routing })}
+        />
+        <p className="text-xs text-muted-foreground">
+          Saving worker preferences also checks the profile revision, so instructions and worker
+          choices cannot silently overwrite a newer edit.
+        </p>
+      </section>
       {error !== null ? (
         <Alert variant="error">
           <AlertDescription>{error}</AlertDescription>

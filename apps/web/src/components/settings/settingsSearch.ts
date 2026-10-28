@@ -1106,7 +1106,9 @@ export const SETTINGS_SEARCH_ITEMS = [
     targetId: "development-profiles",
     title: "Development Profiles",
     to: "/settings/development-profiles",
-    searchTerms: ["instructions reusable profile guidance environment shared working agreement"],
+    searchTerms: [
+      "instructions reusable profile guidance environment shared working agreement worker role provider model preference routing",
+    ],
   },
   {
     id: "project-development-profile",
@@ -1115,6 +1117,16 @@ export const SETTINGS_SEARCH_ITEMS = [
     to: "/settings/projects",
     scope: "project",
     searchTerms: ["assign inherit unassign instructions profile project none"],
+  },
+  {
+    id: "project-worker-preferences",
+    targetId: "project-worker-preferences",
+    title: "Worker preferences",
+    to: "/settings/projects",
+    scope: "project",
+    searchTerms: [
+      "worker role provider model preferred alternative routing task project development profile effective unavailable",
+    ],
   },
   {
     id: "archive",

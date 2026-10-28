@@ -4,6 +4,7 @@ import { runtimeErrorMessage } from "./ProjectRuntimeErrors";
 it("shows actionable Runtime errors without exposing defect data", () => {
   for (const [_tag, word] of [
     ["ProjectRuntimeConflictError", "draft is preserved"],
+    ["ProjectRuntimeRoutingConflictError", "worker settings changed"],
     ["ProjectRuntimeDisabledError", "disabled"],
     ["ProjectRuntimeNotFoundError", "no longer available"],
     ["ProjectRuntimeSourcePathError", "workspace-relative"],

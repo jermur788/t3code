@@ -26,11 +26,35 @@ already underway. Clearing guidance affects later turns; an existing conversatio
 retain an earlier snapshot in its prompt or provider history, so start a new thread
 when you need a clean slate.
 
+## Worker preferences
+
+A Development Profile can also prefer providers and models for kinds of work:
+implementation, research, review, design, test, and general. Add a role, choose a
+preferred worker, then add ordered alternatives. Each role can say whether to try
+the next lower setting, use normal T3 behaviour, or fail rather than use another
+worker. Profiles are the last preference layer, so they can only use normal T3
+behaviour or fail.
+
+Worker preferences apply in this order: task setting, project setting, Development
+Profile setting, then normal T3 behaviour. Project settings can override the
+profile for specific roles and can reset the whole project override back to the
+profile. Runtime tasks can set their own role and preferred workers, or clear that
+preference so project and profile settings apply again. The role belongs to the
+task being performed; it is not a permanent AI persona.
+
+The project settings show the effective worker choice for every role and why
+higher-priority workers were skipped. This is a preference evaluated before work
+starts, not a reservation. If a saved provider or model is currently unavailable,
+disabled, or uninstalled, it stays visible with a warning; T3 does not silently
+remove or rewrite it. T3 checks availability and permissions again when work
+actually starts.
+
 Edits check the revision you started from. If another client saves first, your
 draft remains visible and the stale save is refused. Reload the latest record
-deliberately before reapplying your changes. Assignment changes also check their
-revision. A profile can be deleted only after every project using it has been
-reassigned or set to **None**.
+deliberately before reapplying your changes. Instructions and worker preferences
+share the profile revision, and project and task worker settings use their own
+existing revisions. A profile can be deleted only after every project using it has
+been reassigned or set to **None**.
 
 Profiles and assignments persist on the environment server across restarts,
 conversation deletion, and worktree changes. Moving a project's folder preserves

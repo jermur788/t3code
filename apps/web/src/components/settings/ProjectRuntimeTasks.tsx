@@ -1,14 +1,23 @@
-import { useRef, useState } from "react";
+import * as Equal from "effect/Equal";
+import { useEffect, useRef, useState } from "react";
+import { useStableCallback } from "../../hooks/useStableCallback";
 import {
   PROJECT_RUNTIME_BOUNDS as B,
+  type EnvironmentId,
+  type ProjectId,
   type ProjectRuntimeBlockerClassification,
   type ProjectRuntimeEvidenceResult,
   type ProjectRuntimeTask,
   type ProjectRuntimeTaskBase,
   type ProjectRuntimeTaskStatus,
   type ProjectRuntimeVerificationMilestone,
+  type RuntimeRoleRoute,
+  type RuntimeRouteResolution,
+  type RuntimeRoutingFallback,
+  type RuntimeWorkerRole,
 } from "@t3tools/contracts";
 import { Button } from "../ui/button";
+import { Select, SelectItem, SelectPopup, SelectTrigger, SelectValue } from "../ui/select";
 import {
   RuntimeText,
   RuntimeSelect,
@@ -17,9 +26,14 @@ import {
   RuntimeLoadError,
   useRuntimeLoad,
 } from "./ProjectRuntimeFields";
-import type { ProjectRuntimeApi } from "./useProjectRuntimeApi";
+import type { ProjectRuntimeApi, RuntimeResult } from "./useProjectRuntimeApi";
 import { ProjectRuntimeHandoffs } from "./ProjectRuntimeHandoffs";
 import { useSettingsSearchTarget } from "./settingsLayout";
+import { useWorkerRoutingCatalog } from "./useWorkerRoutingCatalog";
+import { WorkerRoleRouteEditor } from "./WorkerRoutingEditor";
+import type { ProviderInstanceEntry } from "../../providerInstances";
+import { ROUTING_EVALUATION_CAVEAT, WorkerRouteResolutionView } from "./WorkerRouteResolution";
+import { WORKER_ROLE_ORDER, workerRoleLabel } from "./workerRouting.logic";
 import {
   BLOCKER_CLASSIFICATION_VALUES,
   EVIDENCE_RESULT_VALUES,
@@ -81,7 +95,22 @@ function recordedBase(fields: {
   return Object.keys(base).length > 0 ? base : null;
 }
 
-export function ProjectRuntimeTasks({ api }: { api: ProjectRuntimeApi }) {
+const TASK_FALLBACK_OPTIONS: ReadonlyArray<RuntimeRoutingFallback> = [
+  "continue",
+  "inherit",
+  "fail",
+];
+const NO_TASK_ROLE = "__project_or_profile__";
+
+export function ProjectRuntimeTasks({
+  api,
+  environmentId,
+  projectId,
+}: {
+  api: ProjectRuntimeApi;
+  environmentId: EnvironmentId;
+  projectId: ProjectId;
+}) {
   const [cursor, setCursor] = useState(0);
   const targetRef = useSettingsSearchTarget<HTMLElement>("project-runtime-tasks");
   return (
@@ -97,16 +126,27 @@ export function ProjectRuntimeTasks({ api }: { api: ProjectRuntimeApi }) {
         Durable project work, independent of threads and delegated executions. A status change does
         not establish verification or acceptance.
       </p>
-      <TaskPage key={cursor} api={api} cursor={cursor} setCursor={setCursor} />
+      <TaskPage
+        key={cursor}
+        api={api}
+        environmentId={environmentId}
+        projectId={projectId}
+        cursor={cursor}
+        setCursor={setCursor}
+      />
     </section>
   );
 }
 function TaskPage({
   api,
+  environmentId,
+  projectId,
   cursor,
   setCursor,
 }: {
   api: ProjectRuntimeApi;
+  environmentId: EnvironmentId;
+  projectId: ProjectId;
   cursor: number;
   setCursor: (cursor: number) => void;
 }) {
@@ -142,6 +182,12 @@ function TaskPage({
                   </div>
                   <p className="break-words text-xs text-muted-foreground">
                     Owner {task.owner} · Verification {task.verification.milestone}
+                  </p>
+                  <p className="break-words text-xs text-muted-foreground">
+                    Worker preference:{" "}
+                    {task.routing == null
+                      ? "Project or Development Profile"
+                      : `${workerRoleLabel(task.routing.role)} · ${task.routing.candidates.length} preferred worker${task.routing.candidates.length === 1 ? "" : "s"}`}
                   </p>
                   {task.blocker ? (
                     <p className="line-clamp-2 break-words text-xs text-muted-foreground">
@@ -187,6 +233,8 @@ function TaskPage({
           key={editing === "new" ? "new" : `${editing.taskId}:${editing.revision}`}
           saved={editing === "new" ? null : editing}
           api={api}
+          environmentId={environmentId}
+          projectId={projectId}
           close={() => setEditing(null)}
           savedTask={() => {
             setEditing(null);
@@ -209,12 +257,16 @@ function TaskPage({
 function TaskEditor({
   saved,
   api,
+  environmentId,
+  projectId,
   close,
   savedTask,
   reload,
 }: {
   saved: ProjectRuntimeTask | null;
   api: ProjectRuntimeApi;
+  environmentId: EnvironmentId;
+  projectId: ProjectId;
   close: () => void;
   savedTask: () => void;
   reload: () => Promise<void>;
@@ -225,6 +277,7 @@ function TaskEditor({
   const [scope, setScope] = useState(saved?.scope ?? "");
   const [outOfScope, setOutOfScope] = useState(saved?.outOfScope ?? "");
   const [owner, setOwner] = useState(saved?.owner ?? "");
+  const [routing, setRouting] = useState<RuntimeRoleRoute | null>(saved?.routing ?? null);
   const [verificationPlan, setVerificationPlan] = useState(saved?.verificationPlan ?? "");
   const [next, setNext] = useState(saved?.nextAction ?? "");
   const [result, setResult] = useState(saved?.result ?? "");
@@ -336,12 +389,14 @@ function TaskEditor({
           result: nullableText(result),
           nextAction: nullableText(next),
           base: base ?? null,
+          routing,
           ...(owner.trim() === "" ? {} : { owner: owner.trim() }),
         })
       : await api.createTask({
           ...shared,
           acceptanceCriteria: [...(criteriaMapping?.criteria ?? [])],
           ...(blocker === null ? {} : { blocker }),
+          ...(routing === null ? {} : { routing }),
           ...(nullableText(objective) === null ? {} : { objective: objective.trim() }),
           ...(nullableText(outOfScope) === null ? {} : { outOfScope: outOfScope.trim() }),
           ...(nullableText(verificationPlan) === null
@@ -388,6 +443,14 @@ function TaskEditor({
             value={owner}
             onChange={setOwner}
             maxLength={B.actorMaxLength}
+          />
+          <TaskWorkerPreferenceFields
+            api={api}
+            saved={saved}
+            routing={routing}
+            onChange={setRouting}
+            environmentId={environmentId}
+            projectId={projectId}
           />
           <RuntimeText
             label="Scope"
@@ -614,6 +677,182 @@ function TaskEditor({
           </Button>
         )}
       </div>
+    </div>
+  );
+}
+
+function TaskWorkerPreferenceFields({
+  api,
+  saved,
+  routing,
+  onChange,
+  environmentId,
+  projectId,
+}: {
+  api: ProjectRuntimeApi;
+  saved: ProjectRuntimeTask | null;
+  routing: RuntimeRoleRoute | null;
+  onChange: (routing: RuntimeRoleRoute | null) => void;
+  environmentId: EnvironmentId;
+  projectId: ProjectId;
+}) {
+  const catalog = useWorkerRoutingCatalog({ environmentId, projectId });
+  const savedRouting = saved?.routing ?? null;
+  const dirty = !Equal.equals(routing, savedRouting);
+
+  return (
+    <section
+      aria-label="Task worker preference"
+      className="space-y-3 rounded-lg border border-border p-3"
+    >
+      <div>
+        <h5 className="text-sm font-medium">Worker preference</h5>
+        <p className="text-xs text-muted-foreground">
+          The worker role belongs to this task, not to a permanent AI persona. Choose which kind of
+          work this task is, then optionally prefer providers or models for it.
+        </p>
+      </div>
+
+      <label className="block space-y-1">
+        <span className="text-xs font-medium">Task worker role</span>
+        <Select
+          value={routing?.role ?? NO_TASK_ROLE}
+          onValueChange={(value) => {
+            if (value === null) return;
+            if (value === NO_TASK_ROLE) {
+              onChange(null);
+              return;
+            }
+            const role = value as RuntimeWorkerRole;
+            onChange(
+              routing === null
+                ? { role, candidates: [], fallback: "continue" }
+                : { ...routing, role },
+            );
+          }}
+        >
+          <SelectTrigger size="sm" aria-label="Task worker role">
+            <SelectValue>
+              {(value: string | null) =>
+                value === null || value === NO_TASK_ROLE
+                  ? "Use project or Development Profile setting"
+                  : workerRoleLabel(value as RuntimeWorkerRole)
+              }
+            </SelectValue>
+          </SelectTrigger>
+          <SelectPopup>
+            <SelectItem value={NO_TASK_ROLE}>Use project or Development Profile setting</SelectItem>
+            {WORKER_ROLE_ORDER.map((role) => (
+              <SelectItem key={role} value={role}>
+                {workerRoleLabel(role)}
+              </SelectItem>
+            ))}
+          </SelectPopup>
+        </Select>
+      </label>
+
+      {routing === null ? (
+        <p className="text-xs text-muted-foreground">
+          This task does not set a worker role or preferred worker. Project and Development Profile
+          settings apply; Implementation is used when no role is specified.
+        </p>
+      ) : (
+        <>
+          <WorkerRoleRouteEditor
+            role={routing.role}
+            candidates={routing.candidates}
+            fallback={routing.fallback}
+            fallbackOptions={TASK_FALLBACK_OPTIONS}
+            catalog={catalog}
+            environmentId={environmentId}
+            onChange={(next) => onChange({ ...routing, ...next })}
+          />
+          <Button
+            size="xs"
+            variant="outline"
+            onClick={() => onChange(null)}
+            aria-label="Clear task worker preference"
+          >
+            Clear task worker preference
+          </Button>
+        </>
+      )}
+
+      {saved === null ? (
+        <p className="text-xs text-muted-foreground">
+          Save the task to check which worker setting currently takes effect.
+        </p>
+      ) : (
+        <TaskWorkerEffectiveChoice
+          api={api}
+          saved={saved}
+          entries={catalog.entries}
+          dirty={dirty}
+        />
+      )}
+    </section>
+  );
+}
+
+function TaskWorkerEffectiveChoice({
+  api,
+  saved,
+  entries,
+  dirty,
+}: {
+  api: ProjectRuntimeApi;
+  saved: ProjectRuntimeTask;
+  entries: ReadonlyArray<ProviderInstanceEntry>;
+  dirty: boolean;
+}) {
+  const [result, setResult] = useState<RuntimeResult<RuntimeRouteResolution> | null>(null);
+  const load = useStableCallback(async (isActive: () => boolean = () => true) => {
+    const next = await api.resolveRoute({ taskId: saved.taskId });
+    if (isActive()) setResult(next);
+  });
+
+  // oxlint-disable-next-line t3code/react-effect-budget -- Resolves the saved task's effective worker over RPC and cancels stale results when the task revision changes.
+  useEffect(() => {
+    let active = true;
+    void load(() => active);
+    return () => {
+      active = false;
+    };
+  }, [load]);
+
+  return (
+    <div className="space-y-2">
+      <p className="text-xs font-medium">Effective worker choice for the saved task</p>
+      {dirty ? (
+        <p className="text-xs text-warning-foreground" role="status">
+          Unsaved worker changes are not reflected here until you save the task.
+        </p>
+      ) : null}
+      {result === null ? (
+        <p className="text-sm text-muted-foreground" role="status">
+          Checking effective worker choice…
+        </p>
+      ) : !result.ok ? (
+        <div className="space-y-2">
+          <RuntimeError message={result.message} />
+          <Button size="sm" variant="outline" onClick={() => void load()}>
+            Retry effective worker choice
+          </Button>
+        </div>
+      ) : (
+        <>
+          <WorkerRouteResolutionView
+            resolution={result.value}
+            entries={entries}
+            roleLabel={workerRoleLabel(result.value.role)}
+            onRefresh={() => void load()}
+          />
+          <p className="break-words text-xs text-muted-foreground">
+            {ROUTING_EVALUATION_CAVEAT} Resolved from task revision{" "}
+            {result.value.revisions.task ?? saved.revision}.
+          </p>
+        </>
+      )}
     </div>
   );
 }

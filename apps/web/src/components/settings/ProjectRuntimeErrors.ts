@@ -22,6 +22,8 @@ export function runtimeErrorMessage(error: unknown): string {
   switch (tag) {
     case "ProjectRuntimeConflictError":
       return "This record changed since you loaded it. Your draft is preserved. Reload the current record before saving again.";
+    case "ProjectRuntimeRoutingConflictError":
+      return "These worker settings changed since you loaded them. Your draft is preserved. Reload the latest worker settings before saving again.";
     case "ProjectRuntimeDisabledError":
       return "Runtime is disabled. Enable it, then reload.";
     case "ProjectRuntimeInvalidTransitionError":

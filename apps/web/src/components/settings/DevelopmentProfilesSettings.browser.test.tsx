@@ -22,6 +22,47 @@ vi.mock("./settingsLayout", () => ({
       {children}
     </section>
   ),
+  SETTINGS_PICKER_TRIGGER_CLASSNAME: "",
+}));
+vi.mock("../chat/ProviderModelPicker", () => ({
+  ProviderModelPicker: (props: { triggerAriaLabel?: string; model: string }) => (
+    <button type="button" aria-label={props.triggerAriaLabel}>
+      {props.model}
+    </button>
+  ),
+}));
+vi.mock("./useWorkerRoutingCatalog", () => ({
+  useWorkerRoutingCatalog: () => ({
+    entries: [
+      {
+        instanceId: "codex",
+        driverKind: "codex",
+        displayName: "Codex",
+        enabled: true,
+        installed: true,
+        status: "ready",
+        isDefault: true,
+        isAvailable: true,
+        snapshot: {
+          instanceId: "codex",
+          driver: "codex",
+          enabled: true,
+          installed: true,
+          status: "ready",
+          auth: { status: "authenticated" },
+          version: null,
+          checkedAt: "2026-10-24T12:00:00.000Z",
+          models: [{ slug: "gpt-6-astra", name: "GPT-6 Astra", isCustom: false }],
+          slashCommands: [],
+          skills: [],
+        },
+        models: [{ slug: "gpt-6-astra", name: "GPT-6 Astra", isCustom: false }],
+      },
+    ],
+    modelOptionsByInstance: new Map([
+      ["codex", [{ slug: "gpt-6-astra", name: "GPT-6 Astra", isCustom: false }]],
+    ]),
+  }),
 }));
 
 import { DevelopmentProfilesSettings } from "./DevelopmentProfilesSettings";
@@ -32,6 +73,7 @@ interface Profile {
   profileId: string;
   name: string;
   instructions: string;
+  routing: { roleRoutes: ReadonlyArray<unknown> };
   revision: number;
   createdAt: string;
   updatedAt: string;
@@ -66,6 +108,7 @@ const profile = (overrides: Partial<Profile> = {}): Profile => ({
   profileId: "profile-1",
   name: "Release guidance",
   instructions: "Run focused checks before release.",
+  routing: { roleRoutes: [] },
   revision: 1,
   createdAt: time,
   updatedAt: time,
@@ -116,26 +159,30 @@ function setup(seed: { profile: Profile; projects?: Project[] }[] = []) {
         ? ok({ ...found })
         : { ok: false as const, message: "Missing", conflict: false, inUse: false };
     }),
-    create: vi.fn(async (input: { name: string; instructions: string }) => {
-      const created: Profile = {
-        profileId: `profile-${state.nextId++}`,
-        name: input.name,
-        instructions: input.instructions,
-        revision: 1,
-        createdAt: time,
-        updatedAt: time,
-        createdBy: "user:maintainer",
-        updatedBy: "user:maintainer",
-      };
-      state.profiles.push(created);
-      state.projects[created.profileId] = [];
-      return ok({ ...created });
-    }),
+    create: vi.fn(
+      async (input: { name: string; instructions: string; routing: Profile["routing"] }) => {
+        const created: Profile = {
+          profileId: `profile-${state.nextId++}`,
+          name: input.name,
+          instructions: input.instructions,
+          routing: input.routing,
+          revision: 1,
+          createdAt: time,
+          updatedAt: time,
+          createdBy: "user:maintainer",
+          updatedBy: "user:maintainer",
+        };
+        state.profiles.push(created);
+        state.projects[created.profileId] = [];
+        return ok({ ...created });
+      },
+    ),
     update: vi.fn(
       async (input: {
         profileId: string;
         name: string;
         instructions: string;
+        routing: Profile["routing"];
         expectedRevision: number;
       }) => {
         const current = findProfile(input.profileId);
@@ -148,6 +195,7 @@ function setup(seed: { profile: Profile; projects?: Project[] }[] = []) {
             ...current,
             name: "Server renamed profile",
             instructions: "Server instructions",
+            routing: current.routing,
             revision: current.revision + 1,
           };
           state.profiles = state.profiles.map((candidate) =>
@@ -160,6 +208,7 @@ function setup(seed: { profile: Profile; projects?: Project[] }[] = []) {
           ...current,
           name: input.name,
           instructions: input.instructions,
+          routing: input.routing,
           revision: current.revision + 1,
           updatedBy: "user:test",
         };
@@ -226,6 +275,7 @@ it("creates and edits a profile, then reloads it after remounting", async () => 
     expect(api.create).toHaveBeenCalledWith({
       name: "Release guidance",
       instructions: "Run focused checks before release.",
+      routing: { roleRoutes: [] },
     });
 
     const instructions = screen.getByRole("textbox", {
@@ -474,4 +524,51 @@ it("recovers from a load failure and refreshes usage without discarding a dirty 
     .element(screen.getByText("Assigned to Storefront, Admin", { exact: true }))
     .toBeVisible();
   await expect.element(instructions).toHaveValue("Run focused checks before release. drafted");
+});
+
+it("saves role worker preferences and keeps an unavailable saved worker visible", async () => {
+  const { api } = setup([
+    {
+      profile: profile({
+        routing: {
+          roleRoutes: [
+            {
+              role: "review",
+              candidates: [{ providerInstanceId: "removed", model: "old-model" }],
+              fallback: "inherit",
+            },
+          ],
+        },
+      }),
+    },
+  ]);
+  await using screen = await render(panel());
+  await expect.element(screen.getByText("Currently unavailable", { exact: true })).toBeVisible();
+  await expect
+    .element(screen.getByText("Provider is no longer available.", { exact: false }))
+    .toBeVisible();
+
+  await userEvent.click(
+    screen.getByRole("combobox", {
+      name: "Add a worker role to profile-worker:profile-1",
+      exact: true,
+    }),
+  );
+  await userEvent.click(screen.getByRole("option", { name: "Implementation", exact: true }));
+  await userEvent.click(screen.getByRole("button", { name: "Save profile", exact: true }));
+
+  const update = api.update.mock.calls.at(-1)?.[0];
+  if (update === undefined) throw new Error("Expected the profile update call.");
+  expect(update).toMatchObject({ expectedRevision: 1 });
+  expect(update.routing.roleRoutes).toHaveLength(2);
+  expect(update.routing.roleRoutes[0]).toEqual({
+    role: "review",
+    candidates: [{ providerInstanceId: "removed", model: "old-model" }],
+    fallback: "inherit",
+  });
+  expect(update.routing.roleRoutes[1]).toEqual({
+    role: "implementation",
+    candidates: [{ providerInstanceId: "codex", model: "gpt-6-astra" }],
+    fallback: "inherit",
+  });
 });
