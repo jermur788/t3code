@@ -34,6 +34,7 @@ import {
 } from "lucide-react";
 import { useLocation, useNavigate } from "@tanstack/react-router";
 
+import { useForkWorkspaceMode } from "../../forkWorkspaceMode";
 import { cn } from "../../lib/utils";
 import { Button } from "../ui/button";
 import { Kbd } from "../ui/kbd";
@@ -108,13 +109,11 @@ const SETTINGS_SECTION_ICONS: Readonly<
   "/settings/archived": ArchiveIcon,
 };
 
-// Detail pages without a nav entry highlight the page that links to them.
 const SETTINGS_DETAIL_PAGE_PARENTS: Readonly<Record<string, SettingsPath>> = {
   "/settings/diagnostics": "/settings/maintenance",
   "/settings/open-source-licenses": "/settings/about",
 };
 
-// Attached only to the highlighted result, so it runs whenever the highlight lands on a row.
 function scrollResultIntoView(row: HTMLElement | null) {
   row?.scrollIntoView({ block: "nearest" });
 }
@@ -132,15 +131,25 @@ export function SettingsSidebarNav({ pathname }: { pathname: string }) {
   const activePath = SETTINGS_DETAIL_PAGE_PARENTS[pathname] ?? pathname;
   const searchInputRef = useRef<HTMLInputElement>(null);
   const [query, setQuery] = useState("");
-  // Below md the nav is an icon rail; searching expands it over the page.
   const [compactSearchOpen, setCompactSearchOpen] = useState(false);
   const [activeResultIndex, setActiveResultIndex] = useState(0);
-  const searchableItems = useAvailableSettingsSearchItems(scopeSearch);
+  const { mode } = useForkWorkspaceMode();
+  const availableSearchItems = useAvailableSettingsSearchItems(scopeSearch);
+  const searchableItems =
+    mode === "workspace"
+      ? availableSearchItems.filter((item) => item.to !== "/settings/development-profiles")
+      : availableSearchItems;
+  const navGroups =
+    mode === "workspace"
+      ? SETTINGS_NAV_GROUPS.map((group) => ({
+          ...group,
+          paths: group.paths.filter((path) => path !== "/settings/development-profiles"),
+        }))
+      : SETTINGS_NAV_GROUPS;
   const results = searchSettings(query, searchableItems);
   const isSearching = query.trim().length > 0;
   const hasResults = results.length > 0;
   const maxResultIndex = Math.max(results.length - 1, 0);
-  // Persist the clamp so a shrink-then-recover of results keeps the clamped highlight.
   if (activeResultIndex > maxResultIndex) {
     setActiveResultIndex(maxResultIndex);
   }
@@ -362,7 +371,7 @@ export function SettingsSidebarNav({ pathname }: { pathname: string }) {
                     </SidebarMenuItem>
                   </SidebarMenu>
                 )}
-                {SETTINGS_NAV_GROUPS.map((group, index) => (
+                {navGroups.map((group, index) => (
                   <div
                     key={group.heading ?? index}
                     role="group"
