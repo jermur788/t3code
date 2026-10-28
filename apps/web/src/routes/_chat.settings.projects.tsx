@@ -1,6 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { ProjectsSettings } from "../components/settings/ProjectsSettings";
+
+import { ForkProjectsSettingsShell } from "../components/settings/ForkProjectsSettingsShell";
 
 export const Route = createFileRoute("/_chat/settings/projects")({
-  component: ProjectsSettings,
+  component: ForkProjectsSettingsShell,
 });
