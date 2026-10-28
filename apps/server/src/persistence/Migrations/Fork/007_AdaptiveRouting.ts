@@ -7,7 +7,7 @@ import * as SqlClient from "effect/sql/SqlClient";
  * references are composite (project_id, task_id, id) so SQLite rejects cross-task pairs;
  * that needs one extra unique index on Runtime attempts, which rewrites no Runtime rows.
  */
-export const adaptiveRoutingSchema = [
+const adaptiveRoutingSchema = [
   `CREATE UNIQUE INDEX project_runtime_execution_attempts_task_attempt_idx
     ON project_runtime_execution_attempts(project_id, task_id, attempt_id)`,
 

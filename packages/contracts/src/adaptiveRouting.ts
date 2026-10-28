@@ -13,7 +13,7 @@ import { ProjectRuntimeTaskId } from "./projectRuntime.ts";
 import { RuntimeExecutionAttemptId } from "./runtimeExecution.ts";
 import { RuntimeRouteSource } from "./runtimeRoutingResolution.ts";
 
-export const ADAPTIVE_ROUTING_VERSION = 1 as const;
+const ADAPTIVE_ROUTING_VERSION = 1 as const;
 
 export const ADAPTIVE_ROUTING_BOUNDS = {
   idMaxLength: 200,

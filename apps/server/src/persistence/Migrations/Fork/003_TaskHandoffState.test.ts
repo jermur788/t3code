@@ -201,7 +201,7 @@ const seedLegacyRows = Effect.gen(function* () {
     taskId: "t-emoji",
     checkpoint: "emoji",
     summary: "Chunk boundary",
-    changes: "x".repeat(511) + "😀" + "yy",
+    changes: "x".repeat(511) + "😀yy",
     runtimeRevision: 1,
     taskRevision: 1,
     createdAt: t1,
