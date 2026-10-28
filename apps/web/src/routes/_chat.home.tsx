@@ -1,6 +1,6 @@
 import { createFileRoute, redirect } from "@tanstack/react-router";
 
-import { ForkHome } from "../components/forkHome/ForkHome";
+import { ForkHomeModeRouter } from "../components/forkWorkspace/ForkHomeModeRouter";
 import {
   validateSettingsScopeSearch,
   type SettingsScopeSearch,
@@ -24,7 +24,7 @@ function ForkHomeRoute() {
   const search = Route.useSearch();
   const navigate = Route.useNavigate();
   return (
-    <ForkHome
+    <ForkHomeModeRouter
       search={search}
       onSearchChange={(next) => {
         void navigate({ to: "/home", search: next, replace: true });
