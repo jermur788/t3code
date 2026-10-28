@@ -8,8 +8,8 @@ Use this file for facts that are needed occasionally during operation. The norma
 | --- | --- |
 | Provider connections and instances | **Settings → Providers** on the selected environment. Provider authentication remains provider-owned. |
 | Development Profiles | **Settings → Development Profiles**. Profiles persist on the environment server. |
-| Project profile assignment and project worker routing | Selected project settings. |
-| Project Runtime | **Settings → Project → Project Runtime** for one concrete environment/checkout. |
+| Project profile assignment and project worker routing | **Settings → Projects** for the selected project/checkout. |
+| Project Runtime | **Settings → Projects → Project Runtime** for one concrete environment/checkout. |
 | Runtime tasks, handoffs, source registrations, instructions | Environment database, project-scoped. |
 | Execution attempts and routing receipts | Environment database, project-scoped. |
 | Registered source bodies | Workspace files themselves; Runtime stores descriptors, not copies. |
@@ -20,7 +20,7 @@ The server derives its SQLite database as:
 <baseDir>/<dev-or-userdata>/statev2.sqlite
 ```
 
-The exact `<baseDir>` depends on how that environment was started. Do not guess a live path when making backups or running migration tests. An explicit isolated development home can be selected with:
+For the normal main-checkout development run, the verified default home is `~/.t3/dev`. A linked worktree uses `<worktree>/.t3/userdata` by default. An explicit isolated development home can be selected with:
 
 ```sh
 vp run dev --home-dir <isolated-home> --no-seed
@@ -45,7 +45,7 @@ A role belongs to an execution attempt, not to a permanent agent persona.
 
 Highest to lowest:
 
-1. explicit one-run override;
+1. explicit one-run override *(resolver/API callers only; not available in the Runtime task UI)*;
 2. task routing;
 3. project routing;
 4. assigned Development Profile routing;
@@ -53,9 +53,11 @@ Highest to lowest:
 
 A layer participates only when it has an entry for the resolved role. The role itself resolves from a one-run override role first, then task role, then caller-supplied role, defaulting to `implementation`.
 
-Routing selects a preference. It does not grant permission or bypass provider registration, authentication, project provider settings, model support, runtime/interaction modes, or orchestration authorization.
+Routing selects a preference. It does not grant permission or bypass provider registration, authentication, provider enablement, project provider settings, model support, runtime/interaction modes, permissions, or orchestration authorization.
 
-The Runtime task `Execute task` RPC currently accepts the task/revision/request identity, not an ad-hoc one-run worker override. The one-run layer is therefore a resolver contract for callers that explicitly supply it, while the current task UI executes the saved task/project/profile policy.
+The Runtime task **Execute task** RPC accepts saved task/revision/request identity, not an ad-hoc one-run worker override. The current task UI executes saved task/project/profile policy.
+
+If Runtime routing inherits to ordinary T3 behavior, the launch path uses the project's default model selection. If no project default model exists, execution can fail with `no_default_model` / **Configure a worker preference first**.
 
 ## Routing fallback semantics
 
@@ -90,7 +92,13 @@ Runtime task lifecycle values:
 
 `done` requires a non-empty task result. Leaving `blocked` clears the blocker in the normal editor flow.
 
-Only `planned`, `ready`, and `active` tasks may use **Execute task**.
+Only `planned`, `ready`, and `active` tasks may use **Execute task**. The Execute control appears only after the task has been saved and reopened in **Edit task**.
+
+## Execution workspace and permissions
+
+The default worker workspace is **Shared checkout**, so the worker edits the live project checkout. **New worktree** creates an isolated worktree; its base resolution uses the configured revision, then branch, then `HEAD`.
+
+Permission mode comes from the task/project route/defaults. A worker waiting on an approval can remain `launched`; open the linked worker thread to approve or deny the request.
 
 ## Execution states
 
@@ -107,43 +115,64 @@ Runtime execution-attempt status values:
 | `interrupted` | no | Existing run terminated as interrupted. |
 | `reconcile_required` | yes | T3 cannot safely prove the existing attempt's final state. Recheck; do not launch a second worker. |
 
-Only `pending` is automatically resumed at startup. Other active states block another execution until reconciliation makes the attempt terminal.
+Only `pending` is automatically replayed at startup. Other active states block another execution until reconciliation makes the attempt terminal.
+
+Normal T3 **Continue threads after restarts** behavior is separate from Runtime attempt state and can resume a provider thread after restart. Inspect the existing worker thread before starting replacement work.
+
+## Handoffs
+
+A successful execution does **not** guarantee a Runtime handoff. The worker must call `t3_project_handoff_append`, and its provider thread must have Runtime MCP tools available.
+
+Put the handoff requirement in Project Instructions or the task's **Next action**. If no handoff appears, open the worker thread, ask it to append one, then **Recheck attempt**.
+
+A terminal attempt may link the newest handoff whose server-recorded provenance matches the worker thread. Linking does not rewrite the handoff or make its claims proof.
+
+## Independent review
+
+The reliable independent-review path is a **separate task** in `ready` status with worker role `review`. Its Objective/Scope should identify the implementation task/handoff and explicitly require inspection of the actual diff, acceptance criteria, and claimed verification.
+
+Re-executing the original implementation task after changing only its worker role is weaker: the execution packet still replays that task's implementation objective and latest handoff. If deliberately reusing the same task, return it to `planned`, `ready`, or `active` before Execute; `review` and `done` are not executable.
 
 ## Verification terminology
 
-These project-management terms are deliberately stronger than “the worker finished.”
+Task lifecycle and verification are separate. A task may be `done` while its verification milestone is still `none`.
 
-| Term | Meaning |
-| --- | --- |
-| `IMPLEMENTED` | Requested implementation exists, but stronger verification has not yet been established. |
-| `STATIC PASS` | Appropriate static checks passed. Persisted task milestone: `static-pass`. |
-| `RUNTIME PASS` | Required runtime/behavior checks passed. Persisted milestone: `runtime-pass`. |
-| `REVIEW PASS` | Required review found no blocking issue after repairs. Persisted milestone: `review-pass`. |
-| `INTEGRATED` | Accepted work is on the intended integration base/head and evidence supports that state. Persisted milestone: `integrated`. |
-| `VERIFIED` | All acceptance/verification required for the task or milestone has passed. Persisted milestone: `verified`. |
-| `BLOCKED` | Progress cannot safely continue until a blocker is resolved. This is not a verification milestone. |
-| `DEFERRED` | Work is intentionally postponed. This is not a verification milestone. |
+Persisted verification milestone values are:
+
+| Stored value | Operator label | Meaning |
+| --- | --- | --- |
+| `none` | — | No verification milestone has been established. |
+| `implemented` | `IMPLEMENTED` | Requested implementation exists, but stronger verification has not yet been established. |
+| `static-pass` | `STATIC PASS` | Appropriate static checks passed. |
+| `runtime-pass` | `RUNTIME PASS` | Required runtime/behavior checks passed. |
+| `review-pass` | `REVIEW PASS` | Required review found no blocking issue after repairs. |
+| `integrated` | `INTEGRATED` | Accepted work is on the intended integration base/head and evidence supports that state. |
+| `verified` | `VERIFIED` | All acceptance/verification required for the task or milestone has passed. |
+
+`blocked` and `deferred` are **task lifecycle statuses**, not verification milestones.
 
 Passing milestones require at least one passing evidence item. `verified` cannot coexist with failing evidence. Inconclusive evidence is not passing evidence.
 
-Task lifecycle and verification are separate. A task may be `done` while its verification milestone is still `none`.
+When finishing a task, update the editor's **Task status**, **Result** (required for `done`), **Verification milestone**, and **Evidence** result/summary/command from the actual evidence.
 
 ## Recovery terminology
 
 **Cancellation**  
-`Cancel execution` uses T3's existing orchestration thread-stop path. `cancelling` remains active until the existing run is terminal or reconciled.
+`Cancel execution` uses T3's existing orchestration thread-stop path. `cancelling` remains active until the existing run is terminal or reconciled. Cancellation does not request stopping delegated child tasks (`stopDelegatedTasks: false`), so child/delegated tasks may continue and must be checked separately.
 
 **Recheck / reconciliation**  
 `Recheck attempt` compares the durable attempt with its existing thread/run and updates the attempt when the evidence is clear. Startup performs equivalent reconciliation for active attempts.
 
 **`reconcile_required`**  
-The attempt is ambiguous: for example, T3 could not safely read/classify the existing thread after an uncertain launch or stop. The active slot stays occupied. Do not create a replacement execution; restore the environment/provider if necessary and Recheck.
+The attempt is ambiguous: for example, T3 could not safely read/classify the existing thread after an uncertain launch or stop. The active slot stays occupied.
 
-A terminal attempt may link the newest handoff whose server-recorded provenance matches the worker thread. Linking does not rewrite the handoff or make its claims proof.
+First restore the environment/provider if necessary and **Recheck attempt**. If Recheck still leaves `reconcile_required` and the worker thread has been deleted or is confirmed absent, **Cancel execution** records the attempt as `cancelled` and frees the slot. Do not use that path while the thread still exists and may be running.
 
 ## Updating the fork
 
-These instructions are for a source checkout of `jermur788/t3code`, not the upstream release installer.
+These instructions are for a source checkout of `jermur788/t3code`.
+
+The fork currently publishes no installers or desktop binaries. Upstream install scripts/packages, `t3 update`, and upstream in-app updates track stock T3, not this fork. A desktop build can be produced from source using the repository's desktop build scripts, but the supported Documentation V1 golden path is the source-run web/server workflow.
 
 Before updating, finish or intentionally stop active work and make an offline backup of the active T3 home/database. Confirm the repository has no uncommitted work you intend to preserve elsewhere:
 
@@ -162,8 +191,10 @@ vp install
 Start the updated fork:
 
 ```sh
-vp dev
+vp run dev
 ```
+
+Open the `pairingUrl:` printed by the dev runner if the browser needs authentication. Treat that URL as a credential.
 
 A full server boot runs the upstream migration sequence and then the fork migration registry. The current fork registry is:
 
@@ -178,11 +209,11 @@ Migration history is fail-closed: malformed, partial, conflicting, or ambiguous 
 
 After the update, perform a basic check:
 
-1. Project Home loads.
+1. Project Home loads after pairing.
 2. The expected project/checkout is selectable.
 3. Development Profile and Project Runtime open.
 4. Existing task/handoff/execution state is present.
-5. At least one configured provider is still available.
+5. At least one configured provider is still enabled and available.
 6. Recheck any execution that was active around shutdown before starting another worker.
 
 Do not run an upstream T3 build against an adopted fork home as an “upgrade test”. Keep upstream and fork homes separate unless that transition has been explicitly qualified.
@@ -191,15 +222,17 @@ Do not run an upstream T3 build against an adopted fork home as an “upgrade te
 
 Runtime does not have a separate database. Project Runtime, Development Profiles, project/task routing, task/handoff state, and execution-attempt records live in the environment database.
 
+The T3 home can also contain `secrets/`, authentication state, and attachments. A full-home backup therefore contains sensitive material and must be protected accordingly.
+
 Before migrations or destructive verification:
 
 1. stop the server using that home;
 2. copy the active T3 home/base directory or, at minimum, its `statev2.sqlite` database and associated SQLite files while offline;
 3. separately back up the project workspace/source files that registered Runtime sources point to.
 
-A database-only backup does **not** preserve source bodies because Runtime stores source descriptors, not snapshots.
+A database-only backup does **not** preserve source bodies because Runtime stores source descriptors, not snapshots. Restoring a backup is the rollback path for fork migrations; migrations are forward-only rather than automatically downgraded.
 
-For a disposable test environment, use a fresh explicit home rather than the live one:
+For a disposable test environment, use a fresh explicit home:
 
 ```sh
 vp run dev --home-dir <isolated-home> --no-seed
@@ -211,12 +244,16 @@ Do not reuse one database between this fork and an upstream build during qualifi
 
 | Symptom | Check |
 | --- | --- |
-| Saved provider/model is unavailable | **Settings → Providers**, provider login/status, project enablement, route rejection details. |
-| Different worker wins | one-run → task → project → profile → ordinary T3; then inspect fallback/rejections. |
-| Execute is disabled | task status/revision, Runtime enablement, active attempt, provider/model/workspace eligibility. |
+| Saved provider/model is unavailable | **Settings → Providers**, provider login/status, provider enablement, project eligibility, route rejection details. |
+| `provider_disabled` | Enable the provider/model in **Settings → Providers**. |
+| `no_default_model` / “Configure a worker preference first” | Set a task Worker preference with provider/model, or configure the project default model. |
+| Different worker wins | one-run *(API callers only)* → task → project → profile → ordinary T3; then inspect fallback/rejections. |
+| Execute is disabled | Save/reopen the task; check lifecycle status, revision, Runtime enablement, active attempt, provider/model/workspace eligibility. |
+| Worker appears stuck at `launched` | Open the worker thread and check for approval/input requests; Recheck after it finishes. |
 | Attempt seems stale | **Recheck attempt**. |
-| Cancel does not settle | **Cancel again** or **Recheck attempt**; inspect existing thread. |
-| `reconcile_required` | Restore access if needed, Recheck existing attempt, and do not launch another worker. |
+| Cancel does not settle | **Cancel again** or **Recheck attempt**; inspect the existing thread and any delegated child tasks. |
+| `reconcile_required` | Recheck. If the worker thread is confirmed deleted/absent, **Cancel execution**; otherwise restore access and do not launch another worker. |
+| No handoff | Ask the worker thread to call `t3_project_handoff_append`, then Recheck. |
 
 ## Persistence boundaries
 
