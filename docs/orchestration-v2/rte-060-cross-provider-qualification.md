@@ -1,6 +1,8 @@
 # RTE-060 — Cross-Provider Qualification
 
-Status: IMPLEMENTED / RUNTIME PASS (integration pending)
+Status: INTEGRATED / REVIEW PASS (RTE-070 pending)
+
+Implementation commit: `d62e128d3e` (`test(runtime): qualify cross-provider task execution`).
 
 ## Task
 
@@ -71,3 +73,12 @@ the remaining focused coverage.
 - No second worker is started for an ambiguous attempt.
 - Existing classic T3, routing, profiles, and Runtime behavior stay intact.
 - Changed-package checks and the qualification test pass.
+
+## Completion handoff
+
+- **VERDICT:** RUNTIME PASS / REVIEW PASS for qualification; RTE-V1 is not yet VERIFIED.
+- **DELIVERED:** a two-project, two-provider qualification suite for routing, isolation, restart reconciliation, ambiguous attempts, same-task handoff continuation, unavailable providers, and stale revisions; the evidence matrix and environment limits are recorded above.
+- **VERIFICATION:** `VITEST_MAX_WORKERS=1 vp run check:changed` passed (format, lint, knip, graphql, typecheck affected packages, 1 qualification file / 5 tests). The RTE-050 changed-code suite passed before integration (81 tests). Real Claude worker execution, restart reconciliation, live cancellation, and post-restart terminal mapping are recorded in the RTE-040/050 packets.
+- **REVIEW:** independent Claude B qualification review returned RUNTIME PASS with no blocking gap. It found test-modeling weaknesses in continuation and isolation; the continuation test now runs the same task/project after flipping providers, enforces project-scoped handoff reads, asserts the old thread id is absent, and adds ambiguous-attempt and unavailable-provider assertions.
+- **LIMIT:** the isolated environment had no configured OpenCode/second real worker, so the second provider is a server-level two-driver fixture. RTE-070 should retry a real second provider where feasible.
+- **NEXT:** RTE-070 Final Review and Integration.
