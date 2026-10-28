@@ -17,7 +17,7 @@ available CI-equivalent checks on the integrated head.
 | RTE-040 | `2cbc1fa1c7` durable execution bridge           |
 | RTE-050 | `b558362cef` recovery and cancellation          |
 | RTE-060 | `a4ae386290` cross-provider qualification       |
-| RTE-070 | this commit: final verification and integration |
+| RTE-070 | `f97193cedc` final verification and integration |
 
 Base for this gate: `main @ a4ae386290`. Branch:
 `rte/rte-070-final-verification`.
