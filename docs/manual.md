@@ -200,7 +200,7 @@ Runtime task
 → next task
 ```
 
-For the example task, create a fresh execution for the review rather than continuing the implementation session. Set the task/attempt role to **review** (or create a separate bounded review task if that better matches your project process), route it to an eligible reviewer, and ask it to check the actual diff, repository configuration, acceptance criteria, and claimed verification.
+For the example task, use a fresh execution attempt for review rather than continuing the implementation session. Because only `planned`, `ready`, and `active` tasks can execute, do not move the task to lifecycle `review` before launching the reviewer. Either keep the task in an executable status, change its worker role/preference to **review**, and start the next attempt after the implementation attempt is terminal; or create a separate bounded review task in `ready` status. Ask the reviewer to check the actual diff, repository configuration, acceptance criteria, and claimed verification. After reconciliation, update lifecycle and verification from the evidence.
 
 Do not equate lifecycle with evidence:
 
