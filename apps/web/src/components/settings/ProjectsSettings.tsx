@@ -1,15 +1,35 @@
 import { EnvironmentId } from "@t3tools/contracts";
+import { useLocation } from "@tanstack/react-router";
 import { LayersIcon } from "lucide-react";
+import { useEffect, useState } from "react";
 
+import { useForkWorkspaceMode } from "../../forkWorkspaceMode";
 import { Button } from "../ui/button";
 import { ProjectSettingsPanel } from "./ProjectSettingsPanel";
 import { useSettingsScope } from "./SettingsScopeContext";
 import { SettingsScopeNotice } from "./SettingsScopeNotice";
 import { SettingsPageContainer } from "./settingsLayout";
 import { ALL_ENVIRONMENTS_VALUE, selectEnvironmentAxis } from "./settingsScopeAxis";
+import "./workspaceProjectSettings.css";
+
+const WORKSPACE_ADVANCED_TARGETS = new Set([
+  "development-profile",
+  "project-worker-preferences",
+  "project-runtime-state",
+  "project-runtime-tasks",
+]);
 
 export function ProjectsSettings() {
   const { search: value, scope, selectScope } = useSettingsScope();
+  const { mode } = useForkWorkspaceMode();
+  const hash = useLocation({ select: (location) => location.hash.replace(/^#/, "") });
+  const advancedRequested = WORKSPACE_ADVANCED_TARGETS.has(hash);
+  const [advancedOpen, setAdvancedOpen] = useState(advancedRequested);
+
+  useEffect(() => {
+    if (advancedRequested) setAdvancedOpen(true);
+  }, [advancedRequested]);
+
   const unavailable =
     scope.kind === "unavailable" ? (
       <SettingsPageContainer>
@@ -34,22 +54,43 @@ export function ProjectsSettings() {
     scope.kind === "checkout" ||
     (scope.kind === "unavailable" &&
       (scope.reason === "project-missing" || scope.reason === "checkout-missing"));
-  return (
-    <div className="flex min-h-0 flex-1 flex-col">
-      {value.project && projectScope ? (
+
+  const panel =
+    value.project && projectScope ? (
+      <div
+        data-fork-project-settings-mode={mode}
+        data-fork-advanced-open={advancedOpen ? "true" : "false"}
+      >
+        {mode === "workspace" ? (
+          <SettingsPageContainer>
+            <details
+              className="rounded-lg border border-border p-3"
+              open={advancedOpen}
+              onToggle={(event) => setAdvancedOpen(event.currentTarget.open)}
+            >
+              <summary className="cursor-pointer text-sm font-medium">Advanced</summary>
+              <p className="mt-2 text-xs text-muted-foreground">
+                Development Profile, worker routing, Runtime state, tasks, handoffs, execution,
+                verification, and recovery controls. Opening this section does not change project
+                state or your saved interface mode.
+              </p>
+            </details>
+          </SettingsPageContainer>
+        ) : null}
         <ProjectSettingsPanel
           projectKey={value.project}
           environmentId={value.machine ? EnvironmentId.make(value.machine) : null}
           checkoutKey={value.checkout ?? null}
           unavailable={unavailable}
         />
-      ) : unavailable ? (
-        unavailable
-      ) : (
-        <SettingsScopeNotice target="project">
-          Choose a project to manage its name, icon, checkouts and actions.
-        </SettingsScopeNotice>
-      )}
-    </div>
-  );
+      </div>
+    ) : unavailable ? (
+      unavailable
+    ) : (
+      <SettingsScopeNotice target="project">
+        Choose a project to manage its name, icon, checkouts and actions.
+      </SettingsScopeNotice>
+    );
+
+  return <div className="flex min-h-0 flex-1 flex-col">{panel}</div>;
 }
