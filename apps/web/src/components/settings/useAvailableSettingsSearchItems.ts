@@ -14,7 +14,16 @@ import type { SettingsScopeSearch } from "./settingsScope";
 import {
   filterAvailableSettingsSearchItems,
   getThreadAutoSettlementSearchAvailability,
+  type SettingsSearchItem,
 } from "./settingsSearch";
+
+const FORK_INTERFACE_SEARCH_ITEM: SettingsSearchItem = {
+  id: "fork-interface-mode",
+  title: "T3 Fork interface",
+  to: "/settings/general",
+  targetId: "fork-interface-mode",
+  searchTerms: ["workspace development interface mode advanced controls simple project"],
+};
 
 export function useAvailableSettingsSearchItems(scopeSearch: SettingsScopeSearch = {}) {
   const { environments } = useEnvironments();
@@ -56,15 +65,18 @@ export function useAvailableSettingsSearchItems(scopeSearch: SettingsScopeSearch
   const wslSettingsRowVisible =
     isWslSettingsRowVisible({ state: desktopWsl.data, error: desktopWsl.error }) === true;
 
-  return filterAvailableSettingsSearchItems({
-    localEnvironmentDisabled,
-    hasCloudPublicConfig: cloudPublicConfig,
-    hasEnvironment,
-    hasProviderSettingsEnvironment,
-    hasMacProviderSettingsEnvironment,
-    canManageLocalBackend,
-    isWslSettingsRowVisible: wslSettingsRowVisible,
-    hasThreadAutoSettlement,
-    managedTunnelActive,
-  });
+  return [
+    FORK_INTERFACE_SEARCH_ITEM,
+    ...filterAvailableSettingsSearchItems({
+      localEnvironmentDisabled,
+      hasCloudPublicConfig: cloudPublicConfig,
+      hasEnvironment,
+      hasProviderSettingsEnvironment,
+      hasMacProviderSettingsEnvironment,
+      canManageLocalBackend,
+      isWslSettingsRowVisible: wslSettingsRowVisible,
+      hasThreadAutoSettlement,
+      managedTunnelActive,
+    }),
+  ];
 }
