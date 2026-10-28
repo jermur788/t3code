@@ -1,12 +1,13 @@
 # Documentation V1 review repair handoff
 
-Status: **STATIC PASS / GOLDEN-PATH QUALIFICATION PENDING**
+Status: **INTEGRATED / GOLDEN-PATH QUALIFICATION PENDING**
 
 ## Base
 
 - Repository: `jermur788/t3code`
-- Base: `main` at `618c243a79457d141ab5e03a1b5e174ed97aba0e`
+- Original reviewed base: `main` at `618c243a79457d141ab5e03a1b5e174ed97aba0e`
 - Repair branch: `docs/documentation-v1-review-repairs`
+- Repair integration commit: `ce78d8acc10d93b9e5ce45813b7c87645f078d50`
 - Governing evidence: independent static review supplied 2026-10-28 (`REVIEW REQUIRED`, 2 BLOCKER / 6 MAJOR / 9 MINOR / 3 EDITORIAL).
 
 ## Result
@@ -55,6 +56,7 @@ Repaired Documentation V1 without changing Runtime/server behavior.
 - Confirmed no `vp dev` occurrence remains in either canonical document.
 - Confirmed the manual no longer points to nonexistent `user/README.md`.
 - Compared branch to base: documentation-only changes.
+- Repairs were merged to `main` through PR #8.
 - No repository tests/typechecks were run because this is a documentation-only repair and this manager environment does not have the repository runtime/dependencies.
 - Fresh-user/runtime qualification is **not** claimed.
 
@@ -73,4 +75,6 @@ Run the independent fresh-user golden path from a clean clone. It should include
 
 ## Integration state
 
-Documentation repairs are suitable for integration before runtime qualification. Do not claim Documentation V1 VERIFIED until the fresh-user golden path passes.
+Documentation repair task: **INTEGRATED**.
+
+Documentation V1 overall: **not VERIFIED**. The next gate is the independent clean-clone fresh-user golden-path/runtime qualification above.
