@@ -16,9 +16,14 @@ export interface ForkWorkspaceModeState {
   readonly setMode: (mode: ForkWorkspaceMode) => void;
 }
 
+/** Existing users keep the full Development presentation until they explicitly choose a mode. */
+export function resolveForkWorkspaceMode(savedMode: ForkWorkspaceMode | null): ForkWorkspaceMode {
+  return savedMode ?? "development";
+}
+
 /**
- * Workspace mode is device-local presentation state. An unset preference deliberately resolves to
- * Development so existing users never have advanced controls hidden after an upgrade.
+ * Workspace mode is device-local presentation state. It never participates in Runtime, routing,
+ * provider eligibility, task, handoff, or execution persistence.
  */
 export function useForkWorkspaceMode(): ForkWorkspaceModeState {
   const [savedMode, setSavedMode] = useLocalStorage(
@@ -28,7 +33,7 @@ export function useForkWorkspaceMode(): ForkWorkspaceModeState {
   );
   return {
     savedMode,
-    effectiveMode: savedMode ?? "development",
+    effectiveMode: resolveForkWorkspaceMode(savedMode),
     hasChosenMode: savedMode !== null,
     setMode: setSavedMode,
   };
