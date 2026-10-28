@@ -12,6 +12,9 @@ We wanted something performant, remote-ready, and truly open. If we ever go the 
 
 ## Installation
 
+> [!IMPORTANT]
+> **Using this fork (`jermur788/t3code`)?** Start with the [T3 Fork Operator Manual](./docs/manual.md). The upstream installers, packages, `t3 update`, and release binaries documented below install stock T3 and do not include fork features.
+
 > [!WARNING]
 > T3 Code currently supports Codex, Claude, Cursor, Grok Build, OpenCode, and Antigravity. Install and authenticate at least one provider before use:
 >
@@ -94,6 +97,8 @@ We are (mostly) not accepting contributions yet. Small fixes may be considered. 
 
 Full docs live in [docs/](./docs). There's no docs site yet.
 
+- [T3 Fork Operator Manual](./docs/manual.md)
+- [T3 Fork Reference](./docs/reference.md)
 - [FAQ](./docs/user/faq.md)
 - [Install and first run](./docs/user/install.md)
 - [Permission modes](./docs/user/permission-modes.md)

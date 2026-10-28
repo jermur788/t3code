@@ -25,6 +25,7 @@ it.effect(
           { migration_id: 4, name: "RuntimeRouting" },
           { migration_id: 5, name: "RuntimeExecutionAttempts" },
           { migration_id: 6, name: "RuntimeExecutionCancellation" },
+          { migration_id: 7, name: "AdaptiveRouting" },
         ],
       );
       const projects = yield* sql<{

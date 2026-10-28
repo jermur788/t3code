@@ -2,19 +2,21 @@
 
 This is the shortest supported path from a fresh source checkout to durable, provider-neutral Runtime work. It assumes you already know Git and terminal basics.
 
-For compact definitions, storage details, state tables, routing fallback semantics, and upgrade notes, see [Reference](reference.md). For upstream T3 features that are not fork-specific, use the existing [user documentation](user/).
+> [!IMPORTANT]
+> Use the **source checkout** workflow below for this fork. Upstream installers/packages, `t3 update`, and upstream in-app updates install stock T3 and do not contain fork features such as Project Home, Project Runtime, Development Profiles, or Runtime task routing.
+
+For compact definitions, storage details, state tables, routing fallback semantics, and upgrade notes, see [Reference](reference.md). For upstream T3 features that are not fork-specific, use the [documentation index](README.md).
 
 ## 1. Quickstart
 
 ### Requirements
 
-Use a machine supported by the T3 web/server development workflow: macOS, Linux, or Windows. WSL is supported on Windows. The native desktop app is available on macOS and Windows; Linux users should use the web/server workflow.
+The supported golden path for this fork is the source-run web/server workflow. The fork publishes no desktop installers. Source-built desktop packages are outside this manual's golden path.
 
 Install:
 
 - Git.
-- Node.js **26.12.1**.
-- Vite+ (`vp`).
+- Vite+ (`vp`). Vite+ supplies the repository's pinned Node.js version.
 - At least one supported AI provider or provider account.
 
 Install Vite+ on macOS/Linux:
@@ -40,18 +42,26 @@ vp install
 Start the fork:
 
 ```sh
-vp dev
+vp run dev
 ```
 
-**Expected:** the development server and web client start and the browser opens T3 Fork **Project Home**. Development ports can vary by checkout/worktree, so use the URL printed by `vp dev` rather than assuming a fixed port.
+The dev runner does **not** open an authenticated browser by default. Wait for the `pairingUrl:` line, then open that exact URL in the browser you want to use. The pairing URL is a credential: do not paste, post, or share it.
 
-If startup fails, first confirm `node --version`, `vp --version`, and that `vp install` completed. More development commands are in [docs/operations/development.md](operations/development.md).
+After pairing, T3 opens normally and the authenticated root redirects to fork **Project Home** (`/home`). Development ports vary by checkout/worktree; do not assume a fixed port.
+
+If you lose the pairing URL while the server is running, generate another with:
+
+```sh
+node apps/server/src/bin.ts pair
+```
+
+If startup fails, first confirm `vp --version`, `vp exec node --version`, and that `vp install` completed. More development commands are in [docs/operations/development.md](operations/development.md).
 
 ### Provider prerequisite
 
-T3 controls provider tools/accounts; Runtime routing does not install or authenticate them. Configure at least one provider before executing a Runtime task.
+T3 controls provider tools/accounts; Runtime routing does not install or authenticate them. Configure and **enable** at least one provider before executing a Runtime task.
 
-Supported providers include Codex, Claude Code, Cursor, Grok Build, OpenCode, and Antigravity. The common CLI sign-ins are:
+Supported providers include Codex, Claude Code, Cursor, Grok Build, OpenCode, and Antigravity. Common CLI sign-ins are:
 
 ```sh
 codex login
@@ -67,13 +77,13 @@ Use only the command for the provider you installed. Antigravity is installed an
 
 Open **Settings → Providers**. If you are connected to a remote environment, select that environment first.
 
-For Codex, T3 can connect a ChatGPT account from this screen or use an existing `codex login`. Other CLI providers are discovered from the environment where the T3 server runs; install and authenticate them on that machine. Do not paste provider secrets into Project Instructions, Runtime tasks, or handoffs.
+For Codex, T3 can connect a ChatGPT account from this screen or use an existing `codex login`. Other CLI providers are discovered from the environment where the T3 server runs; install and authenticate them on that machine. Enable the provider/model you intend to use. Do not paste provider secrets into Project Instructions, Runtime tasks, or handoffs.
 
 Confirm three separate things:
 
 | Check | Meaning |
 | --- | --- |
-| Provider availability | T3 can see an installed/authenticated provider and its advertised models. |
+| Provider availability | T3 can see an installed/authenticated and enabled provider and its advertised models. |
 | Worker routing preference | Runtime prefers a provider/model for a role such as implementation or review. |
 | Project eligibility | Normal T3 project/provider settings, model constraints, modes, permissions, and current availability still allow that worker to launch. |
 
@@ -101,11 +111,11 @@ Choose **Start a thread** when you want a normal T3 thread for the selected proj
 
 Open **Settings → Development Profiles**, select the environment, create or select a profile, and save the shared development instructions you want projects to inherit.
 
-Then open the selected project's settings and choose that profile under **Development Profile**. A project can have one profile. Project-specific instructions override directly conflicting profile instructions.
+Then open **Settings → Projects**, select the concrete project/checkout, and choose that profile under **Development Profile**. A project can have one profile. Project-specific instructions override directly conflicting profile instructions.
 
 ### Enable Project Runtime
 
-Open **Settings → Project → Project Runtime** for one concrete environment and checkout, then choose **Enable Runtime**.
+In **Settings → Projects**, select one concrete environment and checkout, then open **Project Runtime** and choose **Enable Runtime**.
 
 Add only project-owned durable truth:
 
@@ -118,6 +128,12 @@ Runtime state belongs to the selected project on that environment, not to a prov
 
 Registered sources are references to workspace files; Runtime does not copy their bodies. Back up the source files as well as Runtime state.
 
+If you want workers to leave durable continuation records, put this requirement in Project Instructions or the task's **Next action**:
+
+> Before finishing substantial work, append a handoff with `t3_project_handoff_append` that records the result, tests run/not run, risks, repository state, verification/integration state, and exact next action.
+
+The worker's provider thread must have Runtime MCP tools available for that handoff call to work.
+
 ## 4. Configure workers
 
 Worker roles describe an execution attempt, not a permanent agent persona:
@@ -129,11 +145,11 @@ Worker roles describe an execution attempt, not a permanent agent persona:
 - **test** — exercise or qualify behavior;
 - **general** — work that does not fit a narrower role.
 
-Configure reusable defaults in **Settings → Development Profiles**. Configure project overrides in the selected project's settings. Configure a task-specific role/preference when creating or editing a Runtime task.
+Configure reusable defaults in **Settings → Development Profiles**. Configure project overrides in **Settings → Projects → Worker preferences**. Configure a task-specific role/preference when creating or editing a Runtime task.
 
 Routing precedence is:
 
-1. explicit one-run override;
+1. explicit one-run override *(API/resolver callers only; the Runtime task UI has no one-run input)*;
 2. task routing;
 3. project routing;
 4. Development Profile routing;
@@ -141,7 +157,7 @@ Routing precedence is:
 
 The first applicable layer determines the preference. Candidate failures may continue, inherit, or fail according to that layer's fallback policy; see [Routing fallback semantics](reference.md#routing-fallback-semantics).
 
-The Runtime task **Execute task** action currently launches from the saved task/project/profile policy; its RPC does not expose a user-entered one-run override. The one-run layer remains the highest-precedence resolver contract for callers that supply one.
+The Runtime task **Execute task** action launches from saved task/project/profile policy. Its RPC does not expose a user-entered one-run override.
 
 Where routing is shown, use T3's **effective** / winning-layer display rather than trying to infer the result yourself. Routing does not bypass provider availability, project settings, model support, runtime/interaction modes, permissions, or other T3 eligibility checks.
 
@@ -151,7 +167,7 @@ Use one small task all the way through this manual:
 
 > **Document the project's test command** — add a short `Tests` section to the project README using the command that already exists in the repository. Do not change code or dependencies.
 
-Open **Settings → Project → Project Runtime** and choose **Create task**.
+Open **Settings → Projects → Project Runtime** and choose **Create task**.
 
 Record:
 
@@ -164,8 +180,18 @@ Record:
   - The documented command matches the repository configuration.
 - **Verification plan:** inspect the diff and run or otherwise verify the documented command.
 - **Worker role:** `implementation`.
+- **Next action:** require the worker to append a Runtime handoff before finishing.
 
-Save the task. Reopen it and inspect **Worker preference** and the effective routing result. If necessary, set a task-specific worker or allow the project/profile route to apply.
+Save the task, then reopen **Edit task**. The Execute control exists only for a saved task.
+
+Inside **Edit task**, inspect **Worker preference** and the effective routing result. For the golden path, either:
+
+- set an explicit task Worker preference with an eligible provider **and model**; or
+- confirm the project has a default model selection that normal T3 inheritance can use.
+
+If neither exists, Execute can fail with `no_default_model` / **Configure a worker preference first**.
+
+Also check where work will happen. The default is **Shared checkout**, which edits the live project checkout. **New worktree** creates an isolated worktree from the configured base. Permission mode comes from the route/project defaults; if the worker needs approval, open its worker thread and approve there.
 
 Choose **Execute task**.
 
@@ -184,6 +210,8 @@ Then inspect:
 
 A handoff is context, not proof. It records what the worker says changed, tests run/not run, risks, repository/integration state, and next action; the next worker or manager still checks those claims.
 
+If no handoff appears, open the worker thread and ask it to append one with `t3_project_handoff_append`, then **Recheck attempt**.
+
 If the implementation satisfies acceptance, move to independent review rather than treating the worker's “done” message as verification.
 
 ## 6. Review and verify work
@@ -191,28 +219,42 @@ If the implementation satisfies acceptance, move to independent review rather th
 Use this cycle:
 
 ```text
-Runtime task
+Runtime implementation task
 → implementation worker
 → result + handoff
-→ fresh independent review
+→ separate review task
+→ fresh review worker
 → repair if necessary
 → verification
 → next task
 ```
 
-For the example task, use a fresh execution attempt for review rather than continuing the implementation session. Because only `planned`, `ready`, and `active` tasks can execute, do not move the task to lifecycle `review` before launching the reviewer. Either keep the task in an executable status, change its worker role/preference to **review**, and start the next attempt after the implementation attempt is terminal; or create a separate bounded review task in `ready` status. Ask the reviewer to check the actual diff, repository configuration, acceptance criteria, and claimed verification. After reconciliation, update lifecycle and verification from the evidence.
+For the example, create a **separate** review task in `ready` status. Give it worker role `review` and an objective such as:
 
-Do not equate lifecycle with evidence:
+> Independently review the implementation task “Document the project's test command”. Inspect the actual diff, repository configuration, acceptance criteria, claimed verification, and latest handoff. Report any blocking issue and append a review handoff.
 
-- a task can be `done` without being verified;
-- a worker can say “done” without proof;
-- a handoff can claim tests passed without raising the task's verification milestone.
+Reference the implementation task/handoff in the review task's Objective or Scope. Then save, reopen **Edit task**, inspect the effective route, and execute the review task with a fresh eligible worker.
 
-The operator-facing project states used in this fork are:
+Do not use “change the original implementation task to review and execute it again” as the normal independent-review path: that replays the implementation task's objective and latest handoff. If you deliberately reuse the original task, first return it to `planned`, `ready`, or `active`, because `review` and `done` are not executable.
+
+After review/reconciliation, update the implementation task from evidence:
+
+1. set **Task status** appropriately;
+2. if setting `done`, record a non-empty **Result**;
+3. set the **Verification milestone** only as high as the evidence supports;
+4. add/update **Evidence** with result, summary, and command/check used.
+
+Task lifecycle and evidence are separate. A task can be `done` without being verified, and a handoff can claim tests passed without raising the stored verification milestone.
+
+Persisted verification milestones are:
+
+`none` → `implemented` → `static-pass` → `runtime-pass` → `review-pass` → `integrated` → `verified`
+
+The corresponding operator labels are:
 
 `IMPLEMENTED` → `STATIC PASS` → `RUNTIME PASS` → `REVIEW PASS` → `INTEGRATED` → `VERIFIED`
 
-with `BLOCKED` and `DEFERRED` used when progress cannot or should not continue. The persisted task verification milestone uses lowercase values such as `static-pass`, `runtime-pass`, `review-pass`, `integrated`, and `verified`; see [Verification terminology](reference.md#verification-terminology).
+`blocked` and `deferred` are **task lifecycle statuses**, not verification milestones.
 
 Record passing evidence before raising a passing milestone. `verified` cannot coexist with failing evidence.
 
@@ -226,14 +268,17 @@ This proves the fork's central persistence property.
 4. Start it again:
 
 ```sh
-vp dev
+vp run dev
 ```
 
-5. Reopen **Project Home**, select the same project/checkout, and return to **Settings → Project → Project Runtime**.
-6. Confirm the saved instructions, sources, task, execution attempt, and handoff remain.
-7. Continue in the same provider or switch to another eligible provider.
+5. Open the new `pairingUrl:` printed by the dev runner if the browser needs pairing.
+6. Reopen **Project Home**, select the same project/checkout, and return to **Settings → Projects → Project Runtime**.
+7. Confirm the saved instructions, sources, task, execution attempt, and handoff remain.
+8. Continue in the same provider or switch to another eligible provider.
 
 On startup, T3 reconciles active execution attempts against their existing worker threads/runs. A `pending` launch replays with the same stored IDs. An ambiguous attempt remains `reconcile_required` rather than allowing a speculative second worker.
+
+T3's normal **Continue threads after restarts** behavior can resume provider threads independently of the Runtime attempt classification, so inspect the existing worker thread before starting any replacement work.
 
 Durable state includes project instructions, source registrations, project/task state, handoffs, routing/profile state, and execution references/state. Important project truth should not depend on the old chat remaining available.
 
@@ -241,7 +286,11 @@ Durable state includes project instructions, source registrations, project/task 
 
 ### My worker will not start
 
-Inspect the task's effective routing first, then **Settings → Providers**. Check provider installation/authentication, model availability, project/provider eligibility, and any routing rejection shown by the task.
+Open **Edit task** and inspect the effective routing first, then **Settings → Providers**. Check provider installation/authentication, whether the provider is enabled, model availability, project/provider eligibility, and any routing rejection shown by the task.
+
+If the UI says **Configure a worker preference first** or the attempt reports `no_default_model`, set an explicit task Worker preference with provider/model or configure the project's default model selection.
+
+A disabled provider can be rejected as `provider_disabled` even when installed/authenticated.
 
 A stale task revision is also a deliberate launch refusal: reload the task before executing.
 
@@ -250,28 +299,42 @@ A stale task revision is also a deliberate launch refusal: reload the task befor
 A saved candidate can remain configured while currently unavailable. The resolver follows the route's fallback:
 
 - `continue` tries the next lower routing layer after the candidate list is exhausted;
-- `inherit` stops Runtime routing and uses normal T3 behavior;
+- `inherit` stops Runtime routing and uses normal T3 behavior, including the project default model;
 - `fail` refuses routing.
 
 Choose another eligible worker or repair the provider. Do not assume routing can override project/provider eligibility.
+
+### The worker is waiting but the attempt still says launched
+
+Open the worker thread. Permission/approval prompts are handled there. A worker waiting for approval can remain `launched` until you respond and later Recheck.
 
 ### The task appears to be running but I am unsure what happened
 
 Open the task and choose **Recheck attempt**. This reconciles the saved attempt with the existing worker thread/run. Inspect the worker-thread link and any failure shown on the attempt.
 
+### No handoff appeared
+
+A handoff is not automatically guaranteed by the execution bridge. Open the worker thread and explicitly ask it to append one with `t3_project_handoff_append`, then **Recheck attempt**. The provider thread must have Runtime MCP tools available.
+
 ### I restarted T3 during execution
 
-Reopen the project and inspect the existing attempt before doing anything else. Startup reconciliation resumes only a `pending` launch with its stable IDs; other active attempts are reconciled against their existing run. Do not start a replacement worker until the existing attempt becomes terminal.
+Reopen the project and inspect the existing attempt and worker thread before doing anything else. Startup reconciliation resumes only a `pending` launch with its stable IDs; other active attempts are reconciled against their existing run. Do not start a replacement worker until the existing attempt becomes terminal.
 
 ### I cannot cancel the execution
 
 Choose **Cancel execution**. While stop is in progress, the attempt is `cancelling` and keeps the task's active slot. If it remains active, use **Cancel again** or **Recheck attempt**. A failed/ambiguous stop becomes `reconcile_required` rather than freeing the task for a second launch.
 
+Cancellation stops the selected worker thread with delegated-task stopping disabled; child/delegated tasks that worker spawned may continue and must be checked separately.
+
 ### The task says `reconcile-required`
 
 **Do not launch another worker blindly.**
 
-The stored execution cannot yet be proven terminal. Use **Recheck attempt** after the environment/provider recovers and inspect the existing worker thread. `reconcile_required` intentionally blocks another execution until T3 can reconcile the old attempt.
+First choose **Recheck attempt** and inspect/open the existing worker thread.
+
+If Recheck leaves the attempt `reconcile_required` **and the worker thread was deleted or can no longer be opened because it no longer exists**, choose **Cancel execution**. This records the attempt as `cancelled` and frees the task's active slot.
+
+Do **not** use that recovery while the worker thread still exists and may be running; restore access and continue Recheck/recovery instead.
 
 The implementation status value is `reconcile_required`; the UI presents this as a reconciliation-needed state.
 
@@ -279,7 +342,7 @@ The implementation status value is `reconcile_required`; the UI presents this as
 
 Trace the precedence in order:
 
-**one-run → task → project → Development Profile → normal T3 behavior**
+**one-run (API callers only) → task → project → Development Profile → normal T3 behavior**
 
 Then inspect candidate rejection reasons and the effective/winning layer. A higher layer may have been absent, exhausted with `continue`, deliberately inherited, or rejected. The launch path also rechecks provider/model eligibility immediately before work starts.
 

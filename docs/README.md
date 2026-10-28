@@ -1,5 +1,12 @@
 # T3 Code docs
 
+## T3 Fork
+
+- [T3 Fork Operator Manual](./manual.md) — start here for the source-checkout fork workflow.
+- [T3 Fork Reference](./reference.md) — routing, task/execution states, recovery, backups, and updates.
+
+The fork publishes no installers. Upstream installers/packages and `t3 update` install stock T3; use the Operator Manual when you need Project Home, Project Runtime, Development Profiles, or Runtime task routing.
+
 ## Using T3 Code
 
 - [Install T3 Code](./user/install.md)
