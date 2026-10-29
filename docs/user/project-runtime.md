@@ -8,18 +8,26 @@ chat history.
 
 ## Fork project home
 
-On web and desktop, opening the fork lands on **Project Home** at `/home`. Choose a
-project or checkout to see its durable identity, the Development Profile assigned to
-it, and summaries of Project Instructions, sources, Project State, and tasks and
-handoffs before you enter a thread. Each area links to its authoritative settings
-surface. **Start a thread** continues into normal T3 work with that project already
-selected.
+On web and desktop, opening the fork lands on **Project Home** at `/home`. With no
+saved interface preference, it first asks you to choose **Workspace** or
+**Development**. Workspace leads with project identity and selection, **Start a
+thread**, Project Instructions, and sources. The assigned Development Profile,
+Project State, and tasks and handoffs are under **Advanced**. Development shows those
+development controls directly. The choice is device-local and can be changed at
+**Settings → General → T3 Fork interface**.
+
+Choose a project or checkout to see its durable identity and, in Development or
+Workspace **Advanced**, the Development Profile assigned to it plus summaries of
+Project Instructions, sources, Project State, and tasks and handoffs before you
+enter a thread. Each area links to its authoritative settings surface. **Start a
+thread** continues into normal T3 work with that project already selected.
 
 Project Home does not read the current conversation or provider. A disabled Runtime
-still shows project identity and the assigned profile; the Runtime areas say they are
-disabled rather than showing remembered chat content. If no project exists, the home
-asks you to add one. **Classic T3 Home** in the home actions opens the stock T3
-experience; `/?classic=1` does the same.
+still shows project identity; Development, or Workspace **Advanced**, still shows the
+assigned profile. The Runtime areas say they are disabled rather than showing
+remembered chat content. If no project exists, the home asks you to add one.
+**Classic T3 Home** in the home actions opens the stock T3 experience; `/?classic=1`
+does the same.
 
 Runtime is provider-neutral. It belongs to the project on one environment, not to
 Claude, Codex, OpenCode, or any other provider. Changing the provider changes who
@@ -36,10 +44,12 @@ portable thread handoffs.
 
 ## Open Runtime
 
-On web and desktop, select a project in Settings and open **Project → Project
-Runtime**. If the project groups several checkouts, choose one environment and
-checkout in the settings scope first. Runtime belongs to that checkout and is not
-synchronized between environments. Mobile does not have a Runtime settings screen.
+On web and desktop, select a project in **Settings → Projects** and open **Project
+Runtime**. In Workspace mode, expand **Advanced** first; Project Instructions and
+Registered sources stay visible without it. If the project groups several checkouts,
+choose one environment and checkout in the settings scope first. Runtime belongs to
+that checkout and is not synchronized between environments. Mobile does not have a
+Runtime settings screen.
 
 Choose **Enable Runtime** to start. **Disable Runtime** hides the editors but keeps
 all Runtime records; enabling it again restores them. A read-only connection can
@@ -66,10 +76,11 @@ editing again.
 ## Shared development policy
 
 [Development Profiles](development-profiles.md) let several projects inherit the
-same development instructions. Assign a profile explicitly in project settings.
-Project Instructions override conflicting profile guidance; registered sources
-keep their existing role as evidence. Removing a profile assignment does not
-change Project Instructions, sources, tasks, or handoffs.
+same development instructions. Assign a profile explicitly in project settings
+(under **Advanced** in Workspace mode). Project Instructions override conflicting
+profile guidance; registered sources keep their existing role as evidence. Removing
+a profile assignment does not change Project Instructions, sources, tasks, or
+handoffs.
 
 ## Registered sources
 

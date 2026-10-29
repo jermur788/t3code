@@ -27,16 +27,16 @@ Changing interface mode does not change provider/model configuration, Developmen
 
 ## Configuration locations
 
-| Item | Location / owner |
-| --- | --- |
-| T3 Fork interface mode | **Settings → General → T3 Fork interface**. Device-local UI preference. |
-| Provider connections and instances | **Settings → Providers** on the selected environment. Provider authentication remains provider-owned. |
-| Development Profiles | Normal Settings navigation in **Development** mode; reachable from **Advanced** or direct URL in **Workspace** mode. Profiles persist on the environment server. |
-| Project profile assignment and project worker routing | **Settings → Projects** for the selected project/checkout; under **Advanced** in Workspace mode. |
-| Project Runtime | **Settings → Projects** for one concrete environment/checkout; development-heavy Runtime controls are under **Advanced** in Workspace mode. |
-| Runtime tasks, handoffs, source registrations, instructions | Environment database, project-scoped. |
-| Execution attempts and routing receipts | Environment database, project-scoped. |
-| Registered source bodies | Workspace files themselves; Runtime stores descriptors, not copies. |
+| Item                                                        | Location / owner                                                                                                                                                 |
+| ----------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| T3 Fork interface mode                                      | **Settings → General → T3 Fork interface**. Device-local UI preference.                                                                                          |
+| Provider connections and instances                          | **Settings → Providers** on the selected environment. Provider authentication remains provider-owned.                                                            |
+| Development Profiles                                        | Normal Settings navigation in **Development** mode; reachable from **Advanced** or direct URL in **Workspace** mode. Profiles persist on the environment server. |
+| Project profile assignment and project worker routing       | **Settings → Projects** for the selected project/checkout; under **Advanced** in Workspace mode.                                                                 |
+| Project Runtime                                             | **Settings → Projects** for one concrete environment/checkout; development-heavy Runtime controls are under **Advanced** in Workspace mode.                      |
+| Runtime tasks, handoffs, source registrations, instructions | Environment database, project-scoped.                                                                                                                            |
+| Execution attempts and routing receipts                     | Environment database, project-scoped.                                                                                                                            |
+| Registered source bodies                                    | Workspace files themselves; Runtime stores descriptors, not copies.                                                                                              |
 
 The server derives its SQLite database as:
 
@@ -54,14 +54,14 @@ For qualification or migration work, use a fresh isolated home. Never point an e
 
 ## Worker roles
 
-| Role | Meaning |
-| --- | --- |
-| `implementation` | Make the requested change. |
-| `research` | Gather evidence or investigate. |
-| `review` | Independently inspect existing work. |
-| `design` | Produce design or architecture work. |
-| `test` | Exercise/qualify behavior. |
-| `general` | Work not covered by a narrower role. |
+| Role             | Meaning                              |
+| ---------------- | ------------------------------------ |
+| `implementation` | Make the requested change.           |
+| `research`       | Gather evidence or investigate.      |
+| `review`         | Independently inspect existing work. |
+| `design`         | Produce design or architecture work. |
+| `test`           | Exercise/qualify behavior.           |
+| `general`        | Work not covered by a narrower role. |
 
 A role belongs to an execution attempt, not to a permanent agent persona.
 
@@ -69,7 +69,7 @@ A role belongs to an execution attempt, not to a permanent agent persona.
 
 Highest to lowest:
 
-1. explicit one-run override *(resolver/API callers only; not available in the Runtime task UI)*;
+1. explicit one-run override _(resolver/API callers only; not available in the Runtime task UI)_;
 2. task routing;
 3. project routing;
 4. assigned Development Profile routing;
@@ -89,11 +89,11 @@ Workspace/Development mode does not participate in this precedence and does not 
 
 After a layer's ordered candidates are exhausted:
 
-| Fallback | Result |
-| --- | --- |
-| `continue` | Evaluate the next lower Runtime routing layer. |
-| `inherit` | Stop Runtime routing and use ordinary T3 inheritance; do not evaluate lower Runtime layers. |
-| `fail` | Refuse routing; do not silently inherit. |
+| Fallback   | Result                                                                                      |
+| ---------- | ------------------------------------------------------------------------------------------- |
+| `continue` | Evaluate the next lower Runtime routing layer.                                              |
+| `inherit`  | Stop Runtime routing and use ordinary T3 inheritance; do not evaluate lower Runtime layers. |
+| `fail`     | Refuse routing; do not silently inherit.                                                    |
 
 Development Profile routing is the terminal Runtime layer, so profile entries support only `inherit` and `fail`.
 
@@ -105,16 +105,16 @@ An empty candidate list is meaningful. With `inherit` it deliberately disables R
 
 Runtime task lifecycle values:
 
-| State | Meaning |
-| --- | --- |
-| `planned` | Recorded but not yet ready for execution. |
-| `ready` | Ready to be worked. |
-| `active` | Work is in progress. |
-| `blocked` | Cannot proceed; requires a blocker classification/summary. |
-| `review` | Awaiting or undergoing review. |
-| `done` | Work result is recorded. This does not itself mean verified. |
-| `deferred` | Intentionally postponed. |
-| `cancelled` | Work was cancelled. |
+| State       | Meaning                                                      |
+| ----------- | ------------------------------------------------------------ |
+| `planned`   | Recorded but not yet ready for execution.                    |
+| `ready`     | Ready to be worked.                                          |
+| `active`    | Work is in progress.                                         |
+| `blocked`   | Cannot proceed; requires a blocker classification/summary.   |
+| `review`    | Awaiting or undergoing review.                               |
+| `done`      | Work result is recorded. This does not itself mean verified. |
+| `deferred`  | Intentionally postponed.                                     |
+| `cancelled` | Work was cancelled.                                          |
 
 `done` requires a non-empty task result. Leaving `blocked` clears the blocker in the normal editor flow.
 
@@ -130,16 +130,16 @@ Permission mode comes from the task/project route/defaults. A worker waiting on 
 
 Runtime execution-attempt status values:
 
-| Status | Active? | Meaning / normal operator action |
-| --- | ---: | --- |
-| `pending` | yes | Durable attempt exists; launch is not fully classified. Startup may replay the same launch IDs. Use Recheck if needed. |
-| `launched` | yes | Worker thread/run launched. Recheck after the worker finishes. |
-| `cancelling` | yes | Stop requested; active slot remains held. Cancel again or Recheck if needed. |
-| `completed` | no | Existing run completed. |
-| `failed` | no | Existing run failed or a non-ambiguous launch failure was recorded. |
-| `cancelled` | no | Attempt was cancelled. |
-| `interrupted` | no | Existing run terminated as interrupted. |
-| `reconcile_required` | yes | T3 cannot safely prove the existing attempt's final state. Recheck; do not launch a second worker. |
+| Status               | Active? | Meaning / normal operator action                                                                                       |
+| -------------------- | ------: | ---------------------------------------------------------------------------------------------------------------------- |
+| `pending`            |     yes | Durable attempt exists; launch is not fully classified. Startup may replay the same launch IDs. Use Recheck if needed. |
+| `launched`           |     yes | Worker thread/run launched. Recheck after the worker finishes.                                                         |
+| `cancelling`         |     yes | Stop requested; active slot remains held. Cancel again or Recheck if needed.                                           |
+| `completed`          |      no | Existing run completed.                                                                                                |
+| `failed`             |      no | Existing run failed or a non-ambiguous launch failure was recorded.                                                    |
+| `cancelled`          |      no | Attempt was cancelled.                                                                                                 |
+| `interrupted`        |      no | Existing run terminated as interrupted.                                                                                |
+| `reconcile_required` |     yes | T3 cannot safely prove the existing attempt's final state. Recheck; do not launch a second worker.                     |
 
 Only `pending` is automatically replayed at startup. Other active states block another execution until reconciliation makes the attempt terminal.
 
@@ -165,15 +165,15 @@ Task lifecycle and verification are separate. A task may be `done` while its ver
 
 Persisted verification milestone values are:
 
-| Stored value | Operator label | Meaning |
-| --- | --- | --- |
-| `none` | — | No verification milestone has been established. |
-| `implemented` | `IMPLEMENTED` | Requested implementation exists, but stronger verification has not yet been established. |
-| `static-pass` | `STATIC PASS` | Appropriate static checks passed. |
-| `runtime-pass` | `RUNTIME PASS` | Required runtime/behavior checks passed. |
-| `review-pass` | `REVIEW PASS` | Required review found no blocking issue after repairs. |
-| `integrated` | `INTEGRATED` | Accepted work is on the intended integration base/head and evidence supports that state. |
-| `verified` | `VERIFIED` | All acceptance/verification required for the task or milestone has passed. |
+| Stored value   | Operator label | Meaning                                                                                  |
+| -------------- | -------------- | ---------------------------------------------------------------------------------------- |
+| `none`         | —              | No verification milestone has been established.                                          |
+| `implemented`  | `IMPLEMENTED`  | Requested implementation exists, but stronger verification has not yet been established. |
+| `static-pass`  | `STATIC PASS`  | Appropriate static checks passed.                                                        |
+| `runtime-pass` | `RUNTIME PASS` | Required runtime/behavior checks passed.                                                 |
+| `review-pass`  | `REVIEW PASS`  | Required review found no blocking issue after repairs.                                   |
+| `integrated`   | `INTEGRATED`   | Accepted work is on the intended integration base/head and evidence supports that state. |
+| `verified`     | `VERIFIED`     | All acceptance/verification required for the task or milestone has passed.               |
 
 `blocked` and `deferred` are **task lifecycle statuses**, not verification milestones.
 
@@ -278,20 +278,20 @@ Do not reuse one database between this fork and an upstream build during qualifi
 
 ## Provider and routing failure quick reference
 
-| Symptom | Check |
-| --- | --- |
-| Workspace hides development controls | Open **Advanced**, or switch to **Development** in **Settings → General → T3 Fork interface**. |
-| Development Profiles is missing from Workspace Settings navigation/search | Expected in Workspace mode. Use an **Advanced** link/direct URL, or switch to Development. |
-| Saved provider/model is unavailable | **Settings → Providers**, provider login/status, provider enablement, project eligibility, route rejection details. |
-| `provider_disabled` | Enable the provider/model in **Settings → Providers**. |
-| `no_default_model` / “Configure a worker preference first” | Set a task Worker preference with provider/model, or configure the project default model. |
-| Different worker wins | one-run *(API callers only)* → task → project → profile → ordinary T3; then inspect fallback/rejections. |
-| Execute is disabled | Save/reopen the task; check lifecycle status, revision, Runtime enablement, active attempt, provider/model/workspace eligibility. |
-| Worker appears stuck at `launched` | Open the worker thread and check for approval/input requests; Recheck after it finishes. |
-| Attempt seems stale | **Recheck attempt**. |
-| Cancel does not settle | **Cancel again** or **Recheck attempt**; inspect the existing thread and any delegated child tasks. |
-| `reconcile_required` | Recheck. If the worker thread is confirmed deleted/absent, **Cancel execution**; otherwise restore access and do not launch another worker. |
-| No handoff | Ask the worker thread to call `t3_project_handoff_append`, then Recheck. |
+| Symptom                                                                   | Check                                                                                                                                       |
+| ------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
+| Workspace hides development controls                                      | Open **Advanced**, or switch to **Development** in **Settings → General → T3 Fork interface**.                                              |
+| Development Profiles is missing from Workspace Settings navigation/search | Expected in Workspace mode. Use an **Advanced** link/direct URL, or switch to Development.                                                  |
+| Saved provider/model is unavailable                                       | **Settings → Providers**, provider login/status, provider enablement, project eligibility, route rejection details.                         |
+| `provider_disabled`                                                       | Enable the provider/model in **Settings → Providers**.                                                                                      |
+| `no_default_model` / “Configure a worker preference first”                | Set a task Worker preference with provider/model, or configure the project default model.                                                   |
+| Different worker wins                                                     | one-run _(API callers only)_ → task → project → profile → ordinary T3; then inspect fallback/rejections.                                    |
+| Execute is disabled                                                       | Save/reopen the task; check lifecycle status, revision, Runtime enablement, active attempt, provider/model/workspace eligibility.           |
+| Worker appears stuck at `launched`                                        | Open the worker thread and check for approval/input requests; Recheck after it finishes.                                                    |
+| Attempt seems stale                                                       | **Recheck attempt**.                                                                                                                        |
+| Cancel does not settle                                                    | **Cancel again** or **Recheck attempt**; inspect the existing thread and any delegated child tasks.                                         |
+| `reconcile_required`                                                      | Recheck. If the worker thread is confirmed deleted/absent, **Cancel execution**; otherwise restore access and do not launch another worker. |
+| No handoff                                                                | Ask the worker thread to call `t3_project_handoff_append`, then Recheck.                                                                    |
 
 ## Persistence boundaries
 

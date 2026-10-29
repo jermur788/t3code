@@ -47,7 +47,7 @@ vp run dev
 
 The dev runner does **not** open an authenticated browser by default. Wait for the `pairingUrl:` line, then open that exact URL in the browser you want to use. The pairing URL is a credential: do not paste, post, or share it.
 
-After pairing, T3 opens normally and the authenticated root redirects to fork **Project Home** (`/home`). Development ports vary by checkout/worktree; do not assume a fixed port.
+After pairing, T3 opens normally and the authenticated root redirects to fork **Project Home** (`/home`). If this device has no saved interface preference, Project Home presents the first-choice prompt described in Section 2. Development ports vary by checkout/worktree; do not assume a fixed port.
 
 If you lose the pairing URL while the server is running, generate another with:
 
@@ -73,19 +73,34 @@ opencode auth login
 
 Use only the command for the provider you installed. Antigravity is installed and signed in from T3 **Settings → Providers**.
 
-## 2. Connect an AI provider
+## 2. Choose the T3 Fork interface
 
-Open **Settings → Providers**. If you are connected to a remote environment, select that environment first.
+T3 Fork has two presentations over the same project and Project Runtime truth:
+
+- **Workspace** — project identity, conversations, **Start a thread**, Instructions, Sources, and normal project settings. Development machinery is progressively disclosed under **Advanced**.
+- **Development** — Development Profiles, worker routing, Project Runtime, Runtime tasks, execution attempts/executions, handoffs, and review/recovery/verification controls shown directly.
+
+These are two views over the same Runtime and project records, not two databases or two modes of execution.
+
+When this device has no saved interface preference, Project Home shows **Choose your T3 Fork interface**. Development remains the visible default behind that prompt. This manual's golden path chooses **Workspace**.
+
+The choice is a device-local interface preference, not project or Runtime state. Change it later at **Settings → General → T3 Fork interface**. The change takes effect immediately; no restart is required. Changing it does not change provider/model configuration, Development Profile assignment, routing, Runtime enablement, tasks, handoffs, executions, permissions, or other project state.
+
+For the rest of the manual, Workspace is home base. Where a step needs development controls, it says whether to open Workspace **Advanced** or switch to Development.
+
+## 3. Connect an AI provider
+
+Open **Settings → Providers**. If you are connected to a remote environment, select that environment first. Provider configuration is the same in both interface modes.
 
 For Codex, T3 can connect a ChatGPT account from this screen or use an existing `codex login`. Other CLI providers are discovered from the environment where the T3 server runs; install and authenticate them on that machine. Enable the provider/model you intend to use. Do not paste provider secrets into Project Instructions, Runtime tasks, or handoffs.
 
 Confirm three separate things:
 
-| Check | Meaning |
-| --- | --- |
-| Provider availability | T3 can see an installed/authenticated and enabled provider and its advertised models. |
-| Worker routing preference | Runtime prefers a provider/model for a role such as implementation or review. |
-| Project eligibility | Normal T3 project/provider settings, model constraints, modes, permissions, and current availability still allow that worker to launch. |
+| Check                     | Meaning                                                                                                                                 |
+| ------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
+| Provider availability     | T3 can see an installed/authenticated and enabled provider and its advertised models.                                                   |
+| Worker routing preference | Runtime prefers a provider/model for a role such as implementation or review.                                                           |
+| Project eligibility       | Normal T3 project/provider settings, model constraints, modes, permissions, and current availability still allow that worker to launch. |
 
 A saved routing preference is not authorization. T3 rechecks eligibility immediately before execution.
 
@@ -93,29 +108,25 @@ A saved routing preference is not authorization. T3 rechecks eligibility immedia
 
 Provider-specific help: [Codex](user/providers-codex.md), [Claude](user/providers-claude.md), [Cursor](user/cursor.md), and [Install and first run](user/install.md#providers).
 
-## 3. Set up a project
+## 4. Set up a project in Workspace
 
-Open **Project Home** (`/home`). Add or open a repository with T3's normal project controls, then select the concrete project/checkout on Project Home.
+Use **Project Home** in the sidebar (the in-app Home navigation) rather than hard-loading a URL. Add or open a repository with T3's normal project controls, then select the concrete project/checkout in the Project Home picker.
 
-Project Home shows the fork-specific durable layers before you start a thread:
+Workspace Project Home leads with, in order:
 
-- Development Profile;
-- Project Instructions;
-- Sources;
-- Project State;
-- Tasks & Handoffs.
+1. project identity and selection;
+2. **Start a thread**;
+3. **Instructions**;
+4. **Sources**;
+5. **Advanced**.
 
-Choose **Start a thread** when you want a normal T3 thread for the selected project. **Classic T3 Home** opens the upstream-style home; `/?classic=1` is the direct route.
+**Project settings** beside **Start a thread** opens Settings → Projects for the selected project.
 
-### Assign a Development Profile
+If no project exists, Project Home asks you to add one. If a project or checkout is unavailable, Project Home says so instead of silently switching to another checkout.
 
-Open **Settings → Development Profiles**, select the environment, create or select a profile, and save the shared development instructions you want projects to inherit.
+### Enable Runtime, Instructions, and Sources
 
-Then open **Settings → Projects**, select the concrete project/checkout, and choose that profile under **Development Profile**. A project can have one profile. Project-specific instructions override directly conflicting profile instructions.
-
-### Enable Project Runtime
-
-In **Settings → Projects**, select one concrete environment and checkout, then open **Project Runtime** and choose **Enable Runtime**.
+If Project Home reports **Project Runtime is disabled**, open **Project settings → Advanced → Project Runtime**, choose the concrete environment and checkout, and select **Enable Runtime**. Runtime belongs to one project on one environment, not to a provider or conversation.
 
 Add only project-owned durable truth:
 
@@ -124,9 +135,34 @@ Add only project-owned durable truth:
 - **Project State / Tasks:** durable work state and acceptance/verification information.
 - **Handoffs:** append-only continuation records produced after substantial work.
 
-Runtime state belongs to the selected project on that environment, not to a provider or conversation. Disabling Runtime hides its editors but keeps the records. Development Profile assignment remains active even when Runtime is disabled.
+Project Home shows a preview of **Instructions** and the number of registered **Sources**. Use **Edit instructions** and **Manage sources** to change them. Registered sources are references to workspace files; Runtime does not copy their bodies. Back up the source files as well as Runtime state.
 
-Registered sources are references to workspace files; Runtime does not copy their bodies. Back up the source files as well as Runtime state.
+Disabling Runtime hides its editors but keeps the records. Development Profile assignment remains active even when Runtime is disabled.
+
+### Start a thread
+
+After the project is selected and its instructions/sources are configured, choose **Start a thread**. That opens normal T3 conversation work with the project already selected. **Classic T3 Home** opens the upstream-style home; `/?classic=1` is the direct route.
+
+Starting a thread is ordinary T3 conversation work. Runtime task execution in Section 6 is a separate, durable execution path.
+
+### Project settings and Advanced
+
+In Workspace mode, **Project settings** keeps normal project settings and Runtime **Project Instructions** / **Registered sources** accessible. The following existing development controls are collapsed under **Advanced**:
+
+- Development Profile assignment;
+- project **Worker preferences**;
+- Project Runtime state/revision/enable controls;
+- Runtime tasks, handoffs, and executions, including review, verification, cancellation, and reconciliation controls reached through those tasks.
+
+On Project Home, **Advanced** summarizes Development Profile, Project Runtime, Project State, and Tasks & Handoffs, and links to their controls. In Project settings it reveals the sections above. Opening **Advanced** changes neither the saved interface mode nor any project/Runtime value, and closing it also changes nothing. Direct links to an advanced section automatically reveal the relevant Advanced content, so a deep link never lands on hidden controls.
+
+Development Profiles is hidden from normal Workspace Settings navigation and search. It remains available through Project Home **Advanced → Manage profiles** or its direct URL.
+
+### Optional shared Development Profile
+
+For shared policy across projects, open **Advanced → Manage profiles** on Project Home, or switch to Development and open **Settings → Development Profiles**. Select the environment, create or select a profile, and save the shared development instructions you want projects to inherit.
+
+Then return to the project's settings and choose that profile under **Advanced → Development Profile**. A project can have one profile. Project-specific instructions override directly conflicting profile instructions.
 
 If you want workers to leave durable continuation records, put this requirement in Project Instructions or the task's **Next action**:
 
@@ -134,7 +170,7 @@ If you want workers to leave durable continuation records, put this requirement 
 
 The worker's provider thread must have Runtime MCP tools available for that handoff call to work.
 
-## 4. Configure workers
+## 5. Configure workers
 
 Worker roles describe an execution attempt, not a permanent agent persona:
 
@@ -145,11 +181,11 @@ Worker roles describe an execution attempt, not a permanent agent persona:
 - **test** — exercise or qualify behavior;
 - **general** — work that does not fit a narrower role.
 
-Configure reusable defaults in **Settings → Development Profiles**. Configure project overrides in **Settings → Projects → Worker preferences**. Configure a task-specific role/preference when creating or editing a Runtime task.
+These are development controls. In Workspace, open **Project settings → Advanced → Worker preferences** for project overrides, and use Project Home **Advanced → Manage profiles** for profile defaults. In Development, use **Settings → Development Profiles** and **Settings → Projects → Worker preferences** directly. Configure a task-specific role/preference when creating or editing a Runtime task.
 
 Routing precedence is:
 
-1. explicit one-run override *(API/resolver callers only; the Runtime task UI has no one-run input)*;
+1. explicit one-run override _(API/resolver callers only; the Runtime task UI has no one-run input)_;
 2. task routing;
 3. project routing;
 4. Development Profile routing;
@@ -161,13 +197,15 @@ The Runtime task **Execute task** action launches from saved task/project/profil
 
 Where routing is shown, use T3's **effective** / winning-layer display rather than trying to infer the result yourself. Routing does not bypass provider availability, project settings, model support, runtime/interaction modes, permissions, or other T3 eligibility checks.
 
-## 5. Run a real task
+## 6. Run a real task
+
+Runtime task and execution controls are development machinery. Begin in Workspace, then either open **Project settings → Advanced → Project Runtime** (or Project Home **Advanced → Tasks & handoffs**) or switch to **Development** at **Settings → General → T3 Fork interface**. Switching modes changes presentation only; it does not change Runtime state. With Advanced open, Workspace Project settings exposes the same Runtime task controls as Development.
 
 Use one small task all the way through this manual:
 
 > **Document the project's test command** — add a short `Tests` section to the project README using the command that already exists in the repository. Do not change code or dependencies.
 
-Open **Settings → Projects → Project Runtime** and choose **Create task**.
+Open **Settings → Projects → Project Runtime** (Development) or **Settings → Projects → Advanced → Project Runtime** (Workspace) and choose **Create task**.
 
 Record:
 
@@ -214,7 +252,9 @@ If no handoff appears, open the worker thread and ask it to append one with `t3_
 
 If the implementation satisfies acceptance, move to independent review rather than treating the worker's “done” message as verification.
 
-## 6. Review and verify work
+## 7. Review and verify work
+
+Continue in Development, or use Workspace **Advanced**; review and verification operate on the same Runtime records in either presentation.
 
 Use this cycle:
 
@@ -258,11 +298,16 @@ The corresponding operator labels are:
 
 Record passing evidence before raising a passing milestone. `verified` cannot coexist with failing evidence.
 
-## 7. Restart and continue
+## 8. Restart and confirm durable state
 
-This proves the fork's central persistence property.
+This proves the fork's central persistence property and keeps the two persistence scopes separate:
 
-1. Create and execute the example task.
+| Scope                             | What it includes                                                                                                                           | Restart behavior                                                                                       |
+| --------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------ |
+| Durable server/project truth      | Project Instructions, registered sources, project/task state, handoffs, routing/profile state, execution attempts and reconciliation state | Stored on the environment server; survives server restart, reconnects, and client changes.             |
+| Device-local interface preference | Workspace or Development presentation choice (`t3-fork:interface-mode`)                                                                    | Belongs to this browser/device; it does not travel with the project and does not change Runtime truth. |
+
+1. Create and execute the example task if it is not already complete.
 2. Confirm the task, attempt, and handoff are visible.
 3. Stop the development server normally.
 4. Start it again:
@@ -272,9 +317,10 @@ vp run dev
 ```
 
 5. Open the new `pairingUrl:` printed by the dev runner if the browser needs pairing.
-6. Reopen **Project Home**, select the same project/checkout, and return to **Settings → Projects → Project Runtime**.
-7. Confirm the saved instructions, sources, task, execution attempt, and handoff remain.
-8. Continue in the same provider or switch to another eligible provider.
+6. Use **Project Home** in the sidebar, select the same project/checkout, and open the Runtime task area through Development or Workspace **Advanced**.
+7. Confirm the saved instructions, sources, task, execution attempt, handoff, and routing/profile state remain.
+8. Confirm the chosen interface preference still behaves as chosen on this device. If it is not the presentation you want, change it at **Settings → General → T3 Fork interface**; no restart is required.
+9. Continue in the same provider or switch to another eligible provider.
 
 On startup, T3 reconciles active execution attempts against their existing worker threads/runs. A `pending` launch replays with the same stored IDs. An ambiguous attempt remains `reconcile_required` rather than allowing a speculative second worker.
 
@@ -282,7 +328,14 @@ T3's normal **Continue threads after restarts** behavior can resume provider thr
 
 Durable state includes project instructions, source registrations, project/task state, handoffs, routing/profile state, and execution references/state. Important project truth should not depend on the old chat remaining available.
 
-## 8. When something goes wrong
+> [!NOTE]
+> Use the in-app **Project Home** navigation for this restart check. A hard browser load of `/home` can land on a thread instead of Project Home when an interface preference has been saved. That is a pre-existing routing limitation; Workspace Modes did not fix it and does not change it.
+
+## 9. When something goes wrong
+
+### I chose Workspace and cannot find development controls
+
+Open **Advanced** on Project Home or in Project settings. Development Profile assignment, worker preferences, Runtime state, tasks, handoffs, executions, verification, and recovery are still available there. Alternatively, switch to **Development** at **Settings → General → T3 Fork interface**. Neither action changes Runtime or project state. Development Profiles is intentionally hidden from normal Workspace Settings navigation/search; use Project Home **Advanced → Manage profiles** or its direct URL.
 
 ### My worker will not start
 
@@ -326,7 +379,7 @@ Choose **Cancel execution**. While stop is in progress, the attempt is `cancelli
 
 Cancellation stops the selected worker thread with delegated-task stopping disabled; child/delegated tasks that worker spawned may continue and must be checked separately.
 
-### The task says `reconcile-required`
+### The task says `reconcile_required`
 
 **Do not launch another worker blindly.**
 
