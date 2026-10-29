@@ -2,14 +2,38 @@
 
 Use this file for facts that are needed occasionally during operation. The normal workflow is in [T3 Fork Operator Manual](manual.md).
 
+## Interface modes
+
+T3 Fork has two presentation modes over the same Project Runtime and project state:
+
+- **Workspace** — project context and conversations first; development-heavy controls are progressively disclosed under **Advanced**.
+- **Development** — the full operator/development interface with Development Profiles, routing, Runtime tasks, executions, handoffs, review, recovery, and verification controls visible directly.
+
+The selected interface is a **device-local UI preference**, not project or Runtime truth. The stored values are:
+
+```text
+workspace | development
+```
+
+The local-storage key is:
+
+```text
+t3-fork:interface-mode
+```
+
+If no value has been saved, T3 Fork uses Development as the visible default while presenting the first-choice prompt. Change the preference at **Settings → General → T3 Fork interface**. The change takes effect immediately and does not require a restart.
+
+Changing interface mode does not change provider/model configuration, Development Profile assignment, routing, Runtime enablement, tasks, handoffs, executions, permissions, or other project state.
+
 ## Configuration locations
 
 | Item | Location / owner |
 | --- | --- |
+| T3 Fork interface mode | **Settings → General → T3 Fork interface**. Device-local UI preference. |
 | Provider connections and instances | **Settings → Providers** on the selected environment. Provider authentication remains provider-owned. |
-| Development Profiles | **Settings → Development Profiles**. Profiles persist on the environment server. |
-| Project profile assignment and project worker routing | **Settings → Projects** for the selected project/checkout. |
-| Project Runtime | **Settings → Projects → Project Runtime** for one concrete environment/checkout. |
+| Development Profiles | Normal Settings navigation in **Development** mode; reachable from **Advanced** or direct URL in **Workspace** mode. Profiles persist on the environment server. |
+| Project profile assignment and project worker routing | **Settings → Projects** for the selected project/checkout; under **Advanced** in Workspace mode. |
+| Project Runtime | **Settings → Projects** for one concrete environment/checkout; development-heavy Runtime controls are under **Advanced** in Workspace mode. |
 | Runtime tasks, handoffs, source registrations, instructions | Environment database, project-scoped. |
 | Execution attempts and routing receipts | Environment database, project-scoped. |
 | Registered source bodies | Workspace files themselves; Runtime stores descriptors, not copies. |
@@ -58,6 +82,8 @@ Routing selects a preference. It does not grant permission or bypass provider re
 The Runtime task **Execute task** RPC accepts saved task/revision/request identity, not an ad-hoc one-run worker override. The current task UI executes saved task/project/profile policy.
 
 If Runtime routing inherits to ordinary T3 behavior, the launch path uses the project's default model selection. If no project default model exists, execution can fail with `no_default_model` / **Configure a worker preference first**.
+
+Workspace/Development mode does not participate in this precedence and does not change routing behavior.
 
 ## Routing fallback semantics
 
@@ -168,6 +194,12 @@ The attempt is ambiguous: for example, T3 could not safely read/classify the exi
 
 First restore the environment/provider if necessary and **Recheck attempt**. If Recheck still leaves `reconcile_required` and the worker thread has been deleted or is confirmed absent, **Cancel execution** records the attempt as `cancelled` and frees the slot. Do not use that path while the thread still exists and may be running.
 
+## Adaptive routing persistence foundation
+
+Fork migration 7, `AdaptiveRouting`, provides the ARM-010 contracts and persistence foundation for adaptive-routing telemetry and records. It does **not** mean Adaptive Model Routing V1 is complete or that T3 automatically chooses a provider/model adaptively.
+
+Current ordinary routing precedence remains unchanged. Later adaptive observation, difficulty/outcome learning, recommendation, experiments, UI, and cross-provider qualification stages remain separate work.
+
 ## Updating the fork
 
 These instructions are for a source checkout of `jermur788/t3code`.
@@ -204,23 +236,27 @@ A full server boot runs the upstream migration sequence and then the fork migrat
 4. `RuntimeRouting`
 5. `RuntimeExecutionAttempts`
 6. `RuntimeExecutionCancellation`
+7. `AdaptiveRouting`
 
 Migration history is fail-closed: malformed, partial, conflicting, or ambiguous fork histories are rejected rather than guessed.
 
 After the update, perform a basic check:
 
-1. Project Home loads after pairing.
-2. The expected project/checkout is selectable.
-3. Development Profile and Project Runtime open.
-4. Existing task/handoff/execution state is present.
-5. At least one configured provider is still enabled and available.
-6. Recheck any execution that was active around shutdown before starting another worker.
+1. Use the normal in-app Home/Project Home navigation after pairing.
+2. Confirm the expected project/checkout is selectable.
+3. Confirm the saved Workspace/Development preference is appropriate for this device; change it in **Settings → General → T3 Fork interface** if needed.
+4. Open Development Profile and Project Runtime controls through Development mode or Workspace **Advanced**.
+5. Confirm existing task/handoff/execution state is present.
+6. Confirm at least one configured provider is still enabled and available.
+7. Recheck any execution that was active around shutdown before starting another worker.
 
 Do not run an upstream T3 build against an adopted fork home as an “upgrade test”. Keep upstream and fork homes separate unless that transition has been explicitly qualified.
 
 ## Important data and backups
 
-Runtime does not have a separate database. Project Runtime, Development Profiles, project/task routing, task/handoff state, and execution-attempt records live in the environment database.
+Runtime does not have a separate database. Project Runtime, Development Profiles, project/task routing, task/handoff state, execution-attempt records, and ARM-010 adaptive persistence records live in the environment database.
+
+The Workspace/Development interface preference is different: it is device-local presentation state and is not stored as project or Runtime truth.
 
 The T3 home can also contain `secrets/`, authentication state, and attachments. A full-home backup therefore contains sensitive material and must be protected accordingly.
 
@@ -244,6 +280,8 @@ Do not reuse one database between this fork and an upstream build during qualifi
 
 | Symptom | Check |
 | --- | --- |
+| Workspace hides development controls | Open **Advanced**, or switch to **Development** in **Settings → General → T3 Fork interface**. |
+| Development Profiles is missing from Workspace Settings navigation/search | Expected in Workspace mode. Use an **Advanced** link/direct URL, or switch to Development. |
 | Saved provider/model is unavailable | **Settings → Providers**, provider login/status, provider enablement, project eligibility, route rejection details. |
 | `provider_disabled` | Enable the provider/model in **Settings → Providers**. |
 | `no_default_model` / “Configure a worker preference first” | Set a task Worker preference with provider/model, or configure the project default model. |
@@ -265,7 +303,12 @@ Durable on the environment server:
 - project/task state;
 - task routing and project/profile routing;
 - append-only handoffs and latest-handoff reference;
-- execution attempts, routing receipts, worker thread/run references, and cancellation/reconciliation state.
+- execution attempts, routing receipts, worker thread/run references, and cancellation/reconciliation state;
+- ARM-010 adaptive-routing persistence records.
+
+Device-local presentation state:
+
+- Workspace/Development interface preference (`t3-fork:interface-mode`).
 
 Not copied into Runtime:
 
