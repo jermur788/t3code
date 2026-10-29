@@ -1,7 +1,7 @@
 import { EnvironmentId } from "@t3tools/contracts";
 import { useLocation } from "@tanstack/react-router";
 import { LayersIcon } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 
 import { useForkWorkspaceMode } from "../../forkWorkspaceMode";
 import { Button } from "../ui/button";
@@ -30,25 +30,24 @@ export function ProjectsSettings() {
   const [seenHash, setSeenHash] = useState(hash);
   // The target handles its own reveal while it is mounted, but a direct load can request the
   // hash before Advanced has made the section visible. Keep the target until the next frame.
-  const revealTarget = useRef<string | null>(advancedRequested ? hash : null);
+  const [revealTarget, setRevealTarget] = useState<string | null>(advancedRequested ? hash : null);
   if (seenHash !== hash) {
     setSeenHash(hash);
     if (advancedRequested) {
       setAdvancedOpen(true);
-      revealTarget.current = hash;
+      setRevealTarget(hash);
     }
   }
+  // oxlint-disable-next-line t3code/react-effect-budget -- A direct deep link mounts the target while Advanced is still hidden, so the scroll must wait for the browser to lay out the opened section.
   useEffect(() => {
-    if (!advancedOpen || revealTarget.current === null) return;
-    const targetId = revealTarget.current;
-    revealTarget.current = null;
+    if (!advancedOpen || revealTarget === null) return;
     requestAnimationFrame(() => {
-      const target = document.getElementById(targetId);
+      const target = document.getElementById(revealTarget);
       if (!target) return;
       target.scrollIntoView({ block: "start", behavior: "auto" });
       target.focus({ preventScroll: true });
     });
-  }, [advancedOpen, hash]);
+  }, [advancedOpen, revealTarget]);
 
   const unavailable =
     scope.kind === "unavailable" ? (
