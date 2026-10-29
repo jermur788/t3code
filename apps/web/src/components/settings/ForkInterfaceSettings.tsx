@@ -18,7 +18,11 @@ export function ForkInterfaceSettings() {
                 if (value === "workspace" || value === "development") setMode(value);
               }}
             >
-              <SelectTrigger size="sm" className="w-full sm:w-44" aria-label="T3 Fork interface mode">
+              <SelectTrigger
+                size="sm"
+                className="w-full sm:w-44"
+                aria-label="T3 Fork interface mode"
+              >
                 <SelectValue>{mode === "workspace" ? "Workspace" : "Development"}</SelectValue>
               </SelectTrigger>
               <SelectPopup align="end" alignItemWithTrigger={false}>

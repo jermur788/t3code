@@ -360,7 +360,7 @@ function WorkspaceProjectSummary({
                 ? "Loading…"
                 : profile.data.status === "unavailable"
                   ? "Unavailable"
-                  : profileSummary?.profileName ?? "No profile assigned"}
+                  : (profileSummary?.profileName ?? "No profile assigned")}
             </dd>
           </div>
           <div className="rounded-md border border-border/60 p-2">
@@ -419,20 +419,12 @@ function WorkspaceProjectSummary({
             size="xs"
             variant="outline"
             render={
-              <Link
-                to="/settings/projects"
-                search={settingsSearch}
-                hash="project-runtime-tasks"
-              />
+              <Link to="/settings/projects" search={settingsSearch} hash="project-runtime-tasks" />
             }
           >
             Tasks & handoffs
           </Button>
-          <Button
-            size="xs"
-            variant="ghost"
-            render={<Link to="/settings/development-profiles" />}
-          >
+          <Button size="xs" variant="ghost" render={<Link to="/settings/development-profiles" />}>
             Manage profiles
           </Button>
         </div>

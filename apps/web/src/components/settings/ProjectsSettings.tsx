@@ -1,7 +1,7 @@
 import { EnvironmentId } from "@t3tools/contracts";
 import { useLocation } from "@tanstack/react-router";
 import { LayersIcon } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 
 import { useForkWorkspaceMode } from "../../forkWorkspaceMode";
 import { Button } from "../ui/button";
@@ -25,10 +25,12 @@ export function ProjectsSettings() {
   const hash = useLocation({ select: (location) => location.hash.replace(/^#/, "") });
   const advancedRequested = WORKSPACE_ADVANCED_TARGETS.has(hash);
   const [advancedOpen, setAdvancedOpen] = useState(advancedRequested);
-
-  useEffect(() => {
+  // A deep link reveals Advanced once per hash change; the user can still collapse it afterwards.
+  const [seenAdvancedRequested, setSeenAdvancedRequested] = useState(advancedRequested);
+  if (seenAdvancedRequested !== advancedRequested) {
+    setSeenAdvancedRequested(advancedRequested);
     if (advancedRequested) setAdvancedOpen(true);
-  }, [advancedRequested]);
+  }
 
   const unavailable =
     scope.kind === "unavailable" ? (
