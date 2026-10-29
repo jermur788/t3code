@@ -122,7 +122,7 @@ Only `planned`, `ready`, and `active` tasks may use **Execute task**. The Execut
 
 ## Execution workspace and permissions
 
-The default worker workspace is **Shared checkout**, so the worker edits the live project checkout. **New worktree** creates an isolated worktree; its base resolution uses the configured revision, then branch, then `HEAD`.
+The default worker workspace is the **shared (live) project checkout**, so the worker edits the live project checkout. The task editor offers no per-execution workspace selector, and **Settings → Projects → New threads → Workspace** (Current checkout / New worktree) did not change where a Runtime worker ran in qualification. Where a new worktree is used, its base resolution uses the configured revision, then branch, then `HEAD`.
 
 Permission mode comes from the task/project route/defaults. A worker waiting on an approval can remain `launched`; open the linked worker thread to approve or deny the request.
 
@@ -149,7 +149,7 @@ Normal T3 **Continue threads after restarts** behavior is separate from Runtime 
 
 A successful execution does **not** guarantee a Runtime handoff. The worker must call `t3_project_handoff_append`, and its provider thread must have Runtime MCP tools available.
 
-Put the handoff requirement in Project Instructions or the task's **Next action**. If no handoff appears, open the worker thread, ask it to append one, then **Recheck attempt**.
+Put the handoff requirement in Project Instructions or the task's **Next action**. If no handoff appears, open the worker thread and ask it to append one. Recheck only if the attempt is still active; a terminal attempt shows the handoff as the task's Latest handoff / View handoffs.
 
 A terminal attempt may link the newest handoff whose server-recorded provenance matches the worker thread. Linking does not rewrite the handoff or make its claims proof.
 
@@ -278,20 +278,20 @@ Do not reuse one database between this fork and an upstream build during qualifi
 
 ## Provider and routing failure quick reference
 
-| Symptom                                                                   | Check                                                                                                                                       |
-| ------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
-| Workspace hides development controls                                      | Open **Advanced**, or switch to **Development** in **Settings → General → T3 Fork interface**.                                              |
-| Development Profiles is missing from Workspace Settings navigation/search | Expected in Workspace mode. Use an **Advanced** link/direct URL, or switch to Development.                                                  |
-| Saved provider/model is unavailable                                       | **Settings → Providers**, provider login/status, provider enablement, project eligibility, route rejection details.                         |
-| `provider_disabled`                                                       | Enable the provider/model in **Settings → Providers**.                                                                                      |
-| `no_default_model` / “Configure a worker preference first”                | Set a task Worker preference with provider/model, or configure the project default model.                                                   |
-| Different worker wins                                                     | one-run _(API callers only)_ → task → project → profile → ordinary T3; then inspect fallback/rejections.                                    |
-| Execute is disabled                                                       | Save/reopen the task; check lifecycle status, revision, Runtime enablement, active attempt, provider/model/workspace eligibility.           |
-| Worker appears stuck at `launched`                                        | Open the worker thread and check for approval/input requests; Recheck after it finishes.                                                    |
-| Attempt seems stale                                                       | **Recheck attempt**.                                                                                                                        |
-| Cancel does not settle                                                    | **Cancel again** or **Recheck attempt**; inspect the existing thread and any delegated child tasks.                                         |
-| `reconcile_required`                                                      | Recheck. If the worker thread is confirmed deleted/absent, **Cancel execution**; otherwise restore access and do not launch another worker. |
-| No handoff                                                                | Ask the worker thread to call `t3_project_handoff_append`, then Recheck.                                                                    |
+| Symptom                                                                   | Check                                                                                                                                                                                |
+| ------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Workspace hides development controls                                      | Open **Advanced**, or switch to **Development** in **Settings → General → T3 Fork interface**.                                                                                       |
+| Development Profiles is missing from Workspace Settings navigation/search | Expected in Workspace mode (project-level “Development Profile”/“Worker preferences” entries still appear in search). Use an **Advanced** link/direct URL, or switch to Development. |
+| Saved provider/model is unavailable                                       | **Settings → Providers**, provider login/status, provider enablement, project eligibility, route rejection details.                                                                  |
+| `provider_disabled`                                                       | Enable the provider/model in **Settings → Providers**.                                                                                                                               |
+| `no_default_model` / “Configure a worker preference first”                | Set a task Worker preference with provider/model, or configure the project default model.                                                                                            |
+| Different worker wins                                                     | one-run _(API callers only)_ → task → project → profile → ordinary T3; then inspect fallback/rejections.                                                                             |
+| Execute is disabled                                                       | Save/reopen the task; check lifecycle status, revision, Runtime enablement, active attempt, provider/model/workspace eligibility.                                                    |
+| Worker appears stuck at `launched`                                        | Open the worker thread and check for approval/input requests; Recheck after it finishes.                                                                                             |
+| Attempt seems stale                                                       | **Recheck attempt**.                                                                                                                                                                 |
+| Cancel does not settle                                                    | **Cancel again** or **Recheck attempt**; inspect the existing thread and any delegated child tasks.                                                                                  |
+| `reconcile_required`                                                      | Recheck. If the worker thread is confirmed deleted/absent, **Cancel execution**; otherwise restore access and do not launch another worker.                                          |
+| No handoff                                                                | Ask the worker thread to call `t3_project_handoff_append`; Recheck if the attempt is still active, otherwise look at the task's Latest handoff / View handoffs.                      |
 
 ## Persistence boundaries
 

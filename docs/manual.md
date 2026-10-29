@@ -55,6 +55,8 @@ If you lose the pairing URL while the server is running, generate another with:
 node apps/server/src/bin.ts pair
 ```
 
+If you started the server with `--home-dir <isolated-home>` (or from a linked worktree whose server runs under a different home), add `--base-dir <that-home>`; without it `pair` reports that no running server was found.
+
 If startup fails, first confirm `vp --version`, `vp exec node --version`, and that `vp install` completed. More development commands are in [docs/operations/development.md](operations/development.md).
 
 ### Provider prerequisite
@@ -110,7 +112,9 @@ Provider-specific help: [Codex](user/providers-codex.md), [Claude](user/provider
 
 ## 4. Set up a project in Workspace
 
-Use **Project Home** in the sidebar (the in-app Home navigation) rather than hard-loading a URL. Add or open a repository with T3's normal project controls, then select the concrete project/checkout in the Project Home picker.
+Use **Project Home** in the sidebar (the in-app Home navigation: the house icon at the bottom of the sidebar) rather than hard-loading a URL.
+
+A source-checkout dev run can already list a project for the checkout it was started from (for example `server`). To add your own repository, choose the sidebar's add-project (folder-plus) button, then **Local folder**, enter the repository path (the path field starts with `~/`), and press Enter. T3 opens a new-thread draft for the added project; use **Project Home** to return, then select the concrete project/checkout in the Project Home picker.
 
 Workspace Project Home leads with, in order:
 
@@ -122,7 +126,7 @@ Workspace Project Home leads with, in order:
 
 **Project settings** beside **Start a thread** opens Settings → Projects for the selected project.
 
-If no project exists, Project Home asks you to add one. If a project or checkout is unavailable, Project Home says so instead of silently switching to another checkout.
+If no project exists, Project Home asks you to add one (see above). If a project or checkout is unavailable, Project Home says so instead of silently switching to another checkout.
 
 ### Enable Runtime, Instructions, and Sources
 
@@ -156,7 +160,7 @@ In Workspace mode, **Project settings** keeps normal project settings and Runtim
 
 On Project Home, **Advanced** summarizes Development Profile, Project Runtime, Project State, and Tasks & Handoffs, and links to their controls. In Project settings it reveals the sections above. Opening **Advanced** changes neither the saved interface mode nor any project/Runtime value, and closing it also changes nothing. Direct links to an advanced section automatically reveal the relevant Advanced content, so a deep link never lands on hidden controls.
 
-Development Profiles is hidden from normal Workspace Settings navigation and search. It remains available through Project Home **Advanced → Manage profiles** or its direct URL.
+Development Profiles is hidden from normal Workspace Settings navigation and search. It remains available through Project Home **Advanced → Manage profiles** or its direct URL. Settings search does not list that page, but searching for “Development Profile” or “Worker preferences” still finds the project-level assignment and routing controls under **Settings → Projects**.
 
 ### Optional shared Development Profile
 
@@ -224,12 +228,12 @@ Save the task, then reopen **Edit task**. The Execute control exists only for a 
 
 Inside **Edit task**, inspect **Worker preference** and the effective routing result. For the golden path, either:
 
-- set an explicit task Worker preference with an eligible provider **and model**; or
+- set an explicit task Worker preference with an eligible provider **and model**: in the task form's **Worker preference** box (not the project-level one above it on the same page), choose **Add alternative worker** to add the first preferred worker, then pick the provider (icon rail) and model; or
 - confirm the project has a default model selection that normal T3 inheritance can use.
 
 If neither exists, Execute can fail with `no_default_model` / **Configure a worker preference first**.
 
-Also check where work will happen. The default is **Shared checkout**, which edits the live project checkout. **New worktree** creates an isolated worktree from the configured base. Permission mode comes from the route/project defaults; if the worker needs approval, open its worker thread and approve there.
+Also check where work will happen. Runtime task execution in this interface runs the worker in the **live project checkout** (shared checkout). The task editor has no per-execution workspace selector, and **Settings → Projects → New threads → Workspace** (Current checkout / New worktree) applies to ordinary new threads: in qualification, a Runtime worker still ran in the live checkout with that setting on New worktree. Plan for the worker to edit the live checkout, and use a disposable or clean repository. Permission mode comes from the route/project defaults; if the worker needs approval, open its worker thread and approve there.
 
 Choose **Execute task**.
 
@@ -237,7 +241,7 @@ T3 checks the loaded task revision, Runtime enablement, routing, provider/model 
 
 Only `planned`, `ready`, and `active` tasks can execute. One active attempt is allowed per task.
 
-When the worker turn finishes, choose **Recheck attempt**. Outside startup reconciliation, T3 does not continuously poll a finished worker into a new terminal Runtime status.
+When the worker turn finishes, choose **Recheck attempt**. Outside startup reconciliation, T3 does not continuously poll a finished worker into a new terminal Runtime status. **Recheck attempt** is shown only while the attempt is active; after it becomes `completed`/`failed` the control disappears. **Edit task** lists the task's latest attempt only; earlier attempts (for example a failed one you retried) remain recorded but are not listed there.
 
 Then inspect:
 
@@ -248,7 +252,7 @@ Then inspect:
 
 A handoff is context, not proof. It records what the worker says changed, tests run/not run, risks, repository/integration state, and next action; the next worker or manager still checks those claims.
 
-If no handoff appears, open the worker thread and ask it to append one with `t3_project_handoff_append`, then **Recheck attempt**.
+If no handoff appears, open the worker thread and ask it to append one with `t3_project_handoff_append`. If the attempt is still active, then **Recheck attempt**. If it is already terminal there is nothing to recheck: the handoff appears as the task's **Latest handoff** and under **View handoffs** (reopen the task area if it is not yet shown), though it is not necessarily linked on the attempt.
 
 If the implementation satisfies acceptance, move to independent review rather than treating the worker's “done” message as verification.
 
@@ -276,6 +280,8 @@ For the example, create a **separate** review task in `ready` status. Give it wo
 Reference the implementation task/handoff in the review task's Objective or Scope. Then save, reopen **Edit task**, inspect the effective route, and execute the review task with a fresh eligible worker.
 
 Do not use “change the original implementation task to review and execute it again” as the normal independent-review path: that replays the implementation task's objective and latest handoff. If you deliberately reuse the original task, first return it to `planned`, `ready`, or `active`, because `review` and `done` are not executable.
+
+A worker with Runtime tools can also update the task it ran (in qualification the review worker marked its own review task `done` with verification `review-pass`). Treat such changes as the worker's claim and check them like a handoff.
 
 After review/reconciliation, update the implementation task from evidence:
 
@@ -310,7 +316,7 @@ This proves the fork's central persistence property and keeps the two persistenc
 1. Create and execute the example task if it is not already complete.
 2. Confirm the task, attempt, and handoff are visible.
 3. Stop the development server normally.
-4. Start it again:
+4. Start it again with the same command and options you used before (for an isolated home, include the same `--home-dir`; a different home is a different database):
 
 ```sh
 vp run dev
@@ -344,6 +350,8 @@ Open **Edit task** and inspect the effective routing first, then **Settings → 
 If the UI says **Configure a worker preference first** or the attempt reports `no_default_model`, set an explicit task Worker preference with provider/model or configure the project's default model selection.
 
 A disabled provider can be rejected as `provider_disabled` even when installed/authenticated.
+
+If the attempt launched but later shows `failed` with only “The worker turn failed”, open the worker thread: provider-side errors (for example “Usage limit reached” on a subscription) appear there, and the provider can then list no models in the worker picker until it recovers. Choose a different eligible provider/model for the task and execute again.
 
 A stale task revision is also a deliberate launch refusal: reload the task before executing.
 
