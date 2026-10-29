@@ -4,11 +4,17 @@ A Development Profile defines development policy once so several projects can us
 it. Each project explicitly selects one profile, and keeps its own Project Runtime
 instructions, sources, tasks, and handoffs.
 
-On web and desktop, open **Settings → Development Profiles** and select the
-environment that owns the profile. Create a profile with a name and instructions,
-then save it. In each project's settings, select that profile under **Development
-Profile**. Select **None** to remove the assignment. For grouped projects, first
-select one environment and checkout; assignments never fan out to other projects.
+On web and desktop in **Development** mode, open **Settings → Development
+Profiles** and select the environment that owns the profile. In **Workspace**
+mode this page is hidden from normal Settings navigation and search; open
+**Advanced → Manage profiles** on Project Home, or use the direct URL. The saved
+interface mode does not change profile data.
+
+Create a profile with a name and instructions, then save it. In each project's
+settings, select that profile under **Development Profile** (under **Advanced** in
+Workspace mode). Select **None** to remove the assignment. For grouped projects,
+first select one environment and checkout; assignments never fan out to other
+projects.
 
 Project settings show the inherited profile and the project-specific instructions
 as separate layers. Project Instructions override directly conflicting profile
@@ -38,9 +44,10 @@ behaviour or fail.
 Worker preferences apply in this order: task setting, project setting, Development
 Profile setting, then normal T3 behaviour. Project settings can override the
 profile for specific roles and can reset the whole project override back to the
-profile. Runtime tasks can set their own role and preferred workers, or clear that
-preference so project and profile settings apply again. The role belongs to the
-task being performed; it is not a permanent AI persona.
+profile; in Workspace mode, project worker preferences are under **Advanced**.
+Runtime tasks can set their own role and preferred workers, or clear that preference
+so project and profile settings apply again. The role belongs to the task being
+performed; it is not a permanent AI persona.
 
 The project settings show the effective worker choice for every role and why
 higher-priority workers were skipped. This is a preference evaluated before work
