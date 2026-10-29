@@ -1,7 +1,7 @@
 import { EnvironmentId } from "@t3tools/contracts";
 import { useLocation } from "@tanstack/react-router";
 import { LayersIcon } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { useForkWorkspaceMode } from "../../forkWorkspaceMode";
 import { Button } from "../ui/button";
@@ -28,10 +28,27 @@ export function ProjectsSettings() {
   const [advancedOpen, setAdvancedOpen] = useState(advancedRequested);
   // A deep link reveals Advanced once per hash change; the user can still collapse it afterwards.
   const [seenHash, setSeenHash] = useState(hash);
+  // The target handles its own reveal while it is mounted, but a direct load can request the
+  // hash before Advanced has made the section visible. Keep the target until the next frame.
+  const revealTarget = useRef<string | null>(advancedRequested ? hash : null);
   if (seenHash !== hash) {
     setSeenHash(hash);
-    if (advancedRequested) setAdvancedOpen(true);
+    if (advancedRequested) {
+      setAdvancedOpen(true);
+      revealTarget.current = hash;
+    }
   }
+  useEffect(() => {
+    if (!advancedOpen || revealTarget.current === null) return;
+    const targetId = revealTarget.current;
+    revealTarget.current = null;
+    requestAnimationFrame(() => {
+      const target = document.getElementById(targetId);
+      if (!target) return;
+      target.scrollIntoView({ block: "start", behavior: "auto" });
+      target.focus({ preventScroll: true });
+    });
+  }, [advancedOpen, hash]);
 
   const unavailable =
     scope.kind === "unavailable" ? (
