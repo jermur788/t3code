@@ -2,249 +2,151 @@
 
 ## VERDICT
 
-READY TO IMPLEMENT
+**BLOCKED / SPEC QUESTION**
 
-This packet is browser-side reconnaissance and task framing only. No Runtime execution code was changed here.
+Browser-side source inspection found a real sequencing/contract conflict that should be reconciled before ARM-020 implementation. No Runtime execution code was changed here.
 
 ## TASK
 
-Implement **ARM-020 — Execution Context Observation** against the approved Adaptive Model Routing V1 spec.
-
-## ROUTING
-
-Use a Claude/Codex-class implementation worker. Execution atomicity, restart recovery, cancellation, and reconciliation are architecture-sensitive.
-
-One writer for the execution/telemetry lane. Read-only review may run independently.
-
-## BASE / CONTEXT
-
-- Repository: `jermur788/t3code`
-- Authoritative base inspected: `main @ 945627ca3c929bd8838de6ace5ac8c653acf217d`
-- Governing spec: `jermur788/CCF/specs/t3-adaptive-model-routing-v1/spec.md`
-- Governing bounded tasks: `jermur788/CCF/specs/t3-adaptive-model-routing-v1/tasks.md`
-- ARM-010 persistence is present on current main as fork migration `007_AdaptiveRouting`.
-- PR #10 is evidence/context only; it is not a spec change and contains no ARM implementation.
-
-The bounded task file still labels ARM-010 and ARM-020 `TODO`; that status label is stale relative to repository truth for ARM-010. Do not treat that label as implementation authority.
-
-## RECONNAISSANCE FINDINGS
-
-Current main contains fork migration 7, `AdaptiveRouting`, with an `adaptive_execution_observations` table linked to existing Runtime truth by `(project_id, task_id, attempt_id)` and prediction identity by `(project_id, task_id, prediction_id)`.
-
-Important persistence properties already established by ARM-010:
-
-- `attempt_id` is unique in `adaptive_execution_observations`, providing a persistence-level one-observation-per-attempt boundary.
-- Cross-task attempt/prediction linkage is rejected through composite foreign keys.
-- Adaptive records cascade from Runtime truth; adaptive deletion does not rewrite Runtime rows.
-- ARM-010 added the Runtime composite unique index needed for same-task foreign-key integrity without rewriting Runtime rows.
-
-ARM-010 history also records repairs specifically for same-task identity, contract decoding/bounds, cross-task rejection, historical attempts, Runtime-preservation proof, file-backed reopen, and malformed payload handling. ARM-020 should build on these invariants rather than replace them.
-
-## GOAL
-
-Persist exact execution provenance/context for each Runtime task attempt using the existing execution receipt plus only narrow additional snapshots, while proving that telemetry is observational.
+ARM-020 remains **Execution Context Observation** under `SPEC-T3-ADAPTIVE-MODEL-ROUTING-V1`.
 
 Core invariant:
 
 > **Telemetry observes execution; it must never alter whether or how a worker launches.**
 
-## IN SCOPE
+## BASE / CONTEXT
 
-For an observed Runtime execution attempt, capture or reference, when available:
+- Repository: `jermur788/t3code`
+- Authoritative implementation base inspected: `main @ 945627ca3c929bd8838de6ace5ac8c653acf217d`
+- Governing spec: `jermur788/CCF/specs/t3-adaptive-model-routing-v1/spec.md`
+- Bounded tasks: `jermur788/CCF/specs/t3-adaptive-model-routing-v1/tasks.md`
+- ARM-010 persistence is integrated on current main as fork migration `007_AdaptiveRouting`.
+- PR #10 is orchestration evidence/context only, not an accepted ARM spec change.
 
-- Runtime project ID, task ID, task revision, task role, attempt ID;
-- execution/thread/run reference and attempt timestamps;
-- provider driver, provider instance, exact model slug;
-- exact provider/model option selections used at launch;
-- static route winning source/layer and available candidate/rejection provenance;
-- Runtime mode and interaction mode;
-- workspace strategy and safe base/worktree information already present in the execution receipt;
-- permission/approval state only when safely observable; otherwise explicit `unknown`;
-- privacy-safe normalized tool/MCP capability categories plus stable local capability fingerprint;
-- no raw connector arguments/content/secrets; raw tool/connector IDs only if already explicitly safe;
-- predicted difficulty snapshot reference required by the ARM-010 observation contract;
-- before/after capacity snapshot references when available; missing remains explicit/unknown;
-- execution lifecycle facts, including terminal state, cancellation, retry/reconciliation facts, and timing;
-- experiment assignment reference only if applicable in the existing contract; ARM-020 must not implement experimentation policy.
+## EXACT EXECUTION INTEGRATION SEAM
 
-Prefer referencing durable data already in the existing Runtime execution receipt rather than duplicating a second source of execution truth.
+Current `apps/server/src/projectRuntime/RuntimeTaskExecutionService.ts` is the single execution authority and already owns the architecture-sensitive seams ARM-020 must observe:
 
-## OUT OF SCOPE
+- `resolveLaunch` resolves static routing, reads the existing provider view/settings, rechecks provider/model/project eligibility, and constructs the actual `RuntimeExecutionLaunch`.
+- the durable `RuntimeExecutionAttempt.receipt` is the authoritative launch provenance for model selection/options, route resolution/provenance, runtime mode, interaction mode, workspace strategy, and the exact Runtime task packet/revision;
+- `runLaunch` launches from that stored receipt using deterministic command/message IDs derived from `attemptId`;
+- `updateAttempt` is the revision-protected attempt-state update seam;
+- the service exposes `execute`, `cancelAttempt`, `reconcileAttempt`, and `reconcileActiveAttempts`;
+- a service-local semaphore serializes the execution lane.
 
-Do not:
+Existing qualification/tests already prove important invariants ARM-020 must preserve:
 
-- change static routing precedence, fallback, or route selection semantics;
-- change provider/model/project eligibility or authorization;
-- change orchestration launch behavior or move launch outside the existing Runtime task execution service;
-- add provider quota adapters or infer quota values;
-- add scoring, adaptive candidate ranking, difficulty prediction policy, accepted-outcome reconciliation, or experimentation policy;
-- create a second provider/model catalog;
-- collect credentials, auth tokens, billing identifiers, connector arguments, private connector content, or full conversations;
-- decide any open PR #10 product question implicitly.
+- an attempt is persisted before launch;
+- repeated client request IDs and concurrent executes reuse one active attempt/launch;
+- a pending attempt can be replayed with the stored launch IDs;
+- failed launch can become a terminal failed attempt and a later attempt can be created;
+- ambiguous launch recovery becomes `reconcile_required` rather than relaunching blindly;
+- restart reconciliation can observe a launched attempt and later mark it completed without another launch;
+- cancellation and reconciliation are already part of the same Runtime execution service.
 
-## OPEN PRODUCT QUESTIONS — NOT ARM-020 DECISIONS
+**Implementation boundary:** observation belongs beside these existing state transitions. It must not introduce a second launch path, a second attempt lifecycle, or a second routing/provider authority.
 
-The following remain outside this task unless the implementation is impossible without resolving one. If so, stop and return **SPEC QUESTION** rather than encoding a policy choice:
+## ARM-010 PERSISTENCE ALREADY AVAILABLE
+
+`AdaptiveRoutingService` already exposes append-only persistence for `AdaptiveExecutionObservationReference` through `appendExecutionObservationReference`.
+
+Migration 007 creates `adaptive_execution_observations` with:
+
+- one row per `attempt_id` via a unique constraint;
+- composite same-task foreign keys for `(project_id, task_id, attempt_id)` and `(project_id, task_id, prediction_id)`;
+- cascading deletion from authoritative Runtime/task records without adaptive deletion rewriting Runtime truth.
+
+ARM-010's handoff also records the same-task identity repair, contract bounds/decoding, cross-task rejection, historical-attempt coverage, Runtime-preservation checks, file-backed reopen proof, and malformed-payload handling.
+
+## SPEC QUESTION — PREDICTION DEPENDENCY
+
+The current approved task order and the integrated ARM-010 contract do not line up:
+
+1. ARM-020's goal is to **persist exact execution context for Runtime attempts**.
+2. `AdaptiveExecutionObservationReference.predictionId` is **mandatory**, not optional.
+3. The database also makes `prediction_id` `NOT NULL` and requires a same-task foreign key to `adaptive_difficulty_predictions`.
+4. ARM-040 is the bounded task that creates **predicted and realized difficulty** and is explicitly sequenced **after ARM-020** (`ARM-040` depends on `ARM-020`).
+5. The ARM-020 packet/task excludes implementing difficulty-prediction policy.
+
+Therefore a conforming ARM-020 implementation cannot persist an execution observation for a normal attempt unless a valid difficulty prediction already exists, but the approved task that produces those predictions has not run yet.
+
+Do **not** resolve this implicitly by:
+
+- inventing a dummy/default prediction;
+- fabricating an all-zero or `unknown` difficulty assessment when the contract does not define that meaning;
+- making `predictionId` optional by implementation fiat;
+- implementing ARM-040 prediction policy inside ARM-020;
+- silently changing task dependencies/order.
+
+Any of those choices changes the approved data/ordering semantics and should be reconciled in the governing spec/tasks first.
+
+### Decision needed
+
+Reconcile the spec/task sequence with one explicit design. Examples that could be evaluated in the spec revision include:
+
+- split a minimal pre-launch prediction-creation prerequisite out of ARM-040 and run it before/with ARM-020;
+- reorder the relevant bounded tasks so valid predictions exist before execution observations;
+- revise the observation contract so `predictionId` is legitimately absent until later linkage, with clear backfill/reconciliation semantics.
+
+This packet does **not** choose among those options.
+
+## OPEN PR #10 PRODUCT QUESTIONS
+
+The previously identified questions remain separate and undecided:
 
 1. Require cross-provider review for high-risk work?
 2. Warn or block launches before a known provider reset?
 3. Record orchestrator/operator work as first-class attempts?
 4. Require accepted outcome before dependent work?
 
-In particular, ARM-020 should observe ordinary Runtime attempts only under the existing execution model. It should not invent an operator/manual-attempt model to answer question 3.
+None was needed to identify the prediction dependency above.
 
-## IMPLEMENTATION BOUNDARY
+## ARM-020 ACCEPTANCE AFTER SPEC RECONCILIATION
 
-Integrate observation at the existing Runtime execution path so the attempt/receipt remains authoritative and restart reconciliation can deterministically recover observation state.
+Once the prediction dependency is resolved, ARM-020 should still prove:
 
-Required behavior:
+- exact persisted provenance matches the durable launch receipt;
+- provider instance/model/options, route provenance, runtime/interaction/workspace data match the actual launch;
+- permission/tool/MCP data is explicit `unknown` when not safely observable;
+- capability telemetry excludes connector secrets, arguments and retrieved private content;
+- telemetry enabled/disabled yields identical launch candidate, launch count, worker parameters and Runtime attempt semantics;
+- restart/reopen preserves one Runtime attempt and one linked observation;
+- pending/replay/reconciliation cannot create a duplicate launch or duplicate observation;
+- cancellation/failed/interrupted/`reconcile_required` paths remain Runtime-owned lifecycle facts;
+- existing execution/reconcile/cancel qualification remains green;
+- persistence is proven with a real file-backed reopen/restart test.
 
-1. The launch decision and durable Runtime attempt/receipt must not depend on whether adaptive observation succeeds.
-2. Telemetry insertion must not create a code path that can launch twice.
-3. Restart/replay/reconciliation must converge on one adaptive observation for one Runtime attempt.
-4. Repeated observation writes must be idempotent or fail/recover in a way that preserves the one-attempt invariant.
-5. If observation data is unavailable, record explicit unknown/absence where the contract supports it; never fabricate provider, permission, tool, quota, or routing facts.
-6. Observation lifecycle updates must derive from Runtime attempt state and must not become a second execution state machine.
+## ROUTING
 
-At implementation start, inspect the exact current Runtime execution/reconciliation/cancellation service and receipt contracts on this base before editing. Repository/runtime inspection overrides historical documentation or this reconnaissance if they differ.
+After the spec question is resolved, use a Claude/Codex-class worker for ARM-020 because execution atomicity/recovery semantics are architecture-sensitive. Keep one writer for the execution/telemetry lane; independent read-only review may run in parallel.
 
-## ACCEPTANCE
-
-ARM-020 is acceptable only if all of the following are demonstrated:
-
-- exact execution provenance is persisted for a normal Runtime attempt;
-- provider instance/model/options match the actual durable launch receipt;
-- routing provenance matches the static route used for launch;
-- runtime/interaction/workspace data matches the launch receipt;
-- unknown permission/tool data remains explicit rather than guessed;
-- capability fingerprinting excludes secrets/private connector payloads;
-- telemetry enabled versus disabled produces identical launch candidate, launch count, worker parameters, and ordinary Runtime attempt semantics;
-- restart during/after execution preserves one Runtime attempt and one linked adaptive observation;
-- reconciliation is idempotent and cannot duplicate the worker launch;
-- cancellation preserves existing cancellation behavior and is reflected only as observation/lifecycle data;
-- failed/interrupted/reconcile-required paths do not create a second execution state machine;
-- existing RTE execution/reconcile/cancel tests remain green;
-- no existing Runtime task/attempt rows are rewritten merely to add telemetry.
-
-## VERIFICATION
-
-At minimum run and record:
-
-1. focused adaptive observation contract/repository/service tests;
-2. normal successful Runtime execution fixture with exact receipt-to-observation comparison;
-3. telemetry disabled vs enabled equivalence test for launch semantics;
-4. duplicate/replay observation test proving one observation per attempt;
-5. restart/reopen persistence test;
-6. restart while attempt is non-terminal, then reconciliation test;
-7. cancellation test and repeated-cancel/idempotency behavior where the existing RTE suite covers it;
-8. failed/interrupted/reconcile-required execution cases;
-9. unknown permission state fixture;
-10. unknown tool/MCP capability fixture;
-11. privacy/redaction fixture ensuring no credential, connector argument, retrieved private content, or raw unsafe connector identity reaches adaptive payloads;
-12. the existing RTE execution/reconciliation/cancellation suites unchanged;
-13. changed-file format/lint/typecheck/tests appropriate to affected packages.
-
-For persistence claims, include a real file-backed reopen/restart check rather than memory-only tests.
-
-## STOP CONDITIONS
-
-Return **BLOCKED / SPEC QUESTION** if any of these becomes necessary:
-
-- observation insertion can cause duplicate launch or ambiguous launch recovery;
-- launch must move outside the existing Runtime task execution path;
-- normal routing/eligibility semantics must change;
-- execution observation requires a second provider catalog;
-- safe tool/capability observation requires storing connector secrets/arguments/private content;
-- ARM-020 cannot be completed without deciding one of the four open PR #10 product questions.
-
-Routine test failures, migration fixture updates, type errors, or implementation defects are not user decisions; repair and re-run.
-
-## HANDOFF REQUIREMENT
-
-Before ending substantial ARM-020 work, return and persist a durable handoff containing:
+## HANDOFF
 
 ### VERDICT
 
-Use precise state: IMPLEMENTED, STATIC PASS, RUNTIME PASS, REVIEW PASS, BLOCKED, etc. Do not claim VERIFIED unless the required runtime evidence exists.
+BLOCKED / SPEC QUESTION
 
 ### BASE / CHECKPOINT
 
-- starting base;
-- branch/worktree;
-- final revision/checkpoint;
-- relevant upstream revision if inspected;
-- working-tree cleanliness.
+- Inspected base: `main @ 945627ca3c929bd8838de6ace5ac8c653acf217d`.
+- Browser task branch: `arm/arm-020-task-packet`.
+- No Runtime implementation files changed.
 
 ### RESULT
 
-- files/components changed;
-- observation insertion/update seam;
-- exact fields captured vs explicit unknown;
-- intentional exclusions.
+- Mapped the exact execution/reconcile/cancel integration seam in current source.
+- Reconciled ARM-010 persistence/service contracts with ARM-020 and ARM-040 task sequencing.
+- Found the mandatory-`predictionId` dependency that prevents a spec-conforming standalone ARM-020 persistence implementation under the current task order.
 
 ### VERIFICATION
 
-- exact commands/tests;
-- counts/results;
-- successful launch evidence;
-- restart/reopen evidence;
-- reconciliation evidence;
-- cancellation evidence;
-- telemetry on/off launch-equivalence evidence;
-- checks not run and why.
+Source/API inspection only. No local typecheck, tests, worker launch, cancellation, restart, reconciliation runtime probe, or persistence execution was performed in this browser environment.
 
 ### FAILURES / RISKS
 
-- defects encountered and repairs;
-- unresolved risks;
-- blocker classification;
-- privacy/atomicity concerns.
-
-### REVIEW
-
-- reviewer/provider/model for material review;
-- findings;
-- repairs;
-- re-review result.
-
-### INTEGRATION STATE
-
-- not integrated / PR open / merged;
-- target base;
-- content drift;
-- cleanup remaining.
+- **PRODUCT DECISION / SPEC RECONCILIATION REQUIRED:** define how a valid prediction exists before an ARM-020 observation is persisted.
+- No evidence suggests the existing Runtime execution architecture itself needs to change.
 
 ### NEXT
 
-Exact next authorized action. If ARM-020 passes its required gate, the manager should independently inspect evidence and then sequence the next approved ARM task; do not silently implement a later ARM task in the same lane.
-
-## BROWSER-SIDE HANDOFF
-
-### VERDICT
-
-READY TO IMPLEMENT
-
-### BASE / CHECKPOINT
-
-- Inspected `jermur788/t3code main @ 945627ca3c929bd8838de6ace5ac8c653acf217d`.
-- This task packet branch: `arm/arm-020-task-packet`.
-
-### RESULT
-
-- Reconciled the user handoff with live GitHub repository state.
-- Confirmed ARM-010 persistence exists on current main as fork migration 7.
-- Confirmed the ARM-010 observation table already enforces one observation per attempt and same-task foreign-key linkage.
-- Confirmed PR #10 is evidence-only and does not modify ARM semantics.
-- Produced this bounded, self-contained ARM-020 implementation packet.
-
-### VERIFICATION
-
-Browser/API inspection only. No code execution, local tests, runtime launch, restart test, or UI/browser app qualification was possible in this browser-side task.
-
-### RISKS / SPEC QUESTIONS
-
-No new spec question was found during reconnaissance. The four existing PR #10 questions remain explicitly undecided.
-
-### NEXT
-
-Run ARM-020 implementation in an isolated writable worktree from `main @ 945627ca3c929bd8838de6ace5ac8c653acf217d` using a Claude/Codex-class worker, then independently verify launch-equivalence, one-attempt restart/reconciliation behavior, cancellation, persistence, and privacy before integration.
+Reconcile the governing ARM spec/tasks for the prediction dependency. After that decision is encoded, issue the corrected bounded ARM-020 packet and implement against the existing `RuntimeTaskExecutionService` execution lane without changing launch/routing semantics.
