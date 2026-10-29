@@ -34,6 +34,7 @@ import {
 } from "lucide-react";
 import { useLocation, useNavigate } from "@tanstack/react-router";
 
+import { useForkWorkspaceMode } from "../../forkWorkspaceMode";
 import { cn } from "../../lib/utils";
 import { Button } from "../ui/button";
 import { Kbd } from "../ui/kbd";
@@ -108,6 +109,14 @@ const SETTINGS_SECTION_ICONS: Readonly<
   "/settings/archived": ArchiveIcon,
 };
 
+const FORK_INTERFACE_SEARCH_ITEM: SettingsSearchItem = {
+  id: "t3-fork-interface-mode",
+  targetId: "t3-fork-interface-mode",
+  title: "T3 Fork interface",
+  to: "/settings/general",
+  searchTerms: ["workspace", "development", "interface mode", "advanced controls"],
+};
+
 // Detail pages without a nav entry highlight the page that links to them.
 const SETTINGS_DETAIL_PAGE_PARENTS: Readonly<Record<string, SettingsPath>> = {
   "/settings/diagnostics": "/settings/maintenance",
@@ -128,6 +137,7 @@ export function SettingsSidebarNav({ pathname }: { pathname: string }) {
   const navigate = useNavigate();
   const currentHash = useLocation({ select: (location) => location.hash });
   const currentSearch = useLocation({ select: (location) => location.search });
+  const { effectiveMode } = useForkWorkspaceMode();
   const scopeSearch = validateSettingsScopeSearch(currentSearch);
   const activePath = SETTINGS_DETAIL_PAGE_PARENTS[pathname] ?? pathname;
   const searchInputRef = useRef<HTMLInputElement>(null);
@@ -135,7 +145,19 @@ export function SettingsSidebarNav({ pathname }: { pathname: string }) {
   // Below md the nav is an icon rail; searching expands it over the page.
   const [compactSearchOpen, setCompactSearchOpen] = useState(false);
   const [activeResultIndex, setActiveResultIndex] = useState(0);
-  const searchableItems = useAvailableSettingsSearchItems(scopeSearch);
+  const availableSearchableItems = useAvailableSettingsSearchItems(scopeSearch);
+  const searchableItems = [
+    ...availableSearchableItems.filter(
+      (item) => effectiveMode === "development" || item.to !== "/settings/development-profiles",
+    ),
+    FORK_INTERFACE_SEARCH_ITEM,
+  ];
+  const navGroups = SETTINGS_NAV_GROUPS.map((group) => ({
+    ...group,
+    paths: group.paths.filter(
+      (path) => effectiveMode === "development" || path !== "/settings/development-profiles",
+    ),
+  })).filter((group) => group.paths.length > 0);
   const results = searchSettings(query, searchableItems);
   const isSearching = query.trim().length > 0;
   const hasResults = results.length > 0;
@@ -362,7 +384,7 @@ export function SettingsSidebarNav({ pathname }: { pathname: string }) {
                     </SidebarMenuItem>
                   </SidebarMenu>
                 )}
-                {SETTINGS_NAV_GROUPS.map((group, index) => (
+                {navGroups.map((group, index) => (
                   <div
                     key={group.heading ?? index}
                     role="group"
