@@ -5,6 +5,7 @@ import { useState } from "react";
 
 import { useForkWorkspaceMode } from "../../forkWorkspaceMode";
 import { Button } from "../ui/button";
+import { WorkspacePageContainer } from "../WorkspacePageContainer";
 import { ProjectSettingsPanel } from "./ProjectSettingsPanel";
 import { useSettingsScope } from "./SettingsScopeContext";
 import { SettingsScopeNotice } from "./SettingsScopeNotice";
@@ -26,9 +27,9 @@ export function ProjectsSettings() {
   const advancedRequested = WORKSPACE_ADVANCED_TARGETS.has(hash);
   const [advancedOpen, setAdvancedOpen] = useState(advancedRequested);
   // A deep link reveals Advanced once per hash change; the user can still collapse it afterwards.
-  const [seenAdvancedRequested, setSeenAdvancedRequested] = useState(advancedRequested);
-  if (seenAdvancedRequested !== advancedRequested) {
-    setSeenAdvancedRequested(advancedRequested);
+  const [seenHash, setSeenHash] = useState(hash);
+  if (seenHash !== hash) {
+    setSeenHash(hash);
     if (advancedRequested) setAdvancedOpen(true);
   }
 
@@ -60,11 +61,12 @@ export function ProjectsSettings() {
   const panel =
     value.project && projectScope ? (
       <div
+        className="flex min-h-0 flex-1 flex-col"
         data-fork-project-settings-mode={mode}
         data-fork-advanced-open={advancedOpen ? "true" : "false"}
       >
         {mode === "workspace" ? (
-          <SettingsPageContainer>
+          <WorkspacePageContainer className="shrink-0 pb-0">
             <details
               className="rounded-lg border border-border p-3"
               open={advancedOpen}
@@ -77,7 +79,7 @@ export function ProjectsSettings() {
                 state or your saved interface mode.
               </p>
             </details>
-          </SettingsPageContainer>
+          </WorkspacePageContainer>
         ) : null}
         <ProjectSettingsPanel
           projectKey={value.project}

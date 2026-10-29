@@ -6,6 +6,7 @@ export const FORK_WORKSPACE_MODE_STORAGE_KEY = "t3-fork:interface-mode";
 
 export type ForkWorkspaceMode = "workspace" | "development";
 export const ForkWorkspaceModeSchema = Schema.Literals(["workspace", "development"]);
+const SavedForkWorkspaceModeSchema = Schema.NullOr(ForkWorkspaceModeSchema);
 
 export const DEFAULT_FORK_WORKSPACE_MODE: ForkWorkspaceMode = "development";
 
@@ -22,14 +23,14 @@ export function useForkWorkspaceMode(): {
   readonly configured: boolean;
   readonly setMode: (mode: ForkWorkspaceMode) => void;
 } {
-  const [mode, setMode] = useLocalStorage(
+  const [savedMode, setMode] = useLocalStorage(
     FORK_WORKSPACE_MODE_STORAGE_KEY,
-    DEFAULT_FORK_WORKSPACE_MODE,
-    ForkWorkspaceModeSchema,
+    null,
+    SavedForkWorkspaceModeSchema,
   );
   return {
-    mode,
-    configured: readForkWorkspaceMode() !== null,
+    mode: savedMode ?? DEFAULT_FORK_WORKSPACE_MODE,
+    configured: savedMode !== null,
     setMode,
   };
 }
