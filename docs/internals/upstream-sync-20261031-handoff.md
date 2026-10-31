@@ -16,7 +16,11 @@ Isolated sync branch:
 
 `sync/upstream-20261031`
 
-Upstream source:
+Pinned upstream branch in the fork:
+
+`sync/upstream-pin-80a2351f @ 80a2351fcb909034e65a512dfabeb3cdfd367762`
+
+Original upstream source:
 
 `pingdotgg/t3code main @ 80a2351fcb909034e65a512dfabeb3cdfd367762`
 
@@ -26,11 +30,13 @@ Historical merge base:
 
 At archaeology time the fork was 84 commits ahead and 636 commits behind upstream.
 
-## Browser integration probe
+## Browser integration probes
 
-Draft PR #11 was opened from `pingdotgg:main` into `sync/upstream-20261031`.
+### Moving-head probe — superseded
 
-GitHub reports:
+Draft PR #11 was opened from `pingdotgg:main` into `sync/upstream-20261031` to establish whether GitHub could merge the histories directly.
+
+GitHub reported:
 
 - `mergeable: false`
 - `rebaseable: false`
@@ -40,13 +46,23 @@ GitHub reports:
 - 140,284 additions
 - 43,977 deletions
 
-This is a real merge conflict, not a stale mergeability calculation.
+This proved a real integration conflict. Because PR #11 tracked moving upstream `main`, it was closed without merging after the exact inspected upstream commit was pinned inside the fork.
 
-The sync branch was fast-forwarded to the post-spec fork main before final classification.
+### Canonical pinned integration PR
+
+Draft PR #13 is the reproducible integration lane:
+
+- base: `sync/upstream-20261031`
+- head: `sync/upstream-pin-80a2351f`
+- pinned upstream commit: `80a2351fcb909034e65a512dfabeb3cdfd367762`
+
+GitHub also reports PR #13 as not mergeable. This is the canonical PR to use while resolving the pinned upstream snapshot.
+
+The sync branch was fast-forwarded to the post-spec fork main before final conflict classification.
 
 ## Confirmed overlapping moving surfaces
 
-The following fork-modified files also changed upstream after the merge base. The SHA pairs below are merge-base -> current-upstream blob SHAs and prove concurrent movement.
+The following fork-modified files also changed upstream after the merge base. The SHA pairs below are merge-base -> pinned-upstream blob SHAs and prove concurrent movement.
 
 ### Orchestration instructions
 
@@ -142,7 +158,7 @@ Their implementation may need adaptation to current upstream APIs, but the produ
 
 ## Upstream-owned facilities to adopt/reuse
 
-During resolution prefer current upstream for:
+During resolution prefer the pinned current upstream implementation for:
 
 - Orchestration V2 execution lifecycle and identities;
 - provider sessions/threads/context transfer infrastructure;
@@ -175,11 +191,11 @@ No destructive/force update was performed.
 Use one writer on `sync/upstream-20261031`.
 
 1. Confirm clean checkout/worktree and current branch ownership.
-2. Fetch `origin` and `upstream`.
+2. Fetch `origin`; fetch `upstream` if configured.
 3. Verify:
    - fork `main` / sync base is at or descended from `d971327934eeb79bed5b02e4477a5140615eacf0`;
-   - upstream target is still the intended SHA; if upstream moved, pin a new SHA and update this handoff before merging.
-4. Merge the pinned upstream SHA into `sync/upstream-20261031` with a normal merge commit; do not rebase or rewrite shared fork history.
+   - `sync/upstream-pin-80a2351f` still points to `80a2351fcb909034e65a512dfabeb3cdfd367762`.
+4. Merge `sync/upstream-pin-80a2351f` (or the exact SHA `80a2351fcb909034e65a512dfabeb3cdfd367762`) into `sync/upstream-20261031` with a normal merge commit; do not rebase or rewrite shared fork history.
 5. Resolve conflicts by authority:
    - upstream lifecycle/contracts/provider capabilities are the starting point;
    - reapply/adapt fork Project Runtime behavior additively;
@@ -190,7 +206,7 @@ Use one writer on `sync/upstream-20261031`.
 6. Run focused checks after each conflict lane rather than waiting for one giant final test.
 7. Then run the full verification required by the governing compatibility spec.
 8. Push only the resolved sync branch.
-9. Re-evaluate PR #11 or replace it with a sync-branch-to-main integration PR once the branch contains the merge result.
+9. Re-evaluate pinned PR #13 after the merge result is pushed. Once the sync branch contains and verifies the upstream merge, close/supersede #13 as appropriate and open a separate sync-branch-to-`main` integration PR.
 10. Do not merge to `main` until the integrated sync head reaches the required verification state.
 
 ## Verification required after merge resolution
