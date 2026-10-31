@@ -1418,6 +1418,23 @@ describe("Codex account capacity binding", () => {
     ]);
   });
 
+  it("requires exactly one native target before binding a workspace-aware hub account", () => {
+    const first = managed("codex-a", "Codex A", "same@example.com");
+    const second = managed("codex-b", "Codex B", "same@example.com");
+    const sources = hub([hubAccount("shared", "same@example.com", 55, { workspaceId: "ws-a" })]);
+    const report = collectProviderUsageLimits(first.instanceId, [first, second], sources, now);
+    expect(report?.accounts.map((account) => account.id)).toEqual(["codex-a", "hub:shared"]);
+    expect(report?.accounts[0]?.limits.unavailable?.reason).toBe("unsupported");
+    expect(report?.accounts[1]).toMatchObject({
+      sourceLabel: "CLI Proxy",
+      limits: { windows: [{ usedPercent: 55 }] },
+    });
+    expect(resolveProviderInstanceCapacity([first, second], sources)).toMatchObject([
+      { instanceId: "codex-a", source: "native" },
+      { instanceId: "codex-b", source: "native" },
+    ]);
+  });
+
   it("prefers usable native limits over a matching hub snapshot", () => {
     const native = provider({
       displayName: "Codex Native",

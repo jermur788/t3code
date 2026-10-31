@@ -279,6 +279,11 @@ export function resolveProviderInstanceCapacity(
     ...enabled.map(nativeReport),
     ...sources.flatMap((source) => source.accounts),
   ]);
+  const nativeTargetsByKey = new Map<string, number>();
+  for (const provider of enabled) {
+    const key = resolveKey(nativeReport(provider));
+    if (key) nativeTargetsByKey.set(key, (nativeTargetsByKey.get(key) ?? 0) + 1);
+  }
   const hubByKey = new Map<string, UsageSourceAccount[]>();
   for (const source of sources) {
     for (const account of source.accounts) {
@@ -303,7 +308,10 @@ export function resolveProviderInstanceCapacity(
       continue;
     }
     const key = resolveKey(nativeReport(provider));
-    const match = key ? [...(hubByKey.get(key) ?? [])].sort(fresherHubObservation)[0] : undefined;
+    const match =
+      key && nativeTargetsByKey.get(key) === 1
+        ? [...(hubByKey.get(key) ?? [])].sort(fresherHubObservation)[0]
+        : undefined;
     capacity.push(
       match
         ? {
