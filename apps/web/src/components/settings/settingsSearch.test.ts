@@ -191,10 +191,10 @@ describe("searchSettings", () => {
 });
 
 describe("SETTINGS_NAV_GROUPS", () => {
-  it("lists every settings page once, except the diagnostics detail page", () => {
+  it("lists each enabled settings page once, except the diagnostics detail page", () => {
     const listed = SETTINGS_NAV_GROUPS.flatMap((group) => group.paths);
     const pages = (Object.keys(SETTINGS_SECTION_LABELS) as SettingsPath[]).filter(
-      (path) => path !== "/settings/diagnostics",
+      (path) => path !== "/settings/diagnostics" && path !== "/settings/secrets",
     );
     expect(listed.toSorted()).toEqual(pages.toSorted());
   });

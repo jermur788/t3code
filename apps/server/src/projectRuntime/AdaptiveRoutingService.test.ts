@@ -13,6 +13,7 @@ import {
   type AdaptiveExecutionObservationReference,
   type AdaptiveRecommendationReceipt,
   ProjectId,
+  ProviderDriverKind,
   ProjectRuntimeTaskId,
   RuntimeExecutionAttemptId,
 } from "@t3tools/contracts";
@@ -477,7 +478,7 @@ it.effect(
       yield* service.appendCapacityPool({
         schemaVersion: 1,
         capacityPoolId,
-        providerDriver: "codex",
+        providerDriver: ProviderDriverKind.make("codex"),
         identityQuality: "provider_instance",
         createdAt,
       });
