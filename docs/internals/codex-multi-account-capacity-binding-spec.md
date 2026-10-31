@@ -160,7 +160,7 @@ Preferred initial setup for Adaptive Routing:
 
 ```text
 Codex Work provider instance ----launch----> OpenAI Work connection
-       |                                      
+       |
        +----capacity binding----> hub Work account
 
 Codex Personal provider instance --launch--> OpenAI Personal connection

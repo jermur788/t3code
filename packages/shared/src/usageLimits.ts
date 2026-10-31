@@ -12,6 +12,8 @@ import {
   type ServerProvider,
   type ServerProviderUsageLimits,
   type ServerProviderUsageWindow,
+  type UsageLimitSourceId,
+  type UsageLimitSourceSnapshot,
   type UsageLimitSourceSnapshots,
 } from "@t3tools/contracts";
 
@@ -172,7 +174,14 @@ export function collectExternalUsageLinks(presentations: LimitPresentations) {
     }
   >();
   for (const presentation of presentations.values()) {
-    for (const provider of providersWithLimits(presentation.serverConfig?.providers ?? [])) {
+    const providers = presentation.serverConfig?.providers ?? [];
+    const boundInstanceIds = new Set(
+      resolveProviderInstanceCapacity(providers, presentation.serverConfig?.usageLimitSources ?? [])
+        .filter((capacity) => capacity.source === "cliproxy")
+        .map((capacity) => capacity.instanceId),
+    );
+    for (const provider of providersWithLimits(providers)) {
+      if (boundInstanceIds.has(provider.instanceId)) continue;
       const external = provider.usageLimits?.externalUsage;
       if (external && provider.auth.status === "authenticated") {
         const account = `${provider.displayName ?? provider.instanceId} on ${presentation.entry.target.label}`;
@@ -230,6 +239,91 @@ function accountKeyResolver(reports: Iterable<AccountReport>) {
     if (!known) return key;
     return known.size === 1 ? `${key}:${[...known][0]}` : null;
   };
+}
+
+export interface ProviderInstanceCapacity {
+  readonly instanceId: ProviderInstanceId;
+  readonly driver: ServerProvider["driver"];
+  readonly limits: ServerProviderUsageLimits;
+  readonly source: "native" | "cliproxy";
+  readonly sourceId?: UsageLimitSourceId;
+  readonly sourceAccountId?: string;
+  readonly sourceWorkspaceId?: string;
+}
+
+interface UsageSourceAccount {
+  readonly source: UsageLimitSourceSnapshot;
+  readonly account: UsageLimitSourceSnapshot["accounts"][number];
+}
+
+function fresherHubObservation(left: UsageSourceAccount, right: UsageSourceAccount): number {
+  return (
+    Date.parse(right.account.usageLimits.checkedAt) -
+      Date.parse(left.account.usageLimits.checkedAt) ||
+    left.source.id.localeCompare(right.source.id) ||
+    left.account.id.localeCompare(right.account.id)
+  );
+}
+
+/**
+ * Read-only capacity evidence for concrete provider instances. A hub account can supply
+ * capacity for an instance only when the existing account identity resolver proves the match;
+ * ambiguous identities stay unbound.
+ */
+export function resolveProviderInstanceCapacity(
+  providers: readonly ServerProvider[],
+  sources: UsageLimitSourceSnapshots,
+): readonly ProviderInstanceCapacity[] {
+  const enabled = providers.filter((provider) => provider.enabled);
+  const resolveKey = accountKeyResolver([
+    ...enabled.map(nativeReport),
+    ...sources.flatMap((source) => source.accounts),
+  ]);
+  const hubByKey = new Map<string, UsageSourceAccount[]>();
+  for (const source of sources) {
+    for (const account of source.accounts) {
+      if (limitsNotice(account.usageLimits) !== null) continue;
+      const key = resolveKey(account);
+      if (!key) continue;
+      const list = hubByKey.get(key);
+      if (list) list.push({ source, account });
+      else hubByKey.set(key, [{ source, account }]);
+    }
+  }
+  const capacity: ProviderInstanceCapacity[] = [];
+  for (const provider of enabled) {
+    if (!provider.usageLimits) continue;
+    if (limitsNotice(provider.usageLimits) === null) {
+      capacity.push({
+        instanceId: provider.instanceId,
+        driver: provider.driver,
+        limits: provider.usageLimits,
+        source: "native",
+      });
+      continue;
+    }
+    const key = resolveKey(nativeReport(provider));
+    const match = key ? [...(hubByKey.get(key) ?? [])].sort(fresherHubObservation)[0] : undefined;
+    capacity.push(
+      match
+        ? {
+            instanceId: provider.instanceId,
+            driver: provider.driver,
+            limits: match.account.usageLimits,
+            source: "cliproxy",
+            sourceId: match.source.id,
+            sourceAccountId: match.account.id,
+            ...(match.account.workspaceId ? { sourceWorkspaceId: match.account.workspaceId } : {}),
+          }
+        : {
+            instanceId: provider.instanceId,
+            driver: provider.driver,
+            limits: provider.usageLimits,
+            source: "native",
+          },
+    );
+  }
+  return capacity;
 }
 
 export interface LimitAccount {
@@ -314,6 +408,42 @@ export function collectLimitAccounts(presentations: LimitPresentations): readonl
       ...(presentation.serverConfig?.usageLimitSources ?? []).flatMap((source) => source.accounts),
     ]),
   );
+  const bindingKey = (
+    environmentId: EnvironmentId,
+    sourceId: UsageLimitSourceId,
+    accountId: string,
+    workspaceId: string | undefined,
+  ) => `${environmentId}\u0000${sourceId}\u0000${accountId}\u0000${workspaceId ?? ""}`;
+  const boundAccounts = new Map<
+    string,
+    { readonly provider: ServerProvider; readonly capacity: ProviderInstanceCapacity }
+  >();
+  for (const [environmentId, presentation] of presentations) {
+    const providers = presentation.serverConfig?.providers ?? [];
+    const byInstanceId = new Map(providers.map((provider) => [provider.instanceId, provider]));
+    for (const capacity of resolveProviderInstanceCapacity(
+      providers,
+      presentation.serverConfig?.usageLimitSources ?? [],
+    )) {
+      if (
+        capacity.source !== "cliproxy" ||
+        capacity.sourceId === undefined ||
+        capacity.sourceAccountId === undefined
+      )
+        continue;
+      const provider = byInstanceId.get(capacity.instanceId);
+      if (!provider) continue;
+      boundAccounts.set(
+        bindingKey(
+          environmentId,
+          capacity.sourceId,
+          capacity.sourceAccountId,
+          capacity.sourceWorkspaceId,
+        ),
+        { provider, capacity },
+      );
+    }
+  }
   for (const [environmentId, presentation] of presentations) {
     const label = presentation.entry.target.label;
     for (const provider of providersWithLimits(presentation.serverConfig?.providers ?? [])) {
@@ -341,13 +471,18 @@ export function collectLimitAccounts(presentations: LimitPresentations): readonl
       for (const account of source.accounts) {
         if (limitsNotice(account.usageLimits) !== null) continue;
         const key = `${source.id}:${account.id}${account.workspaceId ? `:${account.workspaceId}` : ""}`;
+        const bound = boundAccounts.get(
+          bindingKey(environmentId, source.id, account.id, account.workspaceId),
+        );
         merge(resolveKey(account) ?? key, {
           key,
           driver: account.driver,
-          displayName: account.email ? null : account.id.replace(/\.json$/i, ""),
+          displayName:
+            bound?.provider.displayName?.trim() ||
+            (account.email ? null : account.id.replace(/\.json$/i, "")),
           email: account.email,
           plan: account.plan,
-          accentColor: undefined,
+          accentColor: bound?.provider.accentColor,
           environments: [],
           sourceLabel,
           redeem: account.usageLimits.resetCredits?.nextCreditId
@@ -741,6 +876,12 @@ export function collectProviderUsageLimits(
     ...providers.filter((provider) => provider.enabled).map(nativeReport),
     ...sources.flatMap((source) => source.accounts),
   ]);
+  const capacityByInstanceId = new Map(
+    resolveProviderInstanceCapacity(providers, sources).map((capacity) => [
+      capacity.instanceId,
+      capacity,
+    ]),
+  );
   type NativeSnapshot = { provider: ServerProvider; limits: ServerProviderUsageLimits };
   const nativeByAccount = new Map<
     string,
@@ -777,6 +918,14 @@ export function collectProviderUsageLimits(
       return key && limits.windows.length && !limits.unavailable ? [key] : [];
     }),
   );
+  const boundAccountKeys = new Set(
+    native.flatMap(({ usage: { provider } }) => {
+      const key = resolveKey(nativeReport(provider));
+      return key && capacityByInstanceId.get(provider.instanceId)?.source === "cliproxy"
+        ? [key]
+        : [];
+    }),
+  );
   const accounts: Array<UsageLimitsReport["accounts"][number]> = [];
   const notices: string[] = [];
   for (const {
@@ -803,15 +952,27 @@ export function collectProviderUsageLimits(
       (!credits ||
         Date.parse(hubCredits.account.usageLimits.checkedAt) >
           Date.parse(credits.limits.checkedAt));
-    const shownCredits = showHubCredits
-      ? hubCredits.account.usageLimits.resetCredits
-      : credits?.limits.resetCredits;
+    const capacity = capacityByInstanceId.get(provider.instanceId);
+    const bound = capacity?.source === "cliproxy" ? capacity : undefined;
+    const shownCredits = bound
+      ? (hubCredits?.account.usageLimits.resetCredits ?? bound.limits.resetCredits)
+      : showHubCredits
+        ? hubCredits.account.usageLimits.resetCredits
+        : credits?.limits.resetCredits;
+    const shownLimits = bound
+      ? shownCredits
+        ? { ...bound.limits, resetCredits: shownCredits }
+        : bound.limits
+      : shownCredits
+        ? { ...limits, resetCredits: shownCredits }
+        : limits;
     accounts.push({
       id: provider.instanceId,
       driver: provider.driver,
       label: `${provider.displayName?.trim() || String(provider.driver)} [${provider.instanceId}]`,
       ...(provider.auth.label ? { plan: provider.auth.label } : {}),
       instanceId: provider.instanceId,
+      ...(bound ? { sourceLabel: "CLI Proxy" } : {}),
       resetCreditInput:
         hubCreditId && hubCredits
           ? {
@@ -823,14 +984,14 @@ export function collectProviderUsageLimits(
       ...(provider.displayName ? { displayName: provider.displayName } : {}),
       ...(provider.accentColor ? { accentColor: provider.accentColor } : {}),
       ...(provider.auth.email ? { email: provider.auth.email } : {}),
-      limits: shownCredits ? { ...limits, resetCredits: shownCredits } : limits,
+      limits: shownLimits,
     });
   }
   for (const source of sources) {
     const matching = source.accounts.filter((account) => account.driver === selected.driver);
     for (const account of matching) {
       const key = resolveKey(account);
-      if (key && nativeAccountKeys.has(key)) continue;
+      if (key && (nativeAccountKeys.has(key) || boundAccountKeys.has(key))) continue;
       accounts.push({
         id: `${source.id}:${account.id}`,
         driver: account.driver,

@@ -166,6 +166,7 @@ const makeLayer = (state: State) =>
           providers: [provider],
           orchestrationCapableInstanceIds: new Set([codex]),
           settings: DEFAULT_SERVER_SETTINGS,
+          capacityByInstanceId: new Map(),
         }),
       }),
     ),

@@ -23,6 +23,7 @@ import {
   paceRemainingPercent,
   usesChatGptSharing,
   resolveNewThreadModelSelection,
+  resolveProviderInstanceCapacity,
 } from "./usageLimits.ts";
 
 const now = Date.parse("2026-09-03T12:00:00.000Z");
@@ -1299,6 +1300,234 @@ describe("/usage-limits", () => {
     expect(
       withUsageLimitsCommands([selected], [])[0]?.slashCommands.map((command) => command.name),
     ).toEqual(["usage-limits"]);
+  });
+});
+
+describe("Codex account capacity binding", () => {
+  const checkedAt = "2026-09-03T11:00:00.000Z";
+  const codexDriver = ProviderDriverKind.make("codex");
+  const managed = (
+    instanceId: string,
+    displayName: string,
+    email: string,
+    workspaceId?: string,
+  ): ServerProvider =>
+    provider({
+      instanceId: ProviderInstanceId.make(instanceId),
+      displayName,
+      auth: {
+        status: "authenticated",
+        email,
+        label: "ChatGPT",
+        subscriptionSharing: true,
+        ...(workspaceId ? { workspaceId } : {}),
+      },
+      usageLimits: {
+        checkedAt,
+        windows: [],
+        unavailable: { reason: "unsupported", message: "Track usage in ChatGPT." },
+      },
+    });
+  const hubAccount = (
+    id: string,
+    email: string,
+    usedPercent: number,
+    options: { readonly workspaceId?: string; readonly checkedAt?: string } = {},
+  ) => ({
+    id,
+    driver: codexDriver,
+    email,
+    plan: "ChatGPT Plus",
+    ...(options.workspaceId ? { workspaceId: options.workspaceId } : {}),
+    usageLimits: {
+      checkedAt: options.checkedAt ?? checkedAt,
+      windows: [{ ...window, usedPercent }],
+    },
+  });
+  const hub = (accounts: ReturnType<typeof hubAccount>[]) => [
+    {
+      id: UsageLimitSourceId.make("hub"),
+      kind: "cliproxy" as const,
+      label: "Accounts",
+      checkedAt,
+      accounts,
+    },
+  ];
+  const work = managed("codex-work", "Codex Work", "work@example.com");
+  const personal = managed("codex-personal", "Codex Personal", "personal@example.com");
+
+  it("binds each distinct Codex account to its own CLIProxy capacity", () => {
+    const sources = hub([
+      hubAccount("work", "work@example.com", 70),
+      hubAccount("personal", "personal@example.com", 20),
+    ]);
+    const report = collectProviderUsageLimits(work.instanceId, [work, personal], sources, now);
+    expect(report?.accounts).toMatchObject([
+      {
+        id: "codex-work",
+        instanceId: "codex-work",
+        displayName: "Codex Work",
+        email: "work@example.com",
+        sourceLabel: "CLI Proxy",
+        limits: { windows: [{ usedPercent: 70 }] },
+      },
+      {
+        id: "codex-personal",
+        instanceId: "codex-personal",
+        displayName: "Codex Personal",
+        email: "personal@example.com",
+        sourceLabel: "CLI Proxy",
+        limits: { windows: [{ usedPercent: 20 }] },
+      },
+    ]);
+  });
+
+  it("keeps each workspace's capacity when two Codex logins share an email", () => {
+    const workspaceA = managed("codex-a", "Codex A", "same@example.com", "ws-a");
+    const workspaceB = managed("codex-b", "Codex B", "same@example.com", "ws-b");
+    const sources = hub([
+      hubAccount("a", "same@example.com", 30, { workspaceId: "ws-a" }),
+      hubAccount("b", "same@example.com", 80, { workspaceId: "ws-b" }),
+    ]);
+    const report = collectProviderUsageLimits(
+      workspaceA.instanceId,
+      [workspaceA, workspaceB],
+      sources,
+      now,
+    );
+    expect(report?.accounts).toMatchObject([
+      { id: "codex-a", limits: { windows: [{ usedPercent: 30 }] } },
+      { id: "codex-b", limits: { windows: [{ usedPercent: 80 }] } },
+    ]);
+  });
+
+  it("does not guess when a shared email has no workspace evidence", () => {
+    const workspaceA = managed("codex-a", "Codex A", "same@example.com", "ws-a");
+    const workspaceB = managed("codex-b", "Codex B", "same@example.com", "ws-b");
+    const sources = hub([hubAccount("same", "same@example.com", 55)]);
+    const report = collectProviderUsageLimits(
+      workspaceA.instanceId,
+      [workspaceA, workspaceB],
+      sources,
+      now,
+    );
+    expect(report?.accounts).toMatchObject([
+      { id: "codex-a", limits: { windows: [], unavailable: { reason: "unsupported" } } },
+      { id: "codex-b", limits: { windows: [], unavailable: { reason: "unsupported" } } },
+      { id: "hub:same", limits: { windows: [{ usedPercent: 55 }] } },
+    ]);
+  });
+
+  it("prefers usable native limits over a matching hub snapshot", () => {
+    const native = provider({
+      displayName: "Codex Native",
+      auth: { status: "authenticated", email: "work@example.com", label: "ChatGPT" },
+      usageLimits: { checkedAt, windows: [{ ...window, usedPercent: 45 }] },
+    });
+    const report = collectProviderUsageLimits(
+      native.instanceId,
+      [native],
+      hub([hubAccount("work", "work@example.com", 90)]),
+      now,
+    );
+    expect(report?.accounts).toMatchObject([
+      { id: "codex", displayName: "Codex Native", limits: { windows: [{ usedPercent: 45 }] } },
+    ]);
+    expect(report?.accounts[0]?.sourceLabel).toBeUndefined();
+  });
+
+  it("uses the freshest usable hub observation for the bound instance", () => {
+    const sources = hub([
+      hubAccount("old", "work@example.com", 10, { checkedAt: "2026-09-03T11:10:00.000Z" }),
+      hubAccount("new", "work@example.com", 90, { checkedAt: "2026-09-03T11:20:00.000Z" }),
+    ]);
+    const report = collectProviderUsageLimits(work.instanceId, [work], sources, now);
+    expect(report?.accounts).toMatchObject([
+      { id: "codex-work", limits: { windows: [{ usedPercent: 90 }] } },
+    ]);
+    expect(report?.accounts.some((account) => account.id.startsWith("hub:"))).toBe(false);
+  });
+
+  it("projects capacity per provider instance with CLIProxy provenance", () => {
+    const sources = hub([
+      hubAccount("work", "work@example.com", 70),
+      hubAccount("personal", "personal@example.com", 20),
+    ]);
+    const capacities = resolveProviderInstanceCapacity([work, personal], sources);
+    expect(capacities).toMatchObject([
+      {
+        instanceId: "codex-work",
+        driver: "codex",
+        source: "cliproxy",
+        sourceId: "hub",
+        sourceAccountId: "work",
+        limits: { windows: [{ usedPercent: 70 }] },
+      },
+      {
+        instanceId: "codex-personal",
+        driver: "codex",
+        source: "cliproxy",
+        sourceId: "hub",
+        sourceAccountId: "personal",
+        limits: { windows: [{ usedPercent: 20 }] },
+      },
+    ]);
+  });
+
+  it("replaces the shared ChatGPT fallback once each instance has bound capacity", () => {
+    const externalUsage = {
+      label: "ChatGPT usage",
+      url: "https://chatgpt.com/#settings/Usage",
+    };
+    const withLink = (entry: ServerProvider): ServerProvider => ({
+      ...entry,
+      usageLimits: { ...entry.usageLimits!, externalUsage },
+    });
+    const sources = hub([
+      hubAccount("work", "work@example.com", 70),
+      hubAccount("personal", "personal@example.com", 20),
+    ]);
+    const presentations = new Map([
+      [
+        EnvironmentId.make("desk"),
+        {
+          entry: { target: { label: "Desk" } },
+          serverConfig: {
+            providers: [withLink(work), withLink(personal)],
+            usageLimitSources: sources,
+          },
+        },
+      ],
+    ]);
+    expect(collectExternalUsageLinks(presentations)).toEqual([]);
+    const partial = new Map([
+      [
+        EnvironmentId.make("desk"),
+        {
+          entry: { target: { label: "Desk" } },
+          serverConfig: {
+            providers: [withLink(work), withLink(personal)],
+            usageLimitSources: hub([hubAccount("work", "work@example.com", 70)]),
+          },
+        },
+      ],
+    ]);
+    expect(collectExternalUsageLinks(partial)).toMatchObject([
+      { accounts: ["Codex Personal on Desk"] },
+    ]);
+  });
+
+  it("leaves an ambiguous projection native-only instead of guessing", () => {
+    const workspaceA = managed("codex-a", "Codex A", "same@example.com", "ws-a");
+    const workspaceB = managed("codex-b", "Codex B", "same@example.com", "ws-b");
+    const capacities = resolveProviderInstanceCapacity(
+      [workspaceA, workspaceB],
+      hub([hubAccount("same", "same@example.com", 55)]),
+    );
+    expect(capacities).toMatchObject([
+      { instanceId: "codex-a", source: "native" },
+      { instanceId: "codex-b", source: "native" },
+    ]);
   });
 });
 
