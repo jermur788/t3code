@@ -3,7 +3,7 @@ import * as NodeSqliteClient from "@t3tools/shared/nodeSqliteClient";
 import * as Effect from "effect/Effect";
 import * as SqlClient from "effect/sql/SqlClient";
 
-import { runMigrations } from "../../Migrations.ts";
+import { migrationManifest, runMigrations } from "../../Migrations.ts";
 import DevelopmentProfilesMigration from "./002_DevelopmentProfiles.ts";
 import ProjectRuntimeMigration from "./001_ProjectRuntime.ts";
 import TaskHandoffStateMigration from "./003_TaskHandoffState.ts";
@@ -87,10 +87,10 @@ it.effect("preserves existing fork records when migrations 1-3 upgrade", () =>
       })})`;
 
     const executed = yield* runMigrations();
-    assert.deepEqual(executed, [
-      [68, "ShellStopRequestIndex"],
-      [69, "ThreadMessageSearch"],
-    ]);
+    assert.deepEqual(
+      executed,
+      migrationManifest.filter(([id]) => id > 67),
+    );
     const [profile] = yield* sql`SELECT profile_id, instructions, revision, routing_json
       FROM development_profiles WHERE profile_id = 'profile'`;
     assert.deepEqual(profile, {
@@ -111,7 +111,7 @@ it.effect("preserves existing fork records when migrations 1-3 upgrade", () =>
 it.effect("adds fork routing schema to a current upstream-origin database", () =>
   Effect.gen(function* () {
     const sql = yield* SqlClient.SqlClient;
-    yield* runMigrations({ toMigrationInclusive: 69 });
+    yield* runMigrations({ toMigrationInclusive: migrationManifest.at(-1)![0] });
     assert.deepEqual(yield* runMigrations(), []);
     const migrations = yield* sql<{ readonly migration_id: number; readonly name: string }>`
       SELECT migration_id, name FROM t3_fork_migrations ORDER BY migration_id`;

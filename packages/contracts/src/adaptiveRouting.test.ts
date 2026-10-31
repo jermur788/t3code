@@ -689,3 +689,40 @@ describe("adaptive routing contracts", () => {
     });
   });
 });
+
+it("retains upstream lifecycle references and separates requested, selected and unknown execution", () => {
+  const evidence = {
+    ...observation,
+    execution: {
+      threadId: "thread-1",
+      runId: "run-1",
+      runAttemptId: "run-attempt-1",
+      nodeId: "node-1",
+      providerSessionId: "session-1",
+      providerThreadId: "provider-thread-1",
+    },
+    configuration: {
+      requested: candidate,
+      selected: { instanceId: "claude", model: "claude-opus-5-5" },
+      executed: { quality: "unknown" },
+    },
+    failure: { class: "provider_capacity", evidenceRef: "turn-item:error-1" },
+    verification: {
+      profileId: "runtime-restart",
+      requiredKinds: ["runtime", "persistence"],
+      performedKinds: ["runtime"],
+      independence: "none",
+      result: "partial",
+      strength: "weak",
+      evidenceRefs: ["handoff:1"],
+    },
+  };
+  expect(decodeObservation(evidence)).toEqual(evidence);
+  expect(() =>
+    decodeObservation({
+      ...evidence,
+      configuration: { ...evidence.configuration, executed: { quality: "provider_reported" } },
+    }),
+  ).toThrow();
+  expect(decodeObservation(observation)).toEqual(observation);
+});

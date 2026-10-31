@@ -146,7 +146,7 @@ describe("fork migration namespace", () => {
   it.effect("adds fork schema to a current upstream home without touching upstream history", () =>
     Effect.gen(function* () {
       const sql = yield* SqlClient.SqlClient;
-      yield* runMigrations({ toMigrationInclusive: 69 });
+      yield* runMigrations({ toMigrationInclusive: migrationManifest.at(-1)![0] });
       assert.deepStrictEqual(yield* upstreamHistory, migrationManifest);
       const before =
         yield* sql`SELECT name FROM sqlite_master WHERE name = ${FORK_MIGRATION_TABLE}`;
@@ -166,10 +166,10 @@ describe("fork migration namespace", () => {
       const sql = yield* SqlClient.SqlClient;
       yield* seedLegacyForkHome;
       const before = yield* legacyData;
-      assert.deepStrictEqual(yield* runMigrations(), [
-        [68, "ShellStopRequestIndex"],
-        [69, "ThreadMessageSearch"],
-      ]);
+      assert.deepStrictEqual(
+        yield* runMigrations(),
+        migrationManifest.filter(([id]) => id > 67),
+      );
       assert.deepStrictEqual(yield* upstreamHistory, migrationManifest);
       assert.deepStrictEqual(yield* forkHistory, forkMigrationManifest);
       assert.deepStrictEqual(yield* legacyData, before);

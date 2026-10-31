@@ -7,12 +7,7 @@ import {
 
 import { useMergedSettings } from "../../hooks/useSettings";
 import { getCustomModelOptionsByInstance } from "../../modelSelection";
-import {
-  applyProviderInstanceSettings,
-  deriveProviderInstanceEntries,
-  sortProviderInstanceEntries,
-  type ProviderInstanceEntry,
-} from "../../providerInstances";
+import { providerInstanceEntriesFor, type ProviderInstanceEntry } from "../../providerInstances";
 import { useEnvironmentProviders } from "../../state/environments";
 import { EMPTY_SERVER_PROVIDERS } from "../../state/server";
 import type { ModelEsque } from "../chat/providerIconUtils";
@@ -32,13 +27,7 @@ export function useWorkerRoutingCatalog(target: {
   const settings = useMergedSettings(scope?.target?.settings ?? DEFAULT_SERVER_SETTINGS);
   const providers = providersByEnvironment.get(target.environmentId) ?? EMPTY_SERVER_PROVIDERS;
   return {
-    entries: sortProviderInstanceEntries(
-      applyProviderInstanceSettings(
-        deriveProviderInstanceEntries(providers),
-        settings,
-        target.projectId,
-      ),
-    ),
+    entries: providerInstanceEntriesFor(providers, settings, target.projectId),
     modelOptionsByInstance: getCustomModelOptionsByInstance(settings, providers),
   };
 }
