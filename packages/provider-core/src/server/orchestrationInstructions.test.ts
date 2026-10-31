@@ -133,6 +133,21 @@ describe("turn-scoped instruction delivery", () => {
     const prompt = promptWithTurnContext("Hello", [contextEntry("PRT-AUTO-7c91-B")]);
     expect(prompt).toContain("PRT-AUTO-7c91-B");
     expect(prompt).toContain("<user_request>\nHello\n</user_request>");
+
+    const wrapped = promptWithTurnContext(
+      t3OrchestrationPrompt({
+        prompt: "Hello",
+        hasT3Mcp: true,
+        hasDeviceTools: false,
+        orchestrationDelivered: false,
+        deviceInstructionsDelivered: true,
+      }),
+      [contextEntry("PRT-AUTO-7c91-C")],
+    );
+    expect(wrapped.match(/<user_request>/g)).toHaveLength(1);
+    expect(wrapped.indexOf("PRT-AUTO-7c91-C")).toBeLessThan(
+      wrapped.indexOf("<t3_code_orchestration_instructions>"),
+    );
   });
 });
 

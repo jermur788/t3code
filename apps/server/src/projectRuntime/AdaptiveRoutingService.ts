@@ -144,6 +144,21 @@ const make = Effect.gen(function* () {
     Effect.fn("AdaptiveRoutingService.appendExecutionObservationReference")(function* (record) {
       const data = yield* decodeExecutionObservation(record);
       const payload = yield* encodeExecutionObservation(data);
+      if (data.execution !== undefined) {
+        const [attempt] = yield* sql<{ thread_id: string | null; run_id: string | null }>`
+          SELECT thread_id, run_id FROM project_runtime_execution_attempts
+          WHERE attempt_id = ${data.attemptId} AND project_id = ${data.projectId}`;
+        if (
+          attempt !== undefined &&
+          (attempt.thread_id !== data.execution.threadId ||
+            (attempt.run_id !== null && attempt.run_id !== data.execution.runId))
+        ) {
+          return yield* new PersistenceSqlError({
+            operation: "AdaptiveRoutingService.appendExecutionObservationReference",
+            detail: "Execution references must match the linked attempt.",
+          });
+        }
+      }
       yield* sql`INSERT INTO adaptive_execution_observations
           (observation_id, project_id, task_id, attempt_id, prediction_id, created_at, payload_json)
           VALUES (${data.observationId}, ${data.projectId}, ${data.taskId}, ${data.attemptId}, ${data.predictionId}, ${data.createdAt}, ${payload})`;

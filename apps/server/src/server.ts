@@ -736,16 +736,17 @@ const layerRuntimeTaskExecution = RuntimeTaskExecutionService.layer.pipe(
 const layerRuntimeExecutionReconcile = Layer.effectDiscard(
   Effect.gen(function* () {
     const execution = yield* RuntimeTaskExecutionService.RuntimeTaskExecutionService;
-    yield* execution.reconcileActiveAttempts().pipe(
-      Effect.tap((count) =>
-        count === 0
-          ? Effect.void
-          : Effect.logInfo("Reconciled Runtime execution attempts on startup", { count }),
+    yield* ServerActivation.forkParked(
+      execution.reconcileActiveAttempts().pipe(
+        Effect.tap((count) =>
+          count === 0
+            ? Effect.void
+            : Effect.logInfo("Reconciled Runtime execution attempts on startup", { count }),
+        ),
+        Effect.catchCause((cause) =>
+          Effect.logWarning("Failed to reconcile Runtime execution attempts on startup", { cause }),
+        ),
       ),
-      Effect.catchCause((cause) =>
-        Effect.logWarning("Failed to reconcile Runtime execution attempts on startup", { cause }),
-      ),
-      Effect.forkScoped,
     );
   }),
 );

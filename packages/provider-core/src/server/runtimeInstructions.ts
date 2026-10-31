@@ -36,5 +36,7 @@ export function promptWithTurnContext(
   const context = instructionContextText(turnContext);
   // Native commands must remain untouched so the harness can expand them.
   if (!context || prompt.trimStart().startsWith("/")) return prompt;
+  // Orchestration instructions already wrap the request; nesting would put them inside user text.
+  if (prompt.startsWith("<t3_code_orchestration_instructions>")) return `${context}\n\n${prompt}`;
   return `${context}\n\n<user_request>\n${prompt}\n</user_request>`;
 }

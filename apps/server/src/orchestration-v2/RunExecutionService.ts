@@ -1652,6 +1652,10 @@ export const layer: Layer.Layer<
           key: `mcp_app_${entry.itemId.replace(/[^\w.-]/g, "_")}`,
           text: entry.text,
         }));
+        // Compaction takes no project instructions, and extra prompt blocks would hide the command.
+        const compact =
+          input.message.attachments.length === 0 &&
+          input.message.text.trim().toLowerCase() === "/compact";
         const turnInput = {
           appThread: input.appThread,
           threadId: input.run.threadId,
@@ -1672,7 +1676,7 @@ export const layer: Layer.Layer<
           message: input.message,
           modelSelection: input.modelSelection,
           runtimePolicy: input.runtimePolicy,
-          ...(input.turnContext === undefined ? {} : { turnContext: input.turnContext }),
+          ...(input.turnContext === undefined || compact ? {} : { turnContext: input.turnContext }),
           ...(appContext.length === 0 ? {} : { appContext }),
         };
         // Check after the context read: ingestion can settle the run while
@@ -1686,9 +1690,6 @@ export const layer: Layer.Layer<
           return;
         }
 
-        const compact =
-          input.message.attachments.length === 0 &&
-          input.message.text.trim().toLowerCase() === "/compact";
         const startTurn = compact
           ? (input.session.compactThread?.(turnInput) ??
             Effect.fail(

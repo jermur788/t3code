@@ -16,6 +16,8 @@ import {
   ProviderDriverKind,
   ProjectRuntimeTaskId,
   RuntimeExecutionAttemptId,
+  RunId,
+  ThreadId,
 } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
@@ -295,6 +297,35 @@ it.effect("rejects an observation that pairs one task with another task's attemp
       .pipe(Effect.flip);
     assert.equal(rejected._tag, "PersistenceSqlError");
     assert.lengthOf(yield* sql`SELECT 1 FROM adaptive_execution_observations`, 0);
+  }).pipe(Effect.provide(layerTest)),
+);
+
+it.effect("rejects execution references that contradict the linked attempt", () =>
+  Effect.gen(function* () {
+    yield* seedTwoTasksWithAttempts;
+    yield* seedPredictions;
+    const service = yield* AdaptiveRoutingService.AdaptiveRoutingService;
+    const sql = yield* SqlClient.SqlClient;
+    const base = observation({
+      task: taskId,
+      attempt: attemptOf(taskId),
+      prediction: predictionOf(taskId),
+    });
+
+    const rejected = yield* service
+      .appendExecutionObservationReference({
+        ...base,
+        execution: { threadId: ThreadId.make("other-thread"), runId: RunId.make("run-1") },
+      })
+      .pipe(Effect.flip);
+    assert.equal(rejected._tag, "PersistenceSqlError");
+    assert.lengthOf(yield* sql`SELECT 1 FROM adaptive_execution_observations`, 0);
+
+    yield* service.appendExecutionObservationReference({
+      ...base,
+      execution: { threadId: ThreadId.make(`thread-${taskId}`), runId: RunId.make("run-1") },
+    });
+    assert.lengthOf(yield* sql`SELECT 1 FROM adaptive_execution_observations`, 1);
   }).pipe(Effect.provide(layerTest)),
 );
 
