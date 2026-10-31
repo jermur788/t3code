@@ -107,7 +107,7 @@ function DevelopmentProfilesPanel({
     },
   );
 
-  // oxlint-disable-next-line t3code/react-effect-budget -- Loads the profile list over RPC and cancels stale results on unmount.
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Loads the profile list over RPC and cancels stale results on unmount.
   useEffect(() => {
     if (!api.ready) return;
     let active = true;
@@ -117,7 +117,7 @@ function DevelopmentProfilesPanel({
     };
   }, [api.ready, load]);
 
-  // oxlint-disable-next-line t3code/react-effect-budget -- Loads usage for the selected profile over RPC and cancels stale results when the selection changes.
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Loads usage for the selected profile over RPC and cancels stale results when the selection changes.
   useEffect(() => {
     if (!api.ready || selectedId === null) return;
     let active = true;

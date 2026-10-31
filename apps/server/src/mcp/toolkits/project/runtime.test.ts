@@ -1,3 +1,5 @@
+import * as ProjectCloneTracker from "../../../project/ProjectCloneTracker.ts";
+import * as ProviderRegistry from "../../../provider/ProviderRegistry.ts";
 import * as DocumentText from "../../../provider/DocumentText.ts";
 import * as DevelopmentProfileService from "../../../developmentProfiles/DevelopmentProfileService.ts";
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
@@ -105,7 +107,7 @@ const layerRuntime = ProjectRuntimeSourceAccess.layer.pipe(
 );
 
 // The toolkit declares services for its other tools, which these tests never call.
-const layerTest = McpHttpServer.layerProjectToolkit.pipe(
+const layerTest = McpHttpServer.layerProjectRegistration.pipe(
   Layer.provideMerge(McpServer.McpServer.layer),
   Layer.provide(
     Layer.mergeAll(
@@ -113,6 +115,8 @@ const layerTest = McpHttpServer.layerProjectToolkit.pipe(
       layerThreads,
       ServerSettings.layerTest(),
       Layer.mock(ProjectService.ProjectService)({}),
+      Layer.mock(ProjectCloneTracker.ProjectCloneTracker)({}),
+      Layer.mock(ProviderRegistry.ProviderRegistry)({}),
       Layer.mock(ManagedProjectFolders.ManagedProjectFolders)({ namedProjectsRoot: "/projects" }),
       Layer.mock(SourceControlRepositoryService.SourceControlRepositoryService)({}),
       Layer.mock(ThreadLaunch.ThreadLaunchService)({}),

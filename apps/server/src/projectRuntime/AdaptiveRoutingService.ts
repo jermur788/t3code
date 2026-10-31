@@ -13,6 +13,7 @@ import {
   AdaptiveRoutingConflictError,
   AdaptiveRoutingRecordNotFoundError,
   type AdaptiveOutcomeId,
+  type ServerProviderUsageLimits,
 } from "@t3tools/contracts";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
@@ -46,6 +47,12 @@ export class AdaptiveRoutingService extends Context.Service<
     readonly appendCapacitySnapshot: (
       record: AdaptiveCapacitySnapshot,
     ) => Result<AdaptiveCapacitySnapshot>;
+    readonly captureProviderCapacitySnapshot: (input: {
+      readonly snapshotId: AdaptiveCapacitySnapshot["snapshotId"];
+      readonly capacityPoolId: AdaptiveCapacitySnapshot["capacityPoolId"];
+      readonly sourceRef: string;
+      readonly usageLimits: ServerProviderUsageLimits;
+    }) => Result<AdaptiveCapacitySnapshot>;
     readonly appendCapacityResetEvent: (
       record: AdaptiveCapacityResetEvent,
     ) => Result<AdaptiveCapacityResetEvent>;
@@ -163,6 +170,36 @@ const make = Effect.gen(function* () {
           VALUES (${data.snapshotId}, ${data.capacityPoolId}, ${data.observedAt}, ${payload})`;
       return data;
     }, sqlErrors);
+
+  const captureProviderCapacitySnapshot = Effect.fn(
+    "AdaptiveRoutingService.captureProviderCapacitySnapshot",
+  )(function* (
+    input: Parameters<AdaptiveRoutingService["Service"]["captureProviderCapacitySnapshot"]>[0],
+  ) {
+    return yield* appendCapacitySnapshot({
+      schemaVersion: 1,
+      snapshotId: input.snapshotId,
+      capacityPoolId: input.capacityPoolId,
+      sourceRef: input.sourceRef,
+      observedAt: input.usageLimits.checkedAt,
+      sourceQuality: "t3_observed",
+      // A failed upstream probe retains stale bars for display, not current capacity evidence.
+      windows: input.usageLimits.unavailable
+        ? []
+        : input.usageLimits.windows.map((window) => ({
+            windowId: window.id,
+            windowType: window.kind,
+            used: { quality: "approximate" as const, value: window.usedPercent, unit: "percent" },
+            remaining: {
+              quality: "approximate" as const,
+              value: 100 - window.usedPercent,
+              unit: "percent",
+            },
+            limit: { quality: "exact" as const, value: 100, unit: "percent" },
+            ...(window.resetsAt === undefined ? {} : { resetAt: window.resetsAt }),
+          })),
+    });
+  });
 
   const appendCapacityResetEvent: AdaptiveRoutingService["Service"]["appendCapacityResetEvent"] =
     Effect.fn("AdaptiveRoutingService.appendCapacityResetEvent")(function* (record) {
@@ -299,6 +336,7 @@ const make = Effect.gen(function* () {
     appendExecutionObservationReference,
     appendCapacityPool,
     appendCapacitySnapshot,
+    captureProviderCapacitySnapshot,
     appendCapacityResetEvent,
     createAcceptedOutcome,
     readAcceptedOutcome,

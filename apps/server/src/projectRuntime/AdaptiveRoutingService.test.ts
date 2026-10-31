@@ -1,6 +1,8 @@
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, it } from "@effect/vitest";
 import {
+  AdaptiveCapacityPoolId,
+  AdaptiveCapacitySnapshotId,
   AdaptiveDifficultyPredictionId,
   AdaptiveExecutionObservationId,
   AdaptiveOutcomeId,
@@ -11,6 +13,7 @@ import {
   type AdaptiveExecutionObservationReference,
   type AdaptiveRecommendationReceipt,
   ProjectId,
+  ProviderDriverKind,
   ProjectRuntimeTaskId,
   RuntimeExecutionAttemptId,
 } from "@t3tools/contracts";
@@ -463,4 +466,58 @@ it.effect("fails closed on a malformed stored accepted-outcome payload", () =>
       [{ state: "unresolved", revision: 1 }],
     );
   }).pipe(Effect.provide(layerTest)),
+);
+
+it.effect(
+  "captures upstream usage evidence without retaining stale windows or account credentials",
+  () =>
+    Effect.gen(function* () {
+      const service = yield* AdaptiveRoutingService.AdaptiveRoutingService;
+      const sql = yield* SqlClient.SqlClient;
+      const capacityPoolId = AdaptiveCapacityPoolId.make("capacity-pool");
+      yield* service.appendCapacityPool({
+        schemaVersion: 1,
+        capacityPoolId,
+        providerDriver: ProviderDriverKind.make("codex"),
+        identityQuality: "provider_instance",
+        createdAt,
+      });
+      const usageLimits = {
+        checkedAt: createdAt,
+        credentialFingerprint: "private-fingerprint",
+        windows: [
+          {
+            id: "session",
+            kind: "session" as const,
+            label: "Session",
+            usedPercent: 25,
+            resetsAt: firstReconciledAt,
+          },
+        ],
+      };
+      const captured = yield* service.captureProviderCapacitySnapshot({
+        snapshotId: AdaptiveCapacitySnapshotId.make("capacity-fresh"),
+        capacityPoolId,
+        sourceRef: "provider:codex",
+        usageLimits,
+      });
+      assert.deepStrictEqual(captured.windows[0]?.remaining, {
+        quality: "approximate",
+        value: 75,
+        unit: "percent",
+      });
+      assert.equal(captured.windows[0]?.resetAt, firstReconciledAt);
+      const unavailable = yield* service.captureProviderCapacitySnapshot({
+        snapshotId: AdaptiveCapacitySnapshotId.make("capacity-unavailable"),
+        capacityPoolId,
+        sourceRef: "provider:codex",
+        usageLimits: { ...usageLimits, unavailable: { reason: "probeFailed" } },
+      });
+      assert.deepStrictEqual(unavailable.windows, []);
+      const rows = yield* sql<{
+        payload_json: string;
+      }>`SELECT payload_json FROM adaptive_capacity_snapshots`;
+      assert.lengthOf(rows, 2);
+      for (const row of rows) assert.notInclude(row.payload_json, "private-fingerprint");
+    }).pipe(Effect.provide(layerTest)),
 );
