@@ -13,7 +13,12 @@ import { UsageLimitsPooled } from "./UsageLimitsPooled";
 
 const checkedAt = "2026-10-25T16:00:00.000Z";
 
-function managedChatGpt(instanceId: string, displayName: string, email?: string): ServerProvider {
+function managedChatGpt(
+  instanceId: string,
+  displayName: string,
+  email?: string,
+  externalUsage = true,
+): ServerProvider {
   return {
     instanceId: ProviderInstanceId.make(instanceId),
     driver: ProviderDriverKind.make("codex"),
@@ -31,7 +36,9 @@ function managedChatGpt(instanceId: string, displayName: string, email?: string)
       checkedAt,
       windows: [],
       unavailable: { reason: "unsupported", message: "Track usage in ChatGPT." },
-      externalUsage: { label: "ChatGPT usage", url: CHATGPT_USAGE_URL },
+      ...(externalUsage
+        ? { externalUsage: { label: "ChatGPT usage", url: CHATGPT_USAGE_URL } }
+        : {}),
     },
   };
 }
@@ -73,8 +80,8 @@ describe("UsageLimitsPooled ChatGPT usage card", () => {
           entry: { target: { label: "Desk" } },
           serverConfig: {
             providers: [
-              managedChatGpt("chatgpt_work", "Codex Work", "work@example.com"),
-              managedChatGpt("chatgpt_personal", "Codex Personal", "personal@example.com"),
+              managedChatGpt("chatgpt_work", "Codex Work", "work@example.com", false),
+              managedChatGpt("chatgpt_personal", "Codex Personal", "personal@example.com", false),
             ],
             usageLimitSources: [
               {
@@ -136,5 +143,8 @@ describe("UsageLimitsPooled ChatGPT usage card", () => {
     await expect.element(screen.getByText("Codex Personal").first()).toBeVisible();
     await expect.element(screen.getByText("60%").first()).toBeVisible();
     await expect.element(screen.getByText("25%").first()).toBeVisible();
+    await expect
+      .element(screen.getByText("View usage in ChatGPT with your connected account."))
+      .not.toBeInTheDocument();
   });
 });
