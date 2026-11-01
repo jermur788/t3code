@@ -280,3 +280,36 @@ At dispatch: capacity-to-completion `SUFFICIENT` for DeepSeek local work; `UNKNO
 | `ev0-repair-20261101-d07`  | DeepSeek V4.1 Flash     | STATIC PASS             | Final handoff; no RUNTIME PASS, no merge                                    |
 
 Remaining non-blocking/UNKNOWN: V2 1,000-event read cap has no truncation marker; cross-task staging references are dropped; 2,000-reference cap is finite; no transport wiring or live-service/real-DB verification; ARM producers remain the next milestone. PR #14 stayed frozen at `e51c1c5d74`.
+
+---
+
+# Run 4 — Evidence V0 narrow Runtime provenance repair — decision-time appendix
+
+Run: Local DeepSeek Evidence V0 provenance repair (P1/P2)
+Date: 2026-11-01
+Orchestrator: DeepSeek V4.1 Flash (`opencode-go/deepseek-v4.1-flash`, OpenCode harness, variant `max`, agent `build`)
+Starting docs/result head: `c235f00d3ade9d548ad106a03c58f9dad88b50ea`
+Starting code head: `7db996d23a87bb8eab9041bf2d969e38c1129865`
+Base: `e51c1c5d74aed9824927d391590ddb33026c8d56`
+Governing spec: `docs/internals/orchestration-evidence-v0-spec.md @ d3a31b7fb89fd75c0d452c3b29a3d2ca9bb98acf`
+
+This section is recorded before repair execution. Outcomes are appended later and do not rewrite these rows.
+
+## R4.1 Routing and decomposition — decision-time entries
+
+| Decision                  | Work unit                                | Band / confidence | Selected              | Reviewer               | Selection                  | Recorded at       |
+| ------------------------- | ---------------------------------------- | ----------------- | --------------------- | ---------------------- | -------------------------- | ----------------- |
+| `ev0-repair-20261101-d08` | Narrow Runtime provenance repair (P1/P2) | MEDIUM / 0.90     | DeepSeek V4.1 Flash   | Claude B — Pro planned | exploit + planned review   | 2026-11-01T21:25Z |
+| `ev0-repair-20261101-d09` | Focused independent re-review            | MEDIUM / 0.80     | Claude B — Pro Opus 5 | N/A                    | explore independent review | 2026-11-01T21:25Z |
+| `ev0-repair-20261101-d10` | Final verification / handoff             | MEDIUM / 0.90     | DeepSeek V4.1 Flash   | N/A                    | forced orchestrator        | 2026-11-01T21:25Z |
+
+## R4.2 Capacity at decision time
+
+| Provider/pool                               | State                            | Remaining capacity | Source                    | Observed at       |
+| ------------------------------------------- | -------------------------------- | ------------------ | ------------------------- | ----------------- |
+| OpenCode / DeepSeek V4.1 Flash              | AVAILABLE (running this session) | `UNKNOWN`          | T3 live catalog + session | 2026-11-01T21:25Z |
+| Claude B — Pro (`claudeAgent_claude_b_pro`) | AVAILABLE (listed)               | `UNKNOWN`          | T3 live catalog           | 2026-11-01T21:25Z |
+| Claude A (`claudeAgent`)                    | AVAILABLE (listed)               | `UNKNOWN`          | T3 live catalog           | 2026-11-01T21:25Z |
+| Codex / OpenAI B                            | AVAILABLE (listed)               | `UNKNOWN`          | T3 live catalog           | 2026-11-01T21:25Z |
+
+At dispatch: capacity-to-completion `SUFFICIENT` for the narrow local repair; `UNKNOWN` for independent re-review until dispatched. Capacity substitution, if needed, will be appended as a new decision rather than editing these rows.

@@ -969,3 +969,54 @@ These decisions are prospective and recorded before repair implementation. They 
 - **Remaining UNKNOWNs/blockers:** no live-service/real-database exercise; no RPC/MCP/CLI/UI transport; 1,000-event V2 read limit lacks a truncation marker; cross-task staging references are dropped; ARM producers remain unwired (later milestone); 2,000-reference cap is finite.
 - **PR #14:** untouched at `sync/upstream-20261031 @ e51c1c5d74aed9824927d391590ddb33026c8d56`; not merged, not advanced, not strengthened by this work.
 - **Next action:** Browser Overall inspects the exact final diff and evidence; do not merge. Transport wiring plus live/real-DB verification is the next milestone.
+
+---
+
+# Run 4 — Evidence V0 narrow Runtime provenance repair — decision-time records
+
+Run: Local DeepSeek Evidence V0 provenance repair (P1/P2)
+Date: 2026-11-01
+Orchestrator: DeepSeek V4.1 Flash (`opencode-go/deepseek-v4.1-flash`, OpenCode harness, variant `max`, agent `build`)
+Starting docs/result head: `c235f00d3ade9d548ad106a03c58f9dad88b50ea`
+Starting code head: `7db996d23a87bb8eab9041bf2d969e38c1129865`
+Base: `e51c1c5d74aed9824927d391590ddb33026c8d56`
+Governing spec: `docs/internals/orchestration-evidence-v0-spec.md @ d3a31b7fb89fd75c0d452c3b29a3d2ca9bb98acf`
+Browser blocker: `2026-11-01-browser-evidence-v0-post-repair-review.md` P1/P2
+
+These decisions are prospective and recorded before repair implementation. They do not rewrite `ev0-*` or `ev0-repair-20261101-d01..d07` records.
+
+### D-EV0R2-01 — Narrow Runtime provenance repair (P1/P2)
+
+- `decision_id`: `ev0-repair-20261101-d08`
+- `recorded_at`: 2026-11-01T21:25Z
+- **Difficulty:** ambiguity 0.15; scope 0.25; reasoning 0.35; integration/tool 0.30; risk 0.45; verification 0.55; band `MEDIUM`; confidence 0.90.
+- **Candidates:** DeepSeek self (single writer); bounded independent reviewer after repair.
+- **Selected executor:** DeepSeek self.
+- **Rationale:** the repair is two narrow provenance classifications in one existing projection. B1–B6 are accepted and untouched. The canonical handoff row already exists with an existing typed contract and table; the repair only adds a bounded exact-row read and corrects `recordBasis`.
+- **Alternatives rejected:** a new handoff read service or evidence datastore (duplicate truth); pointer-only fallback when the canonical row is already available (weaker provenance than the spec prefers); reopening B1–B6 (out of scope).
+- **Selection mechanism:** exploit + planned focused review.
+- `machine`: `{"schema":"t3-orchestration-evidence-v2","event_id":"ev0-repair-20261101-d08","event_type":"routing_decision","occurred_at":"2026-11-01T21:25Z","recorded_at":"2026-11-01T21:25Z","project":"t3-fork","task":"evidence-v0-runtime-provenance-repair","orchestrator":{"provider":"opencode","model":"opencode-go/deepseek-v4.1-flash"},"selected":{"provider":"opencode","model":"opencode-go/deepseek-v4.1-flash"},"difficulty":{"ambiguity":0.15,"scope_breadth":0.25,"reasoning_complexity":0.35,"integration_tool_complexity":0.30,"risk":0.45,"verification_burden":0.55,"band":"MEDIUM","confidence":0.90},"selection":"exploit_plus_planned_review","outcome":"PENDING"}`
+
+### D-EV0R2-02 — Focused independent re-review of the provenance repair
+
+- `decision_id`: `ev0-repair-20261101-d09`
+- `recorded_at`: 2026-11-01T21:25Z
+- **Difficulty:** ambiguity 0.20; scope 0.30; reasoning 0.55; integration/tool 0.25; risk 0.50; verification 0.50; band `MEDIUM`; confidence 0.80.
+- **Candidates:** Claude B — Pro (`claudeAgent_claude_b_pro`) / `claude-opus-5-5`; Claude A (`claudeAgent`); Codex (`codex`) / `gpt-6.1-sol`; DeepSeek self (rejected as non-independent).
+- **Selected executor:** Claude B — Pro first, because it produced the previous successful re-review and is a different provider/model from the implementer.
+- **Rationale:** the prior Claude B review missed the provenance issue, so the re-review must explicitly check record-basis classification, canonical handoff resolution, dangling-pointer behavior, source times/revisions, duplicate handoff truth, private body avoidance, B1–B6 regression, and outcome/ordering leakage.
+- **Alternatives rejected:** relying on the prior review verdict (it missed P1/P2); self-review (not independent).
+- **Selection mechanism:** explore independent review + capacity substitution rule.
+- `machine`: `{"schema":"t3-orchestration-evidence-v2","event_id":"ev0-repair-20261101-d09","event_type":"routing_decision","occurred_at":"2026-11-01T21:25Z","recorded_at":"2026-11-01T21:25Z","project":"t3-fork","task":"evidence-v0-provenance-repair-review","orchestrator":{"provider":"opencode","model":"opencode-go/deepseek-v4.1-flash"},"selected":{"provider":"claudeAgent_claude_b_pro","model":"claude-opus-5-5"},"difficulty":{"ambiguity":0.20,"scope_breadth":0.30,"reasoning_complexity":0.55,"integration_tool_complexity":0.25,"risk":0.50,"verification_burden":0.50,"band":"MEDIUM","confidence":0.80},"selection":"explore_independent_review","outcome":"PENDING"}`
+
+### D-EV0R2-03 — Final verification and handoff
+
+- `decision_id`: `ev0-repair-20261101-d10`
+- `recorded_at`: 2026-11-01T21:25Z
+- **Difficulty:** ambiguity 0.10; scope 0.25; reasoning 0.25; integration/tool 0.30; risk 0.40; verification 0.70; band `MEDIUM`; confidence 0.90.
+- **Candidates:** DeepSeek self.
+- **Selected executor:** DeepSeek self.
+- **Rationale:** forced orchestrator responsibility; verification must run on the exact repaired head and the handoff must reconcile every outcome honestly.
+- **Alternatives rejected:** delegating synthesis (orchestrator owns reconciliation).
+- **Selection mechanism:** forced orchestrator.
+- `machine`: `{"schema":"t3-orchestration-evidence-v2","event_id":"ev0-repair-20261101-d10","event_type":"routing_decision","occurred_at":"2026-11-01T21:25Z","recorded_at":"2026-11-01T21:25Z","project":"t3-fork","task":"evidence-v0-provenance-verification-handoff","orchestrator":{"provider":"opencode","model":"opencode-go/deepseek-v4.1-flash"},"selected":{"provider":"opencode","model":"opencode-go/deepseek-v4.1-flash"},"difficulty":{"ambiguity":0.10,"scope_breadth":0.25,"reasoning_complexity":0.25,"integration_tool_complexity":0.30,"risk":0.40,"verification_burden":0.70,"band":"MEDIUM","confidence":0.90},"selection":"forced_orchestrator","outcome":"PENDING"}`
