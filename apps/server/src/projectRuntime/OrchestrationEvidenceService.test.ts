@@ -1397,6 +1397,18 @@ it.effect("does not claim a canonical handoff when payload identity disagrees wi
     assert.isDefined(unresolved);
     assert.equal(unresolved?.recordId, handoffId);
     assert.equal(unresolved?.facts.find((fact) => fact.key === "status")?.value, "unresolved");
+
+    const jsonl = yield* evidence.exportTaskJsonl(projectId, taskId);
+    const decoded = jsonl
+      .split("\n")
+      .filter(Boolean)
+      .map((line) => decodeEvent(line));
+    assert.isFalse(decoded.some((event) => event.recordType === "project-runtime-handoff"));
+    const decodedUnresolved = decoded.find(
+      (event) => event.recordType === "project-runtime-handoff-unresolved",
+    );
+    assert.equal(decodedUnresolved?.recordId, handoffId);
+    assert.equal(decodedUnresolved?.recordBasis, "derived-view");
   }).pipe(Effect.provide(layerTest)),
 );
 

@@ -734,7 +734,7 @@ const runtimeHandoffUnresolvedEvent = (
     runId: null,
     occurredAt: null,
     recordedAt: null,
-    summary: `Runtime task points to handoff ${handoffId}, but the canonical handoff row did not resolve`,
+    summary: `Runtime task points to handoff ${handoffId}, but no canonical handoff resolved for this task`,
     unknownFields: ["occurredAt", "recordedAt", "canonicalRecord"],
     references: references([["project-runtime-task", task.taskId]]),
     facts: facts([
