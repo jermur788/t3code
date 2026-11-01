@@ -25,13 +25,13 @@ Append-oriented project-owned audit ledger for T3 Fork orchestration-learning ev
 
 ## Starting provider/capacity observations
 
-| Provider instance | State | Capacity evidence | Reset/window | Source | Observed at |
-| --- | --- | --- | --- | --- | --- |
-| OpenCode / DeepSeek V4.1 Flash (`opencode-go/deepseek-v4.1-flash`) | AVAILABLE | Orchestrator session running | UNKNOWN | T3 runtime | 2026-11-01T08:05Z |
-| Claude A (`claudeAgent`) | AVAILABLE (listed) | UNKNOWN | UNKNOWN | T3 catalog | 2026-11-01T08:05Z |
-| Claude B — Pro (`claudeAgent_claude_b_pro`) | AVAILABLE (listed) | UNKNOWN | UNKNOWN | T3 catalog | 2026-11-01T08:05Z |
-| Codex / OpenAI B (`codex`, `codex_c75d...`) | AVAILABLE (listed) | UNKNOWN | UNKNOWN | T3 catalog | 2026-11-01T08:05Z |
-| Cursor / Grok / Antigravity / Muse / Pi | DISABLED | N/A | N/A | T3 catalog constraints | 2026-11-01T08:05Z |
+| Provider instance                                                  | State              | Capacity evidence            | Reset/window | Source                 | Observed at       |
+| ------------------------------------------------------------------ | ------------------ | ---------------------------- | ------------ | ---------------------- | ----------------- |
+| OpenCode / DeepSeek V4.1 Flash (`opencode-go/deepseek-v4.1-flash`) | AVAILABLE          | Orchestrator session running | UNKNOWN      | T3 runtime             | 2026-11-01T08:05Z |
+| Claude A (`claudeAgent`)                                           | AVAILABLE (listed) | UNKNOWN                      | UNKNOWN      | T3 catalog             | 2026-11-01T08:05Z |
+| Claude B — Pro (`claudeAgent_claude_b_pro`)                        | AVAILABLE (listed) | UNKNOWN                      | UNKNOWN      | T3 catalog             | 2026-11-01T08:05Z |
+| Codex / OpenAI B (`codex`, `codex_c75d...`)                        | AVAILABLE (listed) | UNKNOWN                      | UNKNOWN      | T3 catalog             | 2026-11-01T08:05Z |
+| Cursor / Grok / Antigravity / Muse / Pi                            | DISABLED           | N/A                          | N/A          | T3 catalog constraints | 2026-11-01T08:05Z |
 
 No precise quota number is inferred from the absence of errors.
 
@@ -53,7 +53,30 @@ No precise quota number is inferred from the absence of errors.
 - `machine`:
 
 ```json
-{"schema":"t3-orchestration-evidence-v2","event_id":"l2-20261101-d01","event_type":"routing_decision","occurred_at":"2026-11-01T08:05Z","recorded_at":"2026-11-01T08:05Z","project":"t3-fork","task":"local-l2-combined-sync-qualification","orchestrator":{"provider":"opencode","model":"opencode-go/deepseek-v4.1-flash"},"selected":{"provider":"opencode","model":"opencode-go/deepseek-v4.1-flash"},"reviewer_planned":{"provider":"claudeAgent","model":"claude-sonnet-5-5"},"difficulty":{"ambiguity":0.30,"scope_breadth":0.85,"reasoning_complexity":0.60,"integration_tool_complexity":0.80,"risk":0.85,"verification_burden":0.90,"band":"HIGH","confidence":0.80},"selection":"exploit+forced_policy","outcome":"PENDING"}
+{
+  "schema": "t3-orchestration-evidence-v2",
+  "event_id": "l2-20261101-d01",
+  "event_type": "routing_decision",
+  "occurred_at": "2026-11-01T08:05Z",
+  "recorded_at": "2026-11-01T08:05Z",
+  "project": "t3-fork",
+  "task": "local-l2-combined-sync-qualification",
+  "orchestrator": { "provider": "opencode", "model": "opencode-go/deepseek-v4.1-flash" },
+  "selected": { "provider": "opencode", "model": "opencode-go/deepseek-v4.1-flash" },
+  "reviewer_planned": { "provider": "claudeAgent", "model": "claude-sonnet-5-5" },
+  "difficulty": {
+    "ambiguity": 0.3,
+    "scope_breadth": 0.85,
+    "reasoning_complexity": 0.6,
+    "integration_tool_complexity": 0.8,
+    "risk": 0.85,
+    "verification_burden": 0.9,
+    "band": "HIGH",
+    "confidence": 0.8
+  },
+  "selection": "exploit+forced_policy",
+  "outcome": "PENDING"
+}
 ```
 
 ### D-L2-02 — Repository safety and exact-SHA isolation
@@ -68,7 +91,29 @@ No precise quota number is inferred from the absence of errors.
 - **machine**:
 
 ```json
-{"schema":"t3-orchestration-evidence-v2","event_id":"l2-20261101-d02","event_type":"routing_decision","occurred_at":"2026-11-01T08:05Z","recorded_at":"2026-11-01T08:05Z","project":"t3-fork","task":"repo-safety-exact-sha-worktree","orchestrator":{"provider":"opencode","model":"opencode-go/deepseek-v4.1-flash"},"selected":{"provider":"opencode","model":"opencode-go/deepseek-v4.1-flash"},"difficulty":{"ambiguity":0.15,"scope_breadth":0.25,"reasoning_complexity":0.20,"integration_tool_complexity":0.40,"risk":0.70,"verification_burden":0.40,"band":"LOW-MEDIUM","confidence":0.92},"selection":"exploit","outcome":"PENDING"}
+{
+  "schema": "t3-orchestration-evidence-v2",
+  "event_id": "l2-20261101-d02",
+  "event_type": "routing_decision",
+  "occurred_at": "2026-11-01T08:05Z",
+  "recorded_at": "2026-11-01T08:05Z",
+  "project": "t3-fork",
+  "task": "repo-safety-exact-sha-worktree",
+  "orchestrator": { "provider": "opencode", "model": "opencode-go/deepseek-v4.1-flash" },
+  "selected": { "provider": "opencode", "model": "opencode-go/deepseek-v4.1-flash" },
+  "difficulty": {
+    "ambiguity": 0.15,
+    "scope_breadth": 0.25,
+    "reasoning_complexity": 0.2,
+    "integration_tool_complexity": 0.4,
+    "risk": 0.7,
+    "verification_burden": 0.4,
+    "band": "LOW-MEDIUM",
+    "confidence": 0.92
+  },
+  "selection": "exploit",
+  "outcome": "PENDING"
+}
 ```
 
 ### D-L2-03 — Static/focused regression and typecheck execution
@@ -83,7 +128,29 @@ No precise quota number is inferred from the absence of errors.
 - **machine**:
 
 ```json
-{"schema":"t3-orchestration-evidence-v2","event_id":"l2-20261101-d03","event_type":"routing_decision","occurred_at":"2026-11-01T08:05Z","recorded_at":"2026-11-01T08:05Z","project":"t3-fork","task":"focused-tests-and-typecheck","orchestrator":{"provider":"opencode","model":"opencode-go/deepseek-v4.1-flash"},"selected":{"provider":"opencode","model":"opencode-go/deepseek-v4.1-flash"},"difficulty":{"ambiguity":0.20,"scope_breadth":0.70,"reasoning_complexity":0.35,"integration_tool_complexity":0.65,"risk":0.55,"verification_burden":0.85,"band":"MEDIUM-HIGH","confidence":0.88},"selection":"exploit","outcome":"PENDING"}
+{
+  "schema": "t3-orchestration-evidence-v2",
+  "event_id": "l2-20261101-d03",
+  "event_type": "routing_decision",
+  "occurred_at": "2026-11-01T08:05Z",
+  "recorded_at": "2026-11-01T08:05Z",
+  "project": "t3-fork",
+  "task": "focused-tests-and-typecheck",
+  "orchestrator": { "provider": "opencode", "model": "opencode-go/deepseek-v4.1-flash" },
+  "selected": { "provider": "opencode", "model": "opencode-go/deepseek-v4.1-flash" },
+  "difficulty": {
+    "ambiguity": 0.2,
+    "scope_breadth": 0.7,
+    "reasoning_complexity": 0.35,
+    "integration_tool_complexity": 0.65,
+    "risk": 0.55,
+    "verification_burden": 0.85,
+    "band": "MEDIUM-HIGH",
+    "confidence": 0.88
+  },
+  "selection": "exploit",
+  "outcome": "PENDING"
+}
 ```
 
 ### D-L2-04 — Runtime/V2 execution-provenance verification
@@ -99,7 +166,30 @@ No precise quota number is inferred from the absence of errors.
 - **machine**:
 
 ```json
-{"schema":"t3-orchestration-evidence-v2","event_id":"l2-20261101-d04","event_type":"routing_decision","occurred_at":"2026-11-01T08:05Z","recorded_at":"2026-11-01T08:05Z","project":"t3-fork","task":"runtime-v2-execution-provenance","orchestrator":{"provider":"opencode","model":"opencode-go/deepseek-v4.1-flash"},"selected":{"provider":"opencode","model":"opencode-go/deepseek-v4.1-flash"},"reviewer_planned":{"provider":"claudeAgent","model":"claude-sonnet-5-5"},"difficulty":{"ambiguity":0.40,"scope_breadth":0.45,"reasoning_complexity":0.65,"integration_tool_complexity":0.75,"risk":0.85,"verification_burden":0.85,"band":"HIGH","confidence":0.78},"selection":"exploit+independent_review","outcome":"PENDING"}
+{
+  "schema": "t3-orchestration-evidence-v2",
+  "event_id": "l2-20261101-d04",
+  "event_type": "routing_decision",
+  "occurred_at": "2026-11-01T08:05Z",
+  "recorded_at": "2026-11-01T08:05Z",
+  "project": "t3-fork",
+  "task": "runtime-v2-execution-provenance",
+  "orchestrator": { "provider": "opencode", "model": "opencode-go/deepseek-v4.1-flash" },
+  "selected": { "provider": "opencode", "model": "opencode-go/deepseek-v4.1-flash" },
+  "reviewer_planned": { "provider": "claudeAgent", "model": "claude-sonnet-5-5" },
+  "difficulty": {
+    "ambiguity": 0.4,
+    "scope_breadth": 0.45,
+    "reasoning_complexity": 0.65,
+    "integration_tool_complexity": 0.75,
+    "risk": 0.85,
+    "verification_burden": 0.85,
+    "band": "HIGH",
+    "confidence": 0.78
+  },
+  "selection": "exploit+independent_review",
+  "outcome": "PENDING"
+}
 ```
 
 ### D-L2-05 — Rendered UI and restart/persistence qualification
@@ -114,7 +204,29 @@ No precise quota number is inferred from the absence of errors.
 - **machine**:
 
 ```json
-{"schema":"t3-orchestration-evidence-v2","event_id":"l2-20261101-d05","event_type":"routing_decision","occurred_at":"2026-11-01T08:05Z","recorded_at":"2026-11-01T08:05Z","project":"t3-fork","task":"rendered-ui-restart-persistence","orchestrator":{"provider":"opencode","model":"opencode-go/deepseek-v4.1-flash"},"selected":{"provider":"opencode","model":"opencode-go/deepseek-v4.1-flash"},"difficulty":{"ambiguity":0.35,"scope_breadth":0.75,"reasoning_complexity":0.55,"integration_tool_complexity":0.90,"risk":0.80,"verification_burden":0.90,"band":"HIGH","confidence":0.75},"selection":"exploit","outcome":"PENDING"}
+{
+  "schema": "t3-orchestration-evidence-v2",
+  "event_id": "l2-20261101-d05",
+  "event_type": "routing_decision",
+  "occurred_at": "2026-11-01T08:05Z",
+  "recorded_at": "2026-11-01T08:05Z",
+  "project": "t3-fork",
+  "task": "rendered-ui-restart-persistence",
+  "orchestrator": { "provider": "opencode", "model": "opencode-go/deepseek-v4.1-flash" },
+  "selected": { "provider": "opencode", "model": "opencode-go/deepseek-v4.1-flash" },
+  "difficulty": {
+    "ambiguity": 0.35,
+    "scope_breadth": 0.75,
+    "reasoning_complexity": 0.55,
+    "integration_tool_complexity": 0.9,
+    "risk": 0.8,
+    "verification_burden": 0.9,
+    "band": "HIGH",
+    "confidence": 0.75
+  },
+  "selection": "exploit",
+  "outcome": "PENDING"
+}
 ```
 
 ### D-L2-06 — Real-provider / OAuth / paid-eval availability check
@@ -129,7 +241,29 @@ No precise quota number is inferred from the absence of errors.
 - **machine**:
 
 ```json
-{"schema":"t3-orchestration-evidence-v2","event_id":"l2-20261101-d06","event_type":"routing_decision","occurred_at":"2026-11-01T08:05Z","recorded_at":"2026-11-01T08:05Z","project":"t3-fork","task":"real-provider-oauth-availability","orchestrator":{"provider":"opencode","model":"opencode-go/deepseek-v4.1-flash"},"selected":{"provider":"opencode","model":"opencode-go/deepseek-v4.1-flash"},"difficulty":{"ambiguity":0.55,"scope_breadth":0.20,"reasoning_complexity":0.45,"integration_tool_complexity":0.40,"risk":0.95,"verification_burden":0.70,"band":"HIGH-RISK/LOW-SCOPE","confidence":0.70},"selection":"forced_safety_boundary","outcome":"PENDING"}
+{
+  "schema": "t3-orchestration-evidence-v2",
+  "event_id": "l2-20261101-d06",
+  "event_type": "routing_decision",
+  "occurred_at": "2026-11-01T08:05Z",
+  "recorded_at": "2026-11-01T08:05Z",
+  "project": "t3-fork",
+  "task": "real-provider-oauth-availability",
+  "orchestrator": { "provider": "opencode", "model": "opencode-go/deepseek-v4.1-flash" },
+  "selected": { "provider": "opencode", "model": "opencode-go/deepseek-v4.1-flash" },
+  "difficulty": {
+    "ambiguity": 0.55,
+    "scope_breadth": 0.2,
+    "reasoning_complexity": 0.45,
+    "integration_tool_complexity": 0.4,
+    "risk": 0.95,
+    "verification_burden": 0.7,
+    "band": "HIGH-RISK/LOW-SCOPE",
+    "confidence": 0.7
+  },
+  "selection": "forced_safety_boundary",
+  "outcome": "PENDING"
+}
 ```
 
 ### D-L2-07 — Independent review of L2 evidence and provenance interpretation
@@ -144,7 +278,29 @@ No precise quota number is inferred from the absence of errors.
 - **machine**:
 
 ```json
-{"schema":"t3-orchestration-evidence-v2","event_id":"l2-20261101-d07","event_type":"routing_decision","occurred_at":"2026-11-01T08:05Z","recorded_at":"2026-11-01T08:05Z","project":"t3-fork","task":"independent-evidence-review","orchestrator":{"provider":"opencode","model":"opencode-go/deepseek-v4.1-flash"},"selected":{"provider":"claudeAgent","model":"claude-sonnet-5-5"},"difficulty":{"ambiguity":0.45,"scope_breadth":0.50,"reasoning_complexity":0.75,"integration_tool_complexity":0.45,"risk":0.65,"verification_burden":0.70,"band":"HIGH","confidence":0.72},"selection":"explore_independent_review","outcome":"PENDING"}
+{
+  "schema": "t3-orchestration-evidence-v2",
+  "event_id": "l2-20261101-d07",
+  "event_type": "routing_decision",
+  "occurred_at": "2026-11-01T08:05Z",
+  "recorded_at": "2026-11-01T08:05Z",
+  "project": "t3-fork",
+  "task": "independent-evidence-review",
+  "orchestrator": { "provider": "opencode", "model": "opencode-go/deepseek-v4.1-flash" },
+  "selected": { "provider": "claudeAgent", "model": "claude-sonnet-5-5" },
+  "difficulty": {
+    "ambiguity": 0.45,
+    "scope_breadth": 0.5,
+    "reasoning_complexity": 0.75,
+    "integration_tool_complexity": 0.45,
+    "risk": 0.65,
+    "verification_burden": 0.7,
+    "band": "HIGH",
+    "confidence": 0.72
+  },
+  "selection": "explore_independent_review",
+  "outcome": "PENDING"
+}
 ```
 
 ### D-L2-08 — Final durable handoff synthesis
@@ -157,7 +313,29 @@ No precise quota number is inferred from the absence of errors.
 - **machine**:
 
 ```json
-{"schema":"t3-orchestration-evidence-v2","event_id":"l2-20261101-d08","event_type":"routing_decision","occurred_at":"2026-11-01T08:05Z","recorded_at":"2026-11-01T08:05Z","project":"t3-fork","task":"final-handoff-synthesis","orchestrator":{"provider":"opencode","model":"opencode-go/deepseek-v4.1-flash"},"selected":{"provider":"opencode","model":"opencode-go/deepseek-v4.1-flash"},"difficulty":{"ambiguity":0.25,"scope_breadth":0.65,"reasoning_complexity":0.60,"integration_tool_complexity":0.35,"risk":0.75,"verification_burden":0.60,"band":"MEDIUM-HIGH","confidence":0.85},"selection":"forced_orchestrator_role","outcome":"PENDING"}
+{
+  "schema": "t3-orchestration-evidence-v2",
+  "event_id": "l2-20261101-d08",
+  "event_type": "routing_decision",
+  "occurred_at": "2026-11-01T08:05Z",
+  "recorded_at": "2026-11-01T08:05Z",
+  "project": "t3-fork",
+  "task": "final-handoff-synthesis",
+  "orchestrator": { "provider": "opencode", "model": "opencode-go/deepseek-v4.1-flash" },
+  "selected": { "provider": "opencode", "model": "opencode-go/deepseek-v4.1-flash" },
+  "difficulty": {
+    "ambiguity": 0.25,
+    "scope_breadth": 0.65,
+    "reasoning_complexity": 0.6,
+    "integration_tool_complexity": 0.35,
+    "risk": 0.75,
+    "verification_burden": 0.6,
+    "band": "MEDIUM-HIGH",
+    "confidence": 0.85
+  },
+  "selection": "forced_orchestrator_role",
+  "outcome": "PENDING"
+}
 ```
 
 ## Event log
@@ -283,13 +461,13 @@ Append-only prospective sequence. Decision IDs use the `ev0-20261101-*` namespac
 
 ## Capacity / candidate workers observed at decision time
 
-| Candidate | State at decision time | Capacity detail | Source |
-| --- | --- | --- | --- |
-| OpenCode / DeepSeek V4.1 Flash (`opencode-go/deepseek-v4.1-flash`) | AVAILABLE, running this session | Exact quota/context `UNKNOWN` | T3 live catalog + current session |
-| Claude A (`claudeAgent`) — Sonnet 5.5 / Opus 5.5 / Fable 5.1 / Haiku 5.5 | AVAILABLE (listed) | Exact quota/context `UNKNOWN` | T3 live catalog |
-| Claude B — Pro (`claudeAgent_claude_b_pro`) — same models | AVAILABLE (listed) | Exact quota/context `UNKNOWN` | T3 live catalog |
-| Codex (`codex`) / OpenAI B (`codex_c75d8114-...`) — gpt-6.1-sol, gpt-6-astra, gpt-6.1-terra, gpt-6-luna | AVAILABLE (listed) | Exact quota/context `UNKNOWN` | T3 live catalog |
-| Cursor / Grok / Antigravity / Muse / Pi | DISABLED | N/A | T3 live catalog constraints |
+| Candidate                                                                                               | State at decision time          | Capacity detail               | Source                            |
+| ------------------------------------------------------------------------------------------------------- | ------------------------------- | ----------------------------- | --------------------------------- |
+| OpenCode / DeepSeek V4.1 Flash (`opencode-go/deepseek-v4.1-flash`)                                      | AVAILABLE, running this session | Exact quota/context `UNKNOWN` | T3 live catalog + current session |
+| Claude A (`claudeAgent`) — Sonnet 5.5 / Opus 5.5 / Fable 5.1 / Haiku 5.5                                | AVAILABLE (listed)              | Exact quota/context `UNKNOWN` | T3 live catalog                   |
+| Claude B — Pro (`claudeAgent_claude_b_pro`) — same models                                               | AVAILABLE (listed)              | Exact quota/context `UNKNOWN` | T3 live catalog                   |
+| Codex (`codex`) / OpenAI B (`codex_c75d8114-...`) — gpt-6.1-sol, gpt-6-astra, gpt-6.1-terra, gpt-6-luna | AVAILABLE (listed)              | Exact quota/context `UNKNOWN` | T3 live catalog                   |
+| Cursor / Grok / Antigravity / Muse / Pi                                                                 | DISABLED                        | N/A                           | T3 live catalog constraints       |
 
 No distinct provider instance named "Saul" is exposed in the live catalog. Material strong-executor candidates actually available are therefore Claude A/B and Codex; "Saul" is treated as `UNKNOWN`/unavailable rather than invented. No precise quota is inferred from the absence of errors.
 
@@ -446,3 +624,25 @@ No distinct provider instance named "Saul" is exposed in the live catalog. Mater
 ## Pre-outcome decomposition rationale
 
 Work unit 3 (archaeology) and unit 4 (classification) were kept separate because the evidence standard treats "what exists" and "what the export may claim" as different obligations. Units 7 and 8 were kept separate because the envelope contract and the reconstruction ordering can be reviewed independently even though one executor owns both. Unit 6 (browser-spec reconciliation) is a gate, not a coding unit: implementation may proceed only if the published proposed artifacts are consistent with the local map, or a discrepancy record is written. No unit was merged in a way that drops the required `decision-time` / `outcome` or `occurred_at` / `recorded_at` distinctions.
+
+## Appended outcome — D-EV0-03 cross-check attempt 1
+
+- `decision_id`: `ev0-20261101-d03`
+- `recorded_at`: 2026-11-01T16:42Z
+- **State:** `BLOCKED` — `provider_capacity`.
+- **Actual executor:** none; the Claude Sonnet 5.5 child task failed before producing a report.
+- **Observed evidence:** delegated task `node:delegated-task:command%3Amcp%3A3dcacb51-a737-4d2b-8a14-79f3fba0724f%3Adelegate-task%3Aev0-20261101-d03-archaeology-crosscheck` returned `Claude API rate limit reached. Try again later.`
+- **Effect on primary work:** none. DeepSeek continues the primary archaeology. This is not a DeepSeek failure and is not counted as independent evidence.
+
+### D-EV0-03a — Substitute bounded archaeology cross-check
+
+- `decision_id`: `ev0-20261101-d03a`
+- `recorded_at`: 2026-11-01T16:43Z
+- `work_unit`: same bounded read-only archaeology cross-check; substitute route after capacity failure.
+- **Difficulty:** unchanged from d03 (`MEDIUM-HIGH`, confidence 0.82).
+- **Candidates considered:** Claude A (rate-limited), Claude B — Pro (same vendor, untested but plausibly affected by the same limit class), Codex gpt-6.1-sol (different provider, available), DeepSeek self (already primary; not independent).
+- **Selected executor:** Codex `codex` / `gpt-6.1-sol`, reasoning effort `high`, read-only.
+- **Rationale (ORCHESTRATOR CLAIM):** the planned cross-check still has value and the different-provider property is preserved. Codex is available in the same live catalog, and choosing it also produces cross-vendor routing evidence rather than a same-vendor retry. No file writes.
+- **Alternatives rejected:** retrying Claude A immediately (same capacity failure likely; wastes a route); Claude B (same vendor limit class; no additional evidence); staying with self-review (not independent).
+- **Selection mechanism:** `forced_capacity_substitution`.
+- `machine`: `{"schema":"t3-orchestration-evidence-v2","event_id":"ev0-20261101-d03a","event_type":"routing_decision","occurred_at":"2026-11-01T16:43Z","recorded_at":"2026-11-01T16:43Z","project":"t3-fork","task":"evidence-v0-archaeology-crosscheck-substitute","orchestrator":{"provider":"opencode","model":"opencode-go/deepseek-v4.1-flash"},"selected":{"provider":"codex","model":"gpt-6.1-sol"},"difficulty":{"ambiguity":0.35,"scope_breadth":0.80,"reasoning_complexity":0.45,"integration_tool_complexity":0.55,"risk":0.25,"verification_burden":0.40,"band":"MEDIUM-HIGH","confidence":0.82},"selection":"forced_capacity_substitution","prior_attempt":"ev0-20261101-d03","outcome":"PENDING"}`

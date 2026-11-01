@@ -18,13 +18,13 @@ This appendix is the structured run/result evidence contract. Decision-time rout
 
 ## 2. Capacity and orchestrator context
 
-| Provider/pool | State | Remaining capacity | Reset/window | Source | Observed at | Current work |
-| --- | --- | --- | --- | --- | --- | --- |
-| OpenCode / DeepSeek V4.1 Flash | AVAILABLE | UNKNOWN (session running) | UNKNOWN | T3 runtime | 2026-11-01T08:05Z | L2 orchestration |
-| Claude A | AVAILABLE (listed) | UNKNOWN | UNKNOWN | T3 catalog | 2026-11-01T08:05Z | none |
-| Claude B — Pro | AVAILABLE (listed) | UNKNOWN | UNKNOWN | T3 catalog | 2026-11-01T08:05Z | none |
-| Codex / OpenAI B | AVAILABLE (listed) | UNKNOWN | UNKNOWN | T3 catalog | 2026-11-01T08:05Z | none |
-| Cursor / Grok / Antigravity / Muse / Pi | DISABLED | N/A | N/A | T3 catalog constraints | 2026-11-01T08:05Z | none |
+| Provider/pool                           | State              | Remaining capacity        | Reset/window | Source                 | Observed at       | Current work     |
+| --------------------------------------- | ------------------ | ------------------------- | ------------ | ---------------------- | ----------------- | ---------------- |
+| OpenCode / DeepSeek V4.1 Flash          | AVAILABLE          | UNKNOWN (session running) | UNKNOWN      | T3 runtime             | 2026-11-01T08:05Z | L2 orchestration |
+| Claude A                                | AVAILABLE (listed) | UNKNOWN                   | UNKNOWN      | T3 catalog             | 2026-11-01T08:05Z | none             |
+| Claude B — Pro                          | AVAILABLE (listed) | UNKNOWN                   | UNKNOWN      | T3 catalog             | 2026-11-01T08:05Z | none             |
+| Codex / OpenAI B                        | AVAILABLE (listed) | UNKNOWN                   | UNKNOWN      | T3 catalog             | 2026-11-01T08:05Z | none             |
+| Cursor / Grok / Antigravity / Muse / Pi | DISABLED           | N/A                       | N/A          | T3 catalog constraints | 2026-11-01T08:05Z | none             |
 
 At dispatch: capacity-to-completion `SUFFICIENT` for DeepSeek orchestration and local deterministic work; `UNKNOWN` for optional Claude review until dispatched.
 
@@ -32,16 +32,16 @@ Orchestrator context: limit/used/compaction values `UNKNOWN` (not exposed as rel
 
 ## 3. Routing and decomposition — decision-time entries
 
-| Decision | Work unit | Band / confidence | Selected | Reviewer | Selection | Recorded at |
-| --- | --- | --- | --- | --- | --- | --- |
-| `l2-20261101-d01` | Overall L2 orchestration | HIGH / 0.80 | DeepSeek V4.1 Flash | Claude Sonnet 5.5 planned | exploit + forced policy | 2026-11-01T08:05Z |
-| `l2-20261101-d02` | Repo safety / exact-SHA worktree | LOW-MEDIUM / 0.92 | DeepSeek V4.1 Flash | none | exploit | 2026-11-01T08:05Z |
-| `l2-20261101-d03` | Focused tests + typecheck | MEDIUM-HIGH / 0.88 | DeepSeek V4.1 Flash | none | exploit | 2026-11-01T08:05Z |
-| `l2-20261101-d04` | Runtime/V2 provenance | HIGH / 0.78 | DeepSeek V4.1 Flash | Claude Sonnet 5.5 planned | exploit + independent review | 2026-11-01T08:05Z |
-| `l2-20261101-d05` | Rendered UI + restart/persistence | HIGH / 0.75 | DeepSeek V4.1 Flash | none | exploit | 2026-11-01T08:05Z |
-| `l2-20261101-d06` | Real-provider/OAuth availability | HIGH-RISK / LOW-SCOPE / 0.70 | DeepSeek V4.1 Flash | none | forced safety boundary | 2026-11-01T08:05Z |
-| `l2-20261101-d07` | Independent evidence review | HIGH / 0.72 | Claude Sonnet 5.5 planned | N/A | explore independent review | 2026-11-01T08:05Z |
-| `l2-20261101-d08` | Final handoff synthesis | MEDIUM-HIGH / 0.85 | DeepSeek V4.1 Flash | N/A | forced orchestrator role | 2026-11-01T08:05Z |
+| Decision          | Work unit                         | Band / confidence            | Selected                  | Reviewer                  | Selection                    | Recorded at       |
+| ----------------- | --------------------------------- | ---------------------------- | ------------------------- | ------------------------- | ---------------------------- | ----------------- |
+| `l2-20261101-d01` | Overall L2 orchestration          | HIGH / 0.80                  | DeepSeek V4.1 Flash       | Claude Sonnet 5.5 planned | exploit + forced policy      | 2026-11-01T08:05Z |
+| `l2-20261101-d02` | Repo safety / exact-SHA worktree  | LOW-MEDIUM / 0.92            | DeepSeek V4.1 Flash       | none                      | exploit                      | 2026-11-01T08:05Z |
+| `l2-20261101-d03` | Focused tests + typecheck         | MEDIUM-HIGH / 0.88           | DeepSeek V4.1 Flash       | none                      | exploit                      | 2026-11-01T08:05Z |
+| `l2-20261101-d04` | Runtime/V2 provenance             | HIGH / 0.78                  | DeepSeek V4.1 Flash       | Claude Sonnet 5.5 planned | exploit + independent review | 2026-11-01T08:05Z |
+| `l2-20261101-d05` | Rendered UI + restart/persistence | HIGH / 0.75                  | DeepSeek V4.1 Flash       | none                      | exploit                      | 2026-11-01T08:05Z |
+| `l2-20261101-d06` | Real-provider/OAuth availability  | HIGH-RISK / LOW-SCOPE / 0.70 | DeepSeek V4.1 Flash       | none                      | forced safety boundary       | 2026-11-01T08:05Z |
+| `l2-20261101-d07` | Independent evidence review       | HIGH / 0.72                  | Claude Sonnet 5.5 planned | N/A                       | explore independent review   | 2026-11-01T08:05Z |
+| `l2-20261101-d08` | Final handoff synthesis           | MEDIUM-HIGH / 0.85           | DeepSeek V4.1 Flash       | N/A                       | forced orchestrator role     | 2026-11-01T08:05Z |
 
 Choice set: DeepSeek V4.1 Flash; Claude Sonnet 5.5 / Opus 5.5 (A and B instances); Codex / OpenAI B gpt-6.1-sol. Material rejected alternatives and rationale are in the ledger decision records.
 
@@ -49,16 +49,16 @@ Choice set: DeepSeek V4.1 Flash; Claude Sonnet 5.5 / Opus 5.5 (A and B instances
 
 ### Outcome summary
 
-| Decision | Actual executor | State | Key evidence |
-| --- | --- | --- | --- |
-| `l2-20261101-d01` | DeepSeek V4.1 Flash | PASS | Orchestration + final reconciliation; no substitution |
-| `l2-20261101-d02` | DeepSeek V4.1 Flash | PASS | Detached clean worktree at exact SHA; origin ref exact; no other writer |
-| `l2-20261101-d03` | DeepSeek V4.1 Flash | PASS | 186/186 focused tests across 10 files; typecheck 3/3 |
-| `l2-20261101-d04` | DeepSeek V4.1 Flash + Claude review | PASS | 4/4 required provenance cases; 14/14 full suite; service-level only |
-| `l2-20261101-d05` | DeepSeek V4.1 Flash | PASS | Distinct binding, ambiguous unbound, real restart, Workspace/Development render |
-| `l2-20261101-d06` | DeepSeek V4.1 Flash | BLOCKED | One real credential; no safe second subscription or live probe |
-| `l2-20261101-d07` | Claude Sonnet 5.5 | REVIEW PASS | 71s; no blocking defect; evidence-presentation findings addressed |
-| `l2-20261101-d08` | DeepSeek V4.1 Flash | COMPLETED | Durable result written; no `main` integration |
+| Decision          | Actual executor                     | State       | Key evidence                                                                    |
+| ----------------- | ----------------------------------- | ----------- | ------------------------------------------------------------------------------- |
+| `l2-20261101-d01` | DeepSeek V4.1 Flash                 | PASS        | Orchestration + final reconciliation; no substitution                           |
+| `l2-20261101-d02` | DeepSeek V4.1 Flash                 | PASS        | Detached clean worktree at exact SHA; origin ref exact; no other writer         |
+| `l2-20261101-d03` | DeepSeek V4.1 Flash                 | PASS        | 186/186 focused tests across 10 files; typecheck 3/3                            |
+| `l2-20261101-d04` | DeepSeek V4.1 Flash + Claude review | PASS        | 4/4 required provenance cases; 14/14 full suite; service-level only             |
+| `l2-20261101-d05` | DeepSeek V4.1 Flash                 | PASS        | Distinct binding, ambiguous unbound, real restart, Workspace/Development render |
+| `l2-20261101-d06` | DeepSeek V4.1 Flash                 | BLOCKED     | One real credential; no safe second subscription or live probe                  |
+| `l2-20261101-d07` | Claude Sonnet 5.5                   | REVIEW PASS | 71s; no blocking defect; evidence-presentation findings addressed               |
+| `l2-20261101-d08` | DeepSeek V4.1 Flash                 | COMPLETED   | Durable result written; no `main` integration                                   |
 
 ### Exact verification
 
@@ -151,31 +151,31 @@ This section is the structured decision-time contract for the Evidence V0 run. O
 
 ## R2.2 Capacity at decision time
 
-| Provider/pool | State | Remaining capacity | Source | Observed at |
-| --- | --- | --- | --- | --- |
-| OpenCode / DeepSeek V4.1 Flash | AVAILABLE (running this session) | `UNKNOWN` | T3 live catalog + session | 2026-11-01T16:35Z |
-| Claude A (`claudeAgent`) | AVAILABLE (listed) | `UNKNOWN` | T3 live catalog | 2026-11-01T16:35Z |
-| Claude B — Pro (`claudeAgent_claude_b_pro`) | AVAILABLE (listed) | `UNKNOWN` | T3 live catalog | 2026-11-01T16:35Z |
-| Codex / OpenAI B | AVAILABLE (listed) | `UNKNOWN` | T3 live catalog | 2026-11-01T16:35Z |
-| Cursor / Grok / Antigravity / Muse / Pi | DISABLED | N/A | T3 live catalog constraints | 2026-11-01T16:35Z |
+| Provider/pool                               | State                            | Remaining capacity | Source                      | Observed at       |
+| ------------------------------------------- | -------------------------------- | ------------------ | --------------------------- | ----------------- |
+| OpenCode / DeepSeek V4.1 Flash              | AVAILABLE (running this session) | `UNKNOWN`          | T3 live catalog + session   | 2026-11-01T16:35Z |
+| Claude A (`claudeAgent`)                    | AVAILABLE (listed)               | `UNKNOWN`          | T3 live catalog             | 2026-11-01T16:35Z |
+| Claude B — Pro (`claudeAgent_claude_b_pro`) | AVAILABLE (listed)               | `UNKNOWN`          | T3 live catalog             | 2026-11-01T16:35Z |
+| Codex / OpenAI B                            | AVAILABLE (listed)               | `UNKNOWN`          | T3 live catalog             | 2026-11-01T16:35Z |
+| Cursor / Grok / Antigravity / Muse / Pi     | DISABLED                         | N/A                | T3 live catalog constraints | 2026-11-01T16:35Z |
 
 At dispatch: capacity-to-completion `SUFFICIENT` for DeepSeek local work; `UNKNOWN` for optional Claude review until dispatched. No distinct "Saul" instance is listed.
 
 ## R2.3 Routing and decomposition — decision-time entries
 
-| Decision | Work unit | Band / confidence | Selected | Reviewer | Selection | Recorded at |
-| --- | --- | --- | --- | --- | --- | --- |
-| `ev0-20261101-d01` | Overall Evidence V0 orchestration | HIGH / 0.75 | DeepSeek V4.1 Flash | Claude Opus 5.5 planned | exploit + forced policy | 2026-11-01T16:35Z |
-| `ev0-20261101-d02` | Repo safety / exact-base worktree | LOW-MEDIUM / 0.95 | DeepSeek V4.1 Flash | none | exploit | 2026-11-01T16:33Z |
-| `ev0-20261101-d03` | Domain-record archaeology | MEDIUM-HIGH / 0.82 | DeepSeek V4.1 Flash | Claude Sonnet 5.5 cross-check | exploit + explore | 2026-11-01T16:35Z |
-| `ev0-20261101-d04` | Field mapping / classification | MEDIUM-HIGH / 0.78 | DeepSeek V4.1 Flash | none | exploit | 2026-11-01T16:35Z |
-| `ev0-20261101-d05` | L2 sequence mapping + gap list | MEDIUM / 0.82 | DeepSeek V4.1 Flash | none | exploit | 2026-11-01T16:35Z |
-| `ev0-20261101-d06` | Browser-spec reconciliation | MEDIUM-HIGH / 0.72 | DeepSeek V4.1 Flash | none | forced orchestrator | 2026-11-01T16:35Z |
-| `ev0-20261101-d07` | Export envelope / seam design | MEDIUM-HIGH / 0.75 | DeepSeek V4.1 Flash | Claude Opus 5.5 planned | exploit + planned review | 2026-11-01T16:35Z |
-| `ev0-20261101-d08` | Reconstruction command design | MEDIUM / 0.78 | DeepSeek V4.1 Flash | none | exploit | 2026-11-01T16:35Z |
-| `ev0-20261101-d09` | Tests/fixtures (L2 sequence) | MEDIUM-HIGH / 0.80 | DeepSeek V4.1 Flash | none | exploit | 2026-11-01T16:35Z |
-| `ev0-20261101-d10` | Smallest exporter/reconstructor | MEDIUM-HIGH / 0.75 | DeepSeek V4.1 Flash | Claude Opus 5.5 planned | exploit + planned review | 2026-11-01T16:35Z |
-| `ev0-20261101-d11` | Independent architecture review | HIGH / 0.70 | Claude Opus 5.5 | N/A | explore independent review | 2026-11-01T16:35Z |
-| `ev0-20261101-d12` | Final verification + handoff | MEDIUM / 0.85 | DeepSeek V4.1 Flash | N/A | forced orchestrator | 2026-11-01T16:35Z |
+| Decision           | Work unit                         | Band / confidence  | Selected            | Reviewer                      | Selection                  | Recorded at       |
+| ------------------ | --------------------------------- | ------------------ | ------------------- | ----------------------------- | -------------------------- | ----------------- |
+| `ev0-20261101-d01` | Overall Evidence V0 orchestration | HIGH / 0.75        | DeepSeek V4.1 Flash | Claude Opus 5.5 planned       | exploit + forced policy    | 2026-11-01T16:35Z |
+| `ev0-20261101-d02` | Repo safety / exact-base worktree | LOW-MEDIUM / 0.95  | DeepSeek V4.1 Flash | none                          | exploit                    | 2026-11-01T16:33Z |
+| `ev0-20261101-d03` | Domain-record archaeology         | MEDIUM-HIGH / 0.82 | DeepSeek V4.1 Flash | Claude Sonnet 5.5 cross-check | exploit + explore          | 2026-11-01T16:35Z |
+| `ev0-20261101-d04` | Field mapping / classification    | MEDIUM-HIGH / 0.78 | DeepSeek V4.1 Flash | none                          | exploit                    | 2026-11-01T16:35Z |
+| `ev0-20261101-d05` | L2 sequence mapping + gap list    | MEDIUM / 0.82      | DeepSeek V4.1 Flash | none                          | exploit                    | 2026-11-01T16:35Z |
+| `ev0-20261101-d06` | Browser-spec reconciliation       | MEDIUM-HIGH / 0.72 | DeepSeek V4.1 Flash | none                          | forced orchestrator        | 2026-11-01T16:35Z |
+| `ev0-20261101-d07` | Export envelope / seam design     | MEDIUM-HIGH / 0.75 | DeepSeek V4.1 Flash | Claude Opus 5.5 planned       | exploit + planned review   | 2026-11-01T16:35Z |
+| `ev0-20261101-d08` | Reconstruction command design     | MEDIUM / 0.78      | DeepSeek V4.1 Flash | none                          | exploit                    | 2026-11-01T16:35Z |
+| `ev0-20261101-d09` | Tests/fixtures (L2 sequence)      | MEDIUM-HIGH / 0.80 | DeepSeek V4.1 Flash | none                          | exploit                    | 2026-11-01T16:35Z |
+| `ev0-20261101-d10` | Smallest exporter/reconstructor   | MEDIUM-HIGH / 0.75 | DeepSeek V4.1 Flash | Claude Opus 5.5 planned       | exploit + planned review   | 2026-11-01T16:35Z |
+| `ev0-20261101-d11` | Independent architecture review   | HIGH / 0.70        | Claude Opus 5.5     | N/A                           | explore independent review | 2026-11-01T16:35Z |
+| `ev0-20261101-d12` | Final verification + handoff      | MEDIUM / 0.85      | DeepSeek V4.1 Flash | N/A                           | forced orchestrator        | 2026-11-01T16:35Z |
 
 Choice set: DeepSeek V4.1 Flash; Claude Sonnet 5.5 / Opus 5.5 (A and B instances); Codex / OpenAI B gpt-6.1-sol. Rejected alternatives and rationale are in the ledger decision records. Outcomes are `PENDING`.
