@@ -11,6 +11,7 @@ import {
   ORCHESTRATION_EVIDENCE_SCHEMA_VERSION,
   OrchestrationEvidenceEvent,
   OrchestrationEvidenceTaskNotFoundError,
+  ProjectRuntimeHandoff,
   ProjectRuntimeTask,
   RuntimeExecutionAttempt,
   type OrchestrationEvidenceExport,
@@ -67,6 +68,7 @@ type PayloadRow = { readonly payload_json: string };
 type FactValue = string | number | boolean | null;
 
 const TaskJson = Schema.fromJsonString(ProjectRuntimeTask);
+const HandoffJson = Schema.fromJsonString(ProjectRuntimeHandoff);
 const AttemptJson = Schema.fromJsonString(RuntimeExecutionAttempt);
 const DifficultyPredictionJson = Schema.fromJsonString(AdaptiveDifficultyPrediction);
 const RealizedDifficultyJson = Schema.fromJsonString(AdaptiveRealizedDifficulty);
@@ -80,6 +82,7 @@ const CapacitySnapshotJson = Schema.fromJsonString(AdaptiveCapacitySnapshot);
 const EvidenceEventJson = Schema.fromJsonString(OrchestrationEvidenceEvent);
 
 const decodeTask = Schema.decodeUnknownEffect(TaskJson);
+const decodeHandoff = Schema.decodeUnknownEffect(HandoffJson);
 const decodeAttempt = Schema.decodeUnknownEffect(AttemptJson);
 const decodeDifficultyPrediction = Schema.decodeUnknownEffect(DifficultyPredictionJson);
 const decodeRealizedDifficulty = Schema.decodeUnknownEffect(RealizedDifficultyJson);
@@ -651,7 +654,8 @@ const runtimeVerificationEvent = (
     recordType: "project-runtime-verification",
     recordId: evidence.evidenceId,
     lifecycleClass: "outcome",
-    recordBasis: "canonical-record",
+    // Nested inside the mutable task snapshot; only the task row is canonical.
+    recordBasis: "derived-view",
     authority: "project-runtime",
     projectId: task.projectId,
     taskId: task.taskId,
@@ -668,32 +672,81 @@ const runtimeVerificationEvent = (
       ["command", evidence.command],
       ["summary", evidence.summary],
       ["criterionIds", evidence.criterionIds?.join(",")],
+      ["taskRevision", task.revision],
     ]),
   });
 
-const runtimeHandoffEvent = (task: ProjectRuntimeTask): DraftEvent | null =>
-  task.latestHandoffId === null
-    ? null
-    : event({
-        schemaVersion: ORCHESTRATION_EVIDENCE_SCHEMA_VERSION,
-        eventId: `oev0:project-runtime-handoff:${task.taskId}:${task.latestHandoffId}`,
-        recordType: "project-runtime-handoff",
-        recordId: task.latestHandoffId,
-        lifecycleClass: "observation",
-        recordBasis: "canonical-record",
-        authority: "project-runtime",
-        projectId: task.projectId,
-        taskId: task.taskId,
-        attemptId: null,
-        threadId: null,
-        runId: null,
-        occurredAt: null,
-        recordedAt: null,
-        summary: "Latest Runtime task handoff reference; handoff body not copied.",
-        unknownFields: ["occurredAt", "recordedAt"],
-        references: references([["project-runtime-task", task.taskId]]),
-        facts: facts([["handoffId", task.latestHandoffId]]),
-      });
+const runtimeHandoffEvent = (
+  task: ProjectRuntimeTask,
+  handoff: ProjectRuntimeHandoff,
+): DraftEvent =>
+  event({
+    schemaVersion: ORCHESTRATION_EVIDENCE_SCHEMA_VERSION,
+    eventId: `oev0:project-runtime-handoff:${handoff.handoffId}`,
+    recordType: "project-runtime-handoff",
+    recordId: handoff.handoffId,
+    lifecycleClass: "observation",
+    recordBasis: "canonical-record",
+    authority: "project-runtime",
+    projectId: handoff.projectId,
+    taskId: handoff.taskId,
+    attemptId: null,
+    threadId: handoff.threadId ?? null,
+    runId: null,
+    occurredAt: null,
+    recordedAt: handoff.createdAt,
+    summary: `Runtime handoff ${handoff.handoffId} at checkpoint ${handoff.checkpoint}`,
+    unknownFields: ["occurredAt"],
+    references: references([
+      ["project-runtime-task", handoff.taskId],
+      ["orchestration-v2-thread", handoff.threadId],
+    ]),
+    facts: facts([
+      ["handoffId", handoff.handoffId],
+      ["checkpoint", handoff.checkpoint],
+      ["taskRevision", handoff.taskRevision],
+      ["runtimeRevision", handoff.runtimeRevision],
+      ["verification.milestone", handoff.verification.milestone],
+      ["verification.evidenceCount", handoff.verification.evidence.length],
+      ["filesChanged.count", handoff.filesChanged.length],
+      ["testsRun.count", handoff.testsRun?.length ?? 0],
+      ["testsNotRun.count", handoff.testsNotRun?.length ?? 0],
+      ["unresolvedDecisions.count", handoff.unresolvedDecisions?.length ?? 0],
+      ["providerInstanceId", handoff.providerInstanceId],
+      ["model", handoff.model],
+      ["createdBy", handoff.createdBy],
+      ["snapshotSourceTaskId", task.taskId],
+    ]),
+  });
+
+const runtimeHandoffUnresolvedEvent = (
+  task: ProjectRuntimeTask,
+  handoffId: NonNullable<ProjectRuntimeTask["latestHandoffId"]>,
+): DraftEvent =>
+  event({
+    schemaVersion: ORCHESTRATION_EVIDENCE_SCHEMA_VERSION,
+    eventId: `oev0:project-runtime-handoff-unresolved:${handoffId}`,
+    recordType: "project-runtime-handoff-unresolved",
+    recordId: handoffId,
+    lifecycleClass: "observation",
+    recordBasis: "derived-view",
+    authority: "project-runtime",
+    projectId: task.projectId,
+    taskId: task.taskId,
+    attemptId: null,
+    threadId: null,
+    runId: null,
+    occurredAt: null,
+    recordedAt: null,
+    summary: `Runtime task points to handoff ${handoffId}, but the canonical handoff row did not resolve`,
+    unknownFields: ["occurredAt", "recordedAt", "canonicalRecord"],
+    references: references([["project-runtime-task", task.taskId]]),
+    facts: facts([
+      ["status", "unresolved"],
+      ["handoffId", handoffId],
+      ["canonicalRecord", false],
+    ]),
+  });
 
 const recommendationAttemptLinkEvent = (
   attempt: RuntimeExecutionAttempt,
@@ -1143,6 +1196,21 @@ const make = Effect.gen(function* () {
       Effect.mapError((cause) => PersistenceDecodeError.fromSchemaError(operation, cause)),
     );
 
+    const handoffRows =
+      task.latestHandoffId === null
+        ? []
+        : yield* sql<PayloadRow>`SELECT payload_json
+            FROM project_runtime_handoffs
+            WHERE project_id = ${projectId} AND task_id = ${taskId}
+              AND handoff_id = ${task.latestHandoffId}
+            LIMIT 1`.pipe(Effect.mapError(sqlError(operation)));
+    const handoff =
+      handoffRows[0] === undefined
+        ? null
+        : yield* decodeHandoff(handoffRows[0].payload_json).pipe(
+            Effect.mapError((cause) => PersistenceDecodeError.fromSchemaError(operation, cause)),
+          );
+
     const [
       attemptRows,
       predictionRows,
@@ -1325,7 +1393,12 @@ const make = Effect.gen(function* () {
       (reference) => reference.projectId === projectId && reference.taskId === taskId,
     );
 
-    const handoffEvent = runtimeHandoffEvent(task);
+    const handoffEvent =
+      task.latestHandoffId === null
+        ? null
+        : handoff === null
+          ? runtimeHandoffUnresolvedEvent(task, task.latestHandoffId)
+          : runtimeHandoffEvent(task, handoff);
     const generatedAt = yield* now;
     const drafts = sortEvents([
       taskEvent(task),

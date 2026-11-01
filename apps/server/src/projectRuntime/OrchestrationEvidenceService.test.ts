@@ -14,6 +14,7 @@ import {
   NodeId,
   OrchestrationEvidenceEvent,
   ProjectId,
+  ProjectRuntimeHandoffId,
   ProjectRuntimeTaskId,
   ProviderDriverKind,
   ProviderInstanceId,
@@ -35,6 +36,7 @@ import {
   type OrchestrationEvidenceExport,
   type OrchestrationEvidenceStagingReference,
   type OrchestrationV2DomainEvent,
+  ProjectRuntimeHandoff,
   ProjectRuntimeTask,
   RuntimeExecutionAttempt,
   type RuntimeRouteResolution,
@@ -113,6 +115,40 @@ const task: ProjectRuntimeTask = {
   updatedAt: completedAttempt,
   createdBy: "local-overall",
   updatedBy: "local-overall",
+};
+
+const handoffId = ProjectRuntimeHandoffId.make("ev0-handoff");
+const handoff: ProjectRuntimeHandoff = {
+  handoffId,
+  projectId,
+  taskId,
+  checkpoint: "checkpoint:ev0-handoff",
+  summary: "Private handoff summary body that must not be copied into evidence.",
+  result: "Private handoff result body.",
+  filesChanged: ["apps/server/src/projectRuntime/OrchestrationEvidenceService.ts"],
+  testsRun: ["vp test run OrchestrationEvidenceService.test.ts"],
+  testsNotRun: ["live-service verification"],
+  unresolvedDecisions: ["none"],
+  verification: {
+    milestone: "review-pass",
+    evidence: [
+      {
+        evidenceId: "h1",
+        command: "vp test run OrchestrationEvidenceService.test.ts",
+        result: "pass",
+        summary: "Handoff verification.",
+        recordedAt: completedAttempt,
+        criterionIds: ["ac1"],
+      },
+    ],
+  },
+  threadId,
+  providerInstanceId: opencode,
+  model: "opencode-go/deepseek-v4.1-flash",
+  runtimeRevision: 4,
+  taskRevision: 4,
+  createdAt: "2026-11-01T08:22:00.000Z",
+  createdBy: "local-overall",
 };
 
 const routeResolution: RuntimeRouteResolution = {
@@ -404,6 +440,7 @@ const assignment: AdaptiveExperimentAssignment = {
 };
 
 const encodeTask = Schema.encodeSync(Schema.fromJsonString(ProjectRuntimeTask));
+const encodeHandoff = Schema.encodeSync(Schema.fromJsonString(ProjectRuntimeHandoff));
 const encodeAttempt = Schema.encodeSync(Schema.fromJsonString(RuntimeExecutionAttempt));
 
 const seedRuntime = Effect.gen(function* () {
@@ -1190,8 +1227,10 @@ it.effect(
       assert.equal(runtimeVerification.length, task.verification.evidence.length);
       const item = runtimeVerification[0]!;
       assert.equal(item.authority, "project-runtime");
+      assert.equal(item.recordBasis, "derived-view");
       assert.equal(item.recordedAt, completedAttempt);
       assert.equal(item.facts.find((fact) => fact.key === "result")?.value, "pass");
+      assert.equal(item.facts.find((fact) => fact.key === "taskRevision")?.value, task.revision);
       assert.equal(
         item.facts.find((fact) => fact.key === "command")?.value,
         "vp test run OrchestrationEvidenceService.test.ts",
@@ -1209,6 +1248,121 @@ it.effect(
         "cross-provider",
       );
     }).pipe(Effect.provide(layerTest)),
+);
+
+it.effect("loads the canonical handoff row when the latest handoff pointer resolves", () =>
+  Effect.gen(function* () {
+    yield* seedAll;
+    const sql = yield* SqlClient.SqlClient;
+    const evidence = yield* OrchestrationEvidenceService.OrchestrationEvidenceService;
+    const taskWithHandoff: ProjectRuntimeTask = {
+      ...task,
+      latestHandoffId: handoffId,
+      revision: 4,
+      updatedAt: handoff.createdAt,
+    };
+    yield* sql`UPDATE project_runtime_tasks
+      SET status = ${taskWithHandoff.status}, revision = ${taskWithHandoff.revision},
+        payload_json = ${encodeTask(taskWithHandoff)}
+      WHERE task_id = ${taskId} AND project_id = ${projectId}`;
+    yield* sql`INSERT INTO project_runtime_handoffs
+      (handoff_id, project_id, task_id, created_at, payload_json)
+      VALUES (${handoff.handoffId}, ${projectId}, ${taskId}, ${handoff.createdAt},
+        ${encodeHandoff(handoff)})`;
+
+    const exported = yield* evidence.exportTask(projectId, taskId);
+    const handoffItems = exported.events.filter(
+      (item) => item.recordType === "project-runtime-handoff",
+    );
+    assert.equal(handoffItems.length, 1);
+    const item = handoffItems[0]!;
+    assert.equal(item.recordId, handoffId);
+    assert.equal(item.authority, "project-runtime");
+    assert.equal(item.recordBasis, "canonical-record");
+    assert.equal(item.recordedAt, handoff.createdAt);
+    assert.isNull(item.occurredAt);
+    assert.equal(item.facts.find((fact) => fact.key === "checkpoint")?.value, handoff.checkpoint);
+    assert.equal(
+      item.facts.find((fact) => fact.key === "taskRevision")?.value,
+      handoff.taskRevision,
+    );
+    assert.equal(
+      item.facts.find((fact) => fact.key === "runtimeRevision")?.value,
+      handoff.runtimeRevision,
+    );
+    assert.isTrue(
+      item.references.some(
+        (reference) =>
+          reference.recordType === "project-runtime-task" && reference.recordId === taskId,
+      ),
+    );
+
+    const taskEvent = exported.events.find((event) => event.recordType === "project-runtime-task");
+    assert.isTrue(
+      taskEvent?.references.some(
+        (reference) =>
+          reference.recordType === "project-runtime-handoff" && reference.recordId === handoffId,
+      ),
+    );
+
+    const serializedFacts = JSON.stringify(item.facts);
+    assert.isFalse(serializedFacts.includes(handoff.summary));
+    assert.isFalse(serializedFacts.includes(handoff.result!));
+
+    const jsonl = yield* evidence.exportTaskJsonl(projectId, taskId);
+    const decoded = jsonl
+      .split("\n")
+      .filter(Boolean)
+      .map((line) => decodeEvent(line));
+    assert.equal(
+      decoded.filter((event) => event.recordType === "project-runtime-handoff").length,
+      1,
+    );
+  }).pipe(Effect.provide(layerTest)),
+);
+
+it.effect("does not claim a canonical handoff when the pointer cannot resolve", () =>
+  Effect.gen(function* () {
+    yield* seedAll;
+    const sql = yield* SqlClient.SqlClient;
+    const evidence = yield* OrchestrationEvidenceService.OrchestrationEvidenceService;
+    const danglingId = ProjectRuntimeHandoffId.make("ev0-handoff-missing");
+    const taskWithDanglingPointer: ProjectRuntimeTask = {
+      ...task,
+      latestHandoffId: danglingId,
+      revision: 4,
+    };
+    yield* sql`UPDATE project_runtime_tasks
+      SET status = ${taskWithDanglingPointer.status},
+        revision = ${taskWithDanglingPointer.revision},
+        payload_json = ${encodeTask(taskWithDanglingPointer)}
+      WHERE task_id = ${taskId} AND project_id = ${projectId}`;
+
+    const exported = yield* evidence.exportTask(projectId, taskId);
+    assert.isFalse(exported.events.some((item) => item.recordType === "project-runtime-handoff"));
+    const unresolved = exported.events.find(
+      (item) => item.recordType === "project-runtime-handoff-unresolved",
+    );
+    assert.isDefined(unresolved);
+    assert.equal(unresolved?.recordId, danglingId);
+    assert.equal(unresolved?.authority, "project-runtime");
+    assert.equal(unresolved?.recordBasis, "derived-view");
+    assert.isNull(unresolved?.occurredAt ?? null);
+    assert.isNull(unresolved?.recordedAt ?? null);
+    assert.isTrue(unresolved?.unknownFields.includes("canonicalRecord"));
+    assert.equal(unresolved?.facts.find((fact) => fact.key === "status")?.value, "unresolved");
+    assert.equal(unresolved?.facts.find((fact) => fact.key === "canonicalRecord")?.value, false);
+
+    const jsonl = yield* evidence.exportTaskJsonl(projectId, taskId);
+    const decoded = jsonl
+      .split("\n")
+      .filter(Boolean)
+      .map((line) => decodeEvent(line));
+    assert.isFalse(decoded.some((event) => event.recordType === "project-runtime-handoff"));
+    assert.isTrue(
+      decoded.some((event) => event.recordType === "project-runtime-handoff-unresolved"),
+    );
+  }).pipe(Effect.provide(layerTest)),
 );
 
 it.effect("uses explicit authorities for Runtime, ARM, V2, and staging evidence", () =>
