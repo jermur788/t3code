@@ -357,11 +357,6 @@ const executionObservationEvent = (
       ["orchestration-v2-provider-session", observation.execution?.providerSessionId],
       ["orchestration-v2-provider-thread", observation.execution?.providerThreadId],
       ["orchestration-v2-context-transfer", observation.execution?.contextTransferId],
-      [
-        "adaptive-execution-evidence",
-        executed?.quality === "unknown" ? undefined : executed?.evidenceRef,
-      ],
-      ["adaptive-failure-evidence", observation.failure?.evidenceRef],
     ]),
     facts: facts([
       ["configuration.requested.instanceId", configuration?.requested.instanceId],
@@ -748,6 +743,17 @@ const recommendationAttemptLinkEvent = (
   });
 };
 
+const v2PayloadRunId = (stored: OrchestrationV2StoredEvent): string | undefined => {
+  const payload = stored.event.payload as { readonly id?: string; readonly runId?: string };
+  if (typeof payload.runId === "string") return payload.runId;
+  return stored.event.type === "run.created" || stored.event.type === "run.updated"
+    ? payload.id
+    : undefined;
+};
+
+const v2EffectiveRunId = (stored: OrchestrationV2StoredEvent): string | undefined =>
+  stored.event.runId ?? v2PayloadRunId(stored);
+
 const v2Event = (
   projectId: ProjectRuntimeTask["projectId"],
   taskId: ProjectRuntimeTask["taskId"],
@@ -759,28 +765,41 @@ const v2Event = (
   const payload = stored.event.payload as {
     readonly id?: string;
     readonly runId?: string;
+    readonly rootNodeId?: string | null;
+    readonly providerThreadId?: string | null;
+    readonly providerTurnId?: string | null;
+    readonly providerSessionId?: string | null;
+    readonly ownerNodeId?: string | null;
+    readonly appThreadId?: string | null;
   };
-  const payloadRunId =
-    typeof payload.runId === "string"
-      ? payload.runId
-      : stored.event.type === "run.created" || stored.event.type === "run.updated"
-        ? payload.id
-        : undefined;
-  const executionRunId = stored.event.runId ?? payloadRunId ?? null;
-  const payloadEntityReference: readonly [string, string | null] | null =
-    typeof payload.id !== "string"
-      ? null
-      : stored.event.type.startsWith("run-attempt.")
-        ? ["orchestration-v2-run-attempt", payload.id]
-        : stored.event.type === "node.updated"
-          ? ["orchestration-v2-node", payload.id]
-          : stored.event.type.startsWith("provider-session.")
-            ? ["orchestration-v2-provider-session", payload.id]
-            : stored.event.type === "provider-thread.updated"
-              ? ["orchestration-v2-provider-thread", payload.id]
-              : stored.event.type.startsWith("context-transfer.")
-                ? ["orchestration-v2-context-transfer", payload.id]
-                : null;
+  const executionRunId = v2EffectiveRunId(stored) ?? null;
+  const payloadReferences: Array<readonly [string, string]> = [];
+  const addPayloadReference = (recordType: string, recordId: string | null | undefined) => {
+    if (typeof recordId === "string") payloadReferences.push([recordType, recordId]);
+  };
+  if (stored.event.type.startsWith("run-attempt.")) {
+    addPayloadReference("orchestration-v2-run-attempt", payload.id);
+    addPayloadReference("orchestration-v2-run", payload.runId);
+    addPayloadReference("orchestration-v2-node", payload.rootNodeId);
+    addPayloadReference("orchestration-v2-provider-thread", payload.providerThreadId);
+  } else if (stored.event.type === "node.updated") {
+    addPayloadReference("orchestration-v2-node", payload.id);
+    addPayloadReference("orchestration-v2-node", payload.rootNodeId);
+    addPayloadReference("orchestration-v2-provider-thread", payload.providerThreadId);
+  } else if (stored.event.type.startsWith("provider-session.")) {
+    addPayloadReference("orchestration-v2-provider-session", payload.id);
+  } else if (stored.event.type === "provider-thread.updated") {
+    addPayloadReference("orchestration-v2-provider-thread", payload.id);
+    addPayloadReference("orchestration-v2-provider-session", payload.providerSessionId);
+    addPayloadReference("orchestration-v2-node", payload.ownerNodeId);
+    addPayloadReference("orchestration-v2-thread", payload.appThreadId);
+  } else if (stored.event.type.startsWith("context-transfer.")) {
+    addPayloadReference("orchestration-v2-context-transfer", payload.id);
+  } else if (stored.event.type === "run.created" || stored.event.type === "run.updated") {
+    addPayloadReference("orchestration-v2-run", payload.id);
+    addPayloadReference("orchestration-v2-node", payload.rootNodeId);
+    addPayloadReference("orchestration-v2-provider-thread", payload.providerThreadId);
+  }
   return event({
     schemaVersion: ORCHESTRATION_EVIDENCE_SCHEMA_VERSION,
     eventId: `oev0:orchestration-v2-event:${sequenceKey}:${stored.event.id}`,
@@ -802,13 +821,18 @@ const v2Event = (
       ["orchestration-v2-event", stored.event.id],
       ["orchestration-v2-thread", stored.event.threadId],
       ["orchestration-v2-run", executionRunId],
-      ...(payloadEntityReference === null ? [] : [payloadEntityReference]),
+      ...payloadReferences,
     ]),
     facts: facts([
       ["sequence", stored.sequence],
       ["event.type", stored.event.type],
       ["payload.id", payload.id],
       ["payload.runId", payload.runId],
+      ["payload.rootNodeId", payload.rootNodeId],
+      ["payload.providerThreadId", payload.providerThreadId],
+      ["payload.providerTurnId", payload.providerTurnId],
+      ["payload.providerSessionId", payload.providerSessionId],
+      ["payload.ownerNodeId", payload.ownerNodeId],
       ["source.occurredAt", occurredAt],
       ["source.recordedAt", null],
     ]),
@@ -991,7 +1015,8 @@ const make = Effect.gen(function* () {
         runIdsByThread.get(threadId) ?? new Set<string>();
       return perThread.flat().filter((stored) => {
         const relevantRuns = referencedRuns(stored.event.threadId);
-        return stored.event.runId === undefined || relevantRuns.has(stored.event.runId);
+        const runId = v2EffectiveRunId(stored);
+        return runId === undefined || relevantRuns.has(runId);
       });
     },
   );
@@ -1013,25 +1038,43 @@ const make = Effect.gen(function* () {
       resolved.get("orchestration-v2-thread")!.add(event.threadId);
       if (event.runId !== undefined) resolved.get("orchestration-v2-run")!.add(event.runId);
       if (event.nodeId !== undefined) resolved.get("orchestration-v2-node")!.add(event.nodeId);
-      const payload = event.payload as { readonly id?: string; readonly runId?: string };
+      const payload = event.payload as {
+        readonly id?: string;
+        readonly runId?: string;
+        readonly rootNodeId?: string | null;
+        readonly providerThreadId?: string | null;
+        readonly providerSessionId?: string | null;
+        readonly ownerNodeId?: string | null;
+        readonly appThreadId?: string | null;
+      };
+      const add = (recordType: string, recordId: string | null | undefined) => {
+        if (typeof recordId === "string") resolved.get(recordType)!.add(recordId);
+      };
       if (typeof payload.id !== "string") continue;
       if (event.type.startsWith("thread.")) {
-        resolved.get("orchestration-v2-thread")!.add(payload.id);
+        add("orchestration-v2-thread", payload.id);
       } else if (event.type === "run.created" || event.type === "run.updated") {
-        resolved.get("orchestration-v2-run")!.add(payload.id);
+        add("orchestration-v2-run", payload.id);
+        add("orchestration-v2-node", payload.rootNodeId);
+        add("orchestration-v2-provider-thread", payload.providerThreadId);
       } else if (event.type.startsWith("run-attempt.")) {
-        resolved.get("orchestration-v2-run-attempt")!.add(payload.id);
-        if (typeof payload.runId === "string") {
-          resolved.get("orchestration-v2-run")!.add(payload.runId);
-        }
+        add("orchestration-v2-run-attempt", payload.id);
+        add("orchestration-v2-run", payload.runId);
+        add("orchestration-v2-node", payload.rootNodeId);
+        add("orchestration-v2-provider-thread", payload.providerThreadId);
       } else if (event.type === "node.updated") {
-        resolved.get("orchestration-v2-node")!.add(payload.id);
+        add("orchestration-v2-node", payload.id);
+        add("orchestration-v2-node", payload.rootNodeId);
+        add("orchestration-v2-provider-thread", payload.providerThreadId);
       } else if (event.type.startsWith("provider-session.")) {
-        resolved.get("orchestration-v2-provider-session")!.add(payload.id);
+        add("orchestration-v2-provider-session", payload.id);
       } else if (event.type === "provider-thread.updated") {
-        resolved.get("orchestration-v2-provider-thread")!.add(payload.id);
+        add("orchestration-v2-provider-thread", payload.id);
+        add("orchestration-v2-provider-session", payload.providerSessionId);
+        add("orchestration-v2-node", payload.ownerNodeId);
+        add("orchestration-v2-thread", payload.appThreadId);
       } else if (event.type.startsWith("context-transfer.")) {
-        resolved.get("orchestration-v2-context-transfer")!.add(payload.id);
+        add("orchestration-v2-context-transfer", payload.id);
       }
     }
     return resolved;

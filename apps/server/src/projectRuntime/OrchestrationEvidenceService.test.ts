@@ -1108,6 +1108,7 @@ it.effect("keeps requested, selected, and executed model provenance separate", (
     const adaptive = yield* AdaptiveRoutingService.AdaptiveRoutingService;
     const evidence = yield* OrchestrationEvidenceService.OrchestrationEvidenceService;
     const divergedId = AdaptiveExecutionObservationId.make("ev0-observation-diverged");
+    const longEvidenceRef = `provider:${"y".repeat(300)}`;
     const { execution: _execution, ...observationBase } = observation;
     const diverged: AdaptiveExecutionObservationReference = {
       ...observationBase,
@@ -1119,7 +1120,7 @@ it.effect("keeps requested, selected, and executed model provenance separate", (
         executed: {
           quality: "provider_reported",
           selection: { instanceId: opencode, model: "executed-model" },
-          evidenceRef: "provider:reported-model",
+          evidenceRef: longEvidenceRef,
         },
         substitutionReason: "provider substituted the requested model",
       },
@@ -1157,6 +1158,18 @@ it.effect("keeps requested, selected, and executed model provenance separate", (
       unknownObservation?.facts.find((entry) =>
         entry.key.startsWith("configuration.executed.instanceId"),
       ),
+    );
+
+    const jsonl = yield* evidence.exportTaskJsonl(projectId, taskId);
+    const decoded = jsonl
+      .split("\n")
+      .filter(Boolean)
+      .map((line) => decodeEvent(line));
+    const decodedDiverged = decoded.find((event) => event.recordId === divergedId);
+    assert.equal(
+      decodedDiverged?.facts.find((entry) => entry.key === "configuration.executed.evidenceRef")
+        ?.value,
+      longEvidenceRef,
     );
   }).pipe(Effect.provide(layerTest)),
 );
@@ -1229,6 +1242,19 @@ it.effect("preserves run-attempt execution identities in V2 evidence", () =>
         (reference) =>
           reference.recordType === "orchestration-v2-run-attempt" &&
           reference.recordId === runAttemptId,
+      ),
+    );
+    assert.isTrue(
+      item?.references.some(
+        (reference) =>
+          reference.recordType === "orchestration-v2-node" && reference.recordId === nodeId,
+      ),
+    );
+    assert.isTrue(
+      item?.references.some(
+        (reference) =>
+          reference.recordType === "orchestration-v2-provider-thread" &&
+          reference.recordId === providerThreadId,
       ),
     );
     assert.isFalse(
@@ -1327,4 +1353,40 @@ it.effect(
       assert.equal(capacitySnapshotEvent?.occurredAt, createdAttempt);
       assert.isNull(capacitySnapshotEvent?.recordedAt ?? null);
     }).pipe(Effect.provide(layerTest)),
+);
+
+it.effect("does not attach a payload-only run event from an unrelated run", () =>
+  Effect.gen(function* () {
+    yield* seedAll;
+    const eventStore = yield* EventStore.EventStoreV2;
+    const otherRunId = RunId.make("run:ev0-unrelated");
+    const otherAttemptEventId = EventId.make("event:ev0-other-run-attempt");
+    yield* eventStore.append({
+      events: [
+        {
+          id: otherAttemptEventId,
+          type: "run-attempt.created",
+          threadId,
+          occurredAt: v2At,
+          payload: {
+            id: RunAttemptId.make("run-attempt:ev0-unrelated"),
+            runId: otherRunId,
+            attemptOrdinal: 1,
+            rootNodeId: NodeId.make("node:ev0-unrelated"),
+            providerInstanceId: opencode,
+            providerThreadId: ProviderThreadId.make("provider-thread:ev0-unrelated"),
+            providerTurnId: null,
+            reason: "initial",
+            status: "running",
+            startedAt: v2At,
+            completedAt: null,
+          },
+        },
+      ],
+    });
+    const evidence = yield* OrchestrationEvidenceService.OrchestrationEvidenceService;
+    const exported = yield* evidence.exportTask(projectId, taskId);
+    assert.isFalse(exported.events.some((event) => event.recordId === otherAttemptEventId));
+    assert.isFalse(exported.events.some((event) => event.runId === otherRunId));
+  }).pipe(Effect.provide(layerTest)),
 );
