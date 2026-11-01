@@ -368,8 +368,17 @@ At dispatch: capacity-to-completion `SUFFICIENT` for the narrow local repair; `U
 
 ## R5.3 Outcome summary
 
-| Decision                  | Actual executor | State   | Key evidence                           |
-| ------------------------- | --------------- | ------- | -------------------------------------- |
-| `ev0-repair-20261101-d11` | PENDING         | PENDING | Authority split implementation pending |
-| `ev0-repair-20261101-d12` | PENDING         | PENDING | Independent review pending             |
-| `ev0-repair-20261101-d13` | PENDING         | PENDING | Final verification and handoff pending |
+| Decision                  | Actual executor         | State                   | Key evidence                                                                        |
+| ------------------------- | ----------------------- | ----------------------- | ----------------------------------------------------------------------------------- |
+| `ev0-repair-20261101-d11` | DeepSeek V4.1 Flash     | COMPLETED               | Distinct `runtime-routing` route item; launch receipt remains `runtime-execution`   |
+| `ev0-repair-20261101-d12` | Claude B — Pro Opus 5.5 | REVIEW PASS W/ FINDINGS | No blockers; F1 ordering, F2 route-item stability gap, F3 v0 consumer compatibility |
+| `ev0-repair-20261101-d13` | DeepSeek V4.1 Flash     | STATIC PASS             | Final handoff; no RUNTIME PASS, no merge                                            |
+
+- **Final code head:** `741428a320958d477492167f7f2992e834f2f096`.
+- **Focused tests:** 28/28 exporter; 32/32 routing/execution neighbors; 60/60 combined.
+- **Static gates:** contracts/server typecheck, changed-file format, changed-file lint, knip 2/2 and `git diff --check` pass. `vp run check:changed` was attempted but exceeded the harness limit, so it is not claimed.
+- **Authority split:** `runtime-route-resolution` (`runtime-routing`, derived from `attempt.receipt.route`) owns route status/source/role/selected/rejections/failure/revisions; `execution-attempt-decision` (`runtime-execution`) owns only launch model/modes/workspace and bounded packet facts and references the route item. One new record-type literal; no migration, store, canonical routing identity, resolver/authorization change, launcher, catalog or poller.
+- **Coverage:** the authority test now requires exactly the six declared authorities by sorted set equality and proves routing vs launch ownership, including an indexed rejected candidate; the negative contract test rejects a wrong schema version and missing/blank required identity fields.
+- **Remaining non-blocking/UNKNOWN:** route item sorts after the launch item under the existing event-ID tie-break (deterministic, logically backwards); no post-completion byte-stability assertion for the route item; unchanged v0 decision event ID with a moved fact set may matter to external consumers; V2 1,000-event cap has no truncation marker; cross-task staging references dropped; finite 2,000 caps; no transport wiring; no live-service/real-DB proof; ARM producers remain the next milestone.
+- **PR #14:** untouched at `e51c1c5d74aed9824927d391590ddb33026c8d56`; OPEN / DRAFT / NOT MERGED.
+- **Next action:** Browser Overall inspects the exact final delta; do not merge. Transport wiring plus live/real-DB verification is the next milestone.

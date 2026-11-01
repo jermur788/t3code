@@ -1105,3 +1105,37 @@ These decisions are prospective and recorded before repair implementation. They 
 - **Alternatives rejected:** delegating synthesis (orchestrator owns reconciliation).
 - **Selection mechanism:** forced orchestrator.
 - `machine`: `{"schema":"t3-orchestration-evidence-v2","event_id":"ev0-repair-20261101-d13","event_type":"routing_decision","occurred_at":"2026-11-01T21:55Z","recorded_at":"2026-11-01T21:55Z","project":"t3-fork","task":"evidence-v0-authority-verification-handoff","orchestrator":{"provider":"opencode","model":"opencode-go/deepseek-v4.1-flash"},"selected":{"provider":"opencode","model":"opencode-go/deepseek-v4.1-flash"},"difficulty":{"ambiguity":0.10,"scope_breadth":0.25,"reasoning_complexity":0.25,"integration_tool_complexity":0.30,"risk":0.40,"verification_burden":0.70,"band":"MEDIUM","confidence":0.90},"selection":"forced_orchestrator","outcome":"PENDING"}`
+
+## Appended outcome — D-EV0R3-01 authority split
+
+- `decision_id`: `ev0-repair-20261101-d11`
+- `recorded_at`: 2026-11-01T22:45Z
+- **State:** `COMPLETED`.
+- **Runtime Routing:** new derived item `runtime-route-resolution` with `authority: "runtime-routing"` and `recordId = attemptId` (the canonical attempt that stores the receipt). It owns route status, source, role, `inheritedFrom`, selected candidate index/provider/driver/model/isolation/runtime mode/interaction mode, failure source/reason, each indexed rejection (source, candidate index, provider, driver, model, reason, detail), and task/project-routing/profile/assignment revisions.
+- **Runtime Execution:** `execution-attempt-decision` keeps `authority: "runtime-execution"` and now emits only `launch.*` (model selection, runtime mode, interaction mode, workspace strategy) and bounded `packet.*` facts. It references `runtime-route-resolution` for the same attempt; the route item references `execution-attempt`, task and thread.
+- **No new truth:** one new record-type literal was added to the contract. No table, migration, canonical routing identity, routing resolver/authorization change, launcher, catalog or poller was added. The route item is `derived-view` over `attempt.receipt.route`.
+- **Decision/outcome separation:** neither decision item reads outcome status, run identity, updated time or attempt failure. The outcome item remains unchanged and still references `execution-attempt-decision`.
+- **Tests added:** six-authority set equality; routing-owns-route/launch-owns-launch assertions; indexed rejection fact under `runtime-routing`; negative contract test for wrong schema version plus missing/blank `eventId`/`recordId`/`projectId`.
+
+## Appended outcome — D-EV0R3-02 independent review
+
+- `decision_id`: `ev0-repair-20261101-d12`
+- `recorded_at`: 2026-11-01T22:47Z
+- **Actual executor:** Claude B — Pro (`claudeAgent_claude_b_pro`) / `claude-opus-5-5`, effort `high`, read-only. No capacity substitution was needed.
+- **Verdict:** `REVIEW PASS WITH FINDINGS`; no blockers.
+- **Reviewer scope:** delta `8a40c0b..741428a` against spec §3, §6, §9 and §22; ran the three focused suites (60/60 pass); confirmed no duplicate authority/store, preserved decision/outcome separation, stable event/record IDs, six-authority test coverage and contract-level negative validation.
+- **Non-blocking findings:** F1 route item currently sorts after the launch item because both share a time/class and the event-ID tie-break favours `execution-…`; deterministic but logically backwards. F2 the post-completion byte-stability test covers only `execution-attempt-decision`, not the new route item. F3 the v0 `execution-attempt-decision` event ID is unchanged while its fact set moved, which only matters to external consumers of an earlier export.
+- **Reviewer UNKNOWNs:** external consumers of the old merged decision item; no independent audit of ledger/appendix prose; no reviewer typecheck/lint run; no live-service/real-DB proof.
+
+## Appended outcome — D-EV0R3-03 final verification and handoff
+
+- `decision_id`: `ev0-repair-20261101-d13`
+- `recorded_at`: 2026-11-01T22:48Z
+- **State:** `STATIC PASS / REVIEW PASS WITH FINDINGS / NOT RUNTIME PASS / NOT MERGED`.
+- **Code head:** `741428a320958d477492167f7f2992e834f2f096` (this docs commit follows it).
+- **Tests:** `OrchestrationEvidenceService.test.ts` 28/28 pass; `AdaptiveRoutingService.test.ts` + `RuntimeTaskExecutionService.test.ts` 32/32 pass; combined 60/60.
+- **Static gates:** `@t3tools/contracts` and `t3` server typecheck pass; changed-file `vp fmt --check` pass; changed-file `vp lint --report-unused-disable-directives` pass; `vp run knip:check` 2/2 pass; `git diff --check` clean.
+- **Not directly verified:** `vp run check:changed` was attempted but exceeded the 15-minute harness limit without output; the targeted changed-file checks above were run instead. No live-service/real-database export was executed.
+- **Remaining non-blocking/UNKNOWN:** F1/F2/F3 above; V2 1,000-event read cap has no truncation marker; cross-task staging references are dropped; 2,000-reference cap is finite; no transport wiring; no live-service/real-DB proof; ARM producers remain the next milestone.
+- **PR #14:** untouched at `sync/upstream-20261031 @ e51c1c5d74aed9824927d391590ddb33026c8d56`; not merged, not advanced, not strengthened by this work.
+- **Next action:** Browser Overall inspects the exact final delta and evidence; do not merge. Transport wiring plus live/real-DB verification is the next milestone.
