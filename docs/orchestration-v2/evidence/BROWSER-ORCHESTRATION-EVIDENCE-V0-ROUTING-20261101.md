@@ -51,4 +51,36 @@ This file is append-oriented. Decision-time records below are not rewritten afte
 
 ## Outcomes
 
-Pending. Append after archaeology/spec/reconciliation work.
+### Outcome for `oev0-browser-d01`
+
+- Result: `STATIC PASS` for browser-only research/spec lane.
+- Frozen candidate remained untouched; no PR #14 write, branch move, merge, or CI-status mutation was performed.
+- No Saul/Claude escalation was dispatched because the browser lane exposes no delegated-provider execution surface and inspected implementation truth resolved the architecture boundary sufficiently for a governing V0 spec.
+- Local DeepSeek remains the implementation orchestrator by project authority; Browser Deputy did not claim replacement orchestration authority.
+
+### Outcome for `oev0-browser-d02`
+
+- Result: implementation archaeology completed on exact `e51c1c5d74aed9824927d391590ddb33026c8d56`.
+- Finding: durable project/task identity, Runtime launch receipts, V2 execution identity/events, ARM predictions/recommendations/capacity/outcomes/verification/failure projections already exist as typed canonical state.
+- Primary missing layer: one unified bounded read/reconstruction/export seam over those owners.
+- Material ambiguity: exact recommendation-receipt-to-attempt linkage can be ambiguous if multiple receipts share the same task/prediction context.
+- Material missing/unknown fact: actual executed model cannot be inferred from requested/selected model when provider/V2 evidence does not report it.
+- Consequence: no Evidence V0 canonical database or duplicate execution graph is justified.
+
+### Outcome for `oev0-browser-d03`
+
+- Result: current-upstream archaeology refreshed.
+- Upstream inspected: `pingdotgg/t3code main @ 1d626d02d95f9a2343553f6498037ee82290d304`.
+- Drift from the upstream revision integrated into the frozen candidate (`80a2351fcb909034e65a512dfabeb3cdfd367762`): current upstream is 281 commits ahead.
+- Current upstream still has event-sourced Orchestration V2, first-class usage-limit sources, and anonymous delegated-task analytics; these should be reused/kept separate according to ownership.
+- Open overlapping work remains proposal/community evidence, not current-main authority: #27753 requested-versus-executed delegated model attribution; #21877 nested delegated follow-up lifecycle; #27138 routing evals; #27123 per-model usage/controlled evals.
+
+### Outcome for `oev0-browser-d04`
+
+- Result: governing spec published.
+- Path: `docs/internals/orchestration-evidence-v0-spec.md`.
+- Spec commit: `d3a31b7fb89fd75c0d452c3b29a3d2ca9bb98acf`.
+- Branch: `docs/orchestration-evidence-v0-governing-20261101`, created directly from frozen `e51c1c5d...`.
+- Governing implementation target: derived domain read/reconstruction service + versioned evidence envelope + optional JSONL transport, normally with no new migration.
+- First fixture rule: use both a synthetic canonical L2-style sequence and the real `l2-20261101-d01..d08` project-staging records; never fabricate historical typed Runtime/ARM rows.
+- Local DeepSeek result path was rechecked after spec publication and was still absent (`404`), so local reconciliation is explicitly pending rather than inferred.
