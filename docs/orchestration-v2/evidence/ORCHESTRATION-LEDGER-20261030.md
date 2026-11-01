@@ -676,7 +676,7 @@ Work unit 3 (archaeology) and unit 4 (classification) were kept separate because
 - `recorded_at`: 2026-11-01T17:10Z
 - **State:** `COMPLETED`.
 - **Actual executor:** DeepSeek V4.1 Flash (primary); Codex gpt-6.1-sol independent read-only cross-check (d03a). No substitution during synthesis.
-- **Observed evidence:** [implementation archaeology at exact base](file:///home/jer/dev/t3code-evidence-v0-20261101) — `packages/contracts/src/{projectRuntime,runtimeExecution,adaptiveRouting,orchestrationV2,baseSchemas}.ts`; `apps/server/src/projectRuntime/{ProjectRuntimeService,RuntimeTaskExecutionService,AdaptiveRoutingService}.ts`; `apps/server/src/persistence/Migrations/Fork/{001_ProjectRuntime,005_RuntimeExecutionAttempts,007_AdaptiveRouting}.ts`; `apps/server/src/persistence/Migrations/055_OrchestrationV2.ts`; `apps/server/src/orchestration-v2/{EventStore,ProjectionStore}.ts`.
+- **Observed evidence:** implementation archaeology at exact base — `packages/contracts/src/{projectRuntime,runtimeExecution,adaptiveRouting,orchestrationV2,baseSchemas}.ts`; `apps/server/src/projectRuntime/{ProjectRuntimeService,RuntimeTaskExecutionService,AdaptiveRoutingService}.ts`; `apps/server/src/persistence/Migrations/Fork/{001_ProjectRuntime,005_RuntimeExecutionAttempts,007_AdaptiveRouting}.ts`; `apps/server/src/persistence/Migrations/055_OrchestrationV2.ts`; `apps/server/src/orchestration-v2/{EventStore,ProjectionStore}.ts`.
 
 ### Classification
 
