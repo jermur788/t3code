@@ -145,10 +145,10 @@ const taskEvent = (task: ProjectRuntimeTask): DraftEvent =>
     attemptId: null,
     threadId: null,
     runId: null,
-    occurredAt: task.updatedAt,
-    recordedAt: null,
+    occurredAt: null,
+    recordedAt: task.updatedAt,
     summary: `Runtime task ${task.status} at revision ${task.revision}`,
-    unknownFields: ["recordedAt"],
+    unknownFields: ["occurredAt"],
     references: references([["project-runtime-handoff", task.latestHandoffId]]),
     facts: facts([
       ["status", task.status],
@@ -177,13 +177,14 @@ const attemptDecisionEvent = (attempt: RuntimeExecutionAttempt): DraftEvent => {
     attemptId: attempt.attemptId,
     threadId: attempt.threadId,
     runId: null,
-    occurredAt: attempt.createdAt,
+    occurredAt: null,
     recordedAt: attempt.createdAt,
     summary:
       selected === null
         ? `Routing decision ${attempt.receipt.route.status} without a selected route`
         : `Routing decision ${attempt.receipt.route.source}: ${selected.providerInstanceId}/${selected.model}`,
     unknownFields: [
+      "occurredAt",
       "runId",
       "choiceSet.perCandidateState",
       "capacity",
@@ -786,6 +787,8 @@ const v2Event = (
     addPayloadReference("orchestration-v2-node", payload.id);
     addPayloadReference("orchestration-v2-node", payload.rootNodeId);
     addPayloadReference("orchestration-v2-provider-thread", payload.providerThreadId);
+  } else if (stored.event.type === "provider-session.detached") {
+    addPayloadReference("orchestration-v2-provider-session", payload.providerSessionId);
   } else if (stored.event.type.startsWith("provider-session.")) {
     addPayloadReference("orchestration-v2-provider-session", payload.id);
   } else if (stored.event.type === "provider-thread.updated") {
@@ -795,6 +798,8 @@ const v2Event = (
     addPayloadReference("orchestration-v2-thread", payload.appThreadId);
   } else if (stored.event.type.startsWith("context-transfer.")) {
     addPayloadReference("orchestration-v2-context-transfer", payload.id);
+  } else if (stored.event.type === "context-handoff.updated") {
+    addPayloadReference("orchestration-v2-context-handoff", payload.id);
   } else if (stored.event.type === "run.created" || stored.event.type === "run.updated") {
     addPayloadReference("orchestration-v2-run", payload.id);
     addPayloadReference("orchestration-v2-node", payload.rootNodeId);
@@ -911,6 +916,22 @@ const makeEventComparator = (v2BlockTime: number) => (left: DraftEvent, right: D
   const rightV2 = right.recordType === "orchestration-v2-event";
   if (leftV2 && rightV2) {
     return left.eventId < right.eventId ? -1 : left.eventId > right.eventId ? 1 : 0;
+  }
+
+  if (left.recordType === right.recordType) {
+    const revisionKey =
+      left.recordType === "adaptive-outcome-reconciliation"
+        ? "fromRevision"
+        : left.recordType === "adaptive-accepted-outcome"
+          ? "revision"
+          : undefined;
+    if (revisionKey !== undefined) {
+      const leftRevision = left.facts.find((fact) => fact.key === revisionKey)?.value;
+      const rightRevision = right.facts.find((fact) => fact.key === revisionKey)?.value;
+      if (typeof leftRevision === "number" && typeof rightRevision === "number") {
+        if (leftRevision !== rightRevision) return leftRevision < rightRevision ? -1 : 1;
+      }
+    }
   }
 
   // V2 events stay in one contiguous block so canonical event-store sequence is a
@@ -1032,6 +1053,7 @@ const make = Effect.gen(function* () {
       ["orchestration-v2-provider-session", new Set()],
       ["orchestration-v2-provider-thread", new Set()],
       ["orchestration-v2-context-transfer", new Set()],
+      ["orchestration-v2-context-handoff", new Set()],
     ]);
     for (const stored of storedEvents) {
       const event = stored.event;
@@ -1066,6 +1088,8 @@ const make = Effect.gen(function* () {
         add("orchestration-v2-node", payload.id);
         add("orchestration-v2-node", payload.rootNodeId);
         add("orchestration-v2-provider-thread", payload.providerThreadId);
+      } else if (event.type === "provider-session.detached") {
+        add("orchestration-v2-provider-session", payload.providerSessionId);
       } else if (event.type.startsWith("provider-session.")) {
         add("orchestration-v2-provider-session", payload.id);
       } else if (event.type === "provider-thread.updated") {
@@ -1075,6 +1099,8 @@ const make = Effect.gen(function* () {
         add("orchestration-v2-thread", payload.appThreadId);
       } else if (event.type.startsWith("context-transfer.")) {
         add("orchestration-v2-context-transfer", payload.id);
+      } else if (event.type === "context-handoff.updated") {
+        add("orchestration-v2-context-handoff", payload.id);
       }
     }
     return resolved;

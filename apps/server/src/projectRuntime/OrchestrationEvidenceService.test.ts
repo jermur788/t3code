@@ -1390,3 +1390,90 @@ it.effect("does not attach a payload-only run event from an unrelated run", () =
     assert.isFalse(exported.events.some((event) => event.runId === otherRunId));
   }).pipe(Effect.provide(layerTest)),
 );
+
+it.effect("orders ARM outcome reconciliations by revision when clocks tie", () =>
+  Effect.gen(function* () {
+    yield* seedAll;
+    const adaptive = yield* AdaptiveRoutingService.AdaptiveRoutingService;
+    const evidence = yield* OrchestrationEvidenceService.OrchestrationEvidenceService;
+    const tiedAt = "2026-11-01T08:40:00.000Z";
+    yield* adaptive.reconcileAcceptedOutcome({
+      reconciliationId: AdaptiveOutcomeReconciliationId.make("z-first-reconciliation"),
+      outcomeId,
+      expectedRevision: 1,
+      state: "accepted_after_rework",
+      provenance: {
+        authority: "external_review",
+        reference: "review:first",
+        observedAt: tiedAt,
+      },
+      evidenceRefs: ["review:first"],
+      reconciledAt: tiedAt,
+    });
+    yield* adaptive.reconcileAcceptedOutcome({
+      reconciliationId: AdaptiveOutcomeReconciliationId.make("a-second-reconciliation"),
+      outcomeId,
+      expectedRevision: 2,
+      state: "accepted_without_rework",
+      provenance: {
+        authority: "external_review",
+        reference: "review:second",
+        observedAt: tiedAt,
+      },
+      evidenceRefs: ["review:second"],
+      reconciledAt: tiedAt,
+    });
+
+    const exported = yield* evidence.exportTask(projectId, taskId);
+    const corrections = exported.events.filter(
+      (event) => event.recordType === "adaptive-outcome-reconciliation",
+    );
+    assert.deepEqual(
+      corrections.map((event) => event.facts.find((fact) => fact.key === "fromRevision")?.value),
+      [1, 2],
+    );
+    assert.deepEqual(
+      corrections.map((event) => event.recordId),
+      ["z-first-reconciliation", "a-second-reconciliation"],
+    );
+  }).pipe(Effect.provide(layerTest)),
+);
+
+it.effect("keeps wide capacity snapshots decodable within bounds", () =>
+  Effect.gen(function* () {
+    yield* seedAll;
+    const adaptive = yield* AdaptiveRoutingService.AdaptiveRoutingService;
+    const evidence = yield* OrchestrationEvidenceService.OrchestrationEvidenceService;
+    const wideSnapshotId = AdaptiveCapacitySnapshotId.make("ev0-snapshot-wide");
+    const wideSnapshot: AdaptiveCapacitySnapshot = {
+      ...snapshot,
+      snapshotId: wideSnapshotId,
+      windows: Array.from({ length: 50 }, (_, index) => ({
+        windowId: `window-${index}`,
+        windowType: "session" as const,
+        used: { quality: "unknown" as const },
+        remaining: { quality: "unknown" as const },
+        limit: { quality: "unknown" as const },
+      })),
+    };
+    yield* adaptive.appendCapacitySnapshot(wideSnapshot);
+    yield* adaptive.appendRecommendationReceipt({
+      ...receipt,
+      recommendationReceiptId: AdaptiveRecommendationReceiptId.make("ev0-receipt-wide"),
+      capacitySnapshotIds: [wideSnapshotId],
+    });
+
+    const jsonl = yield* evidence.exportTaskJsonl(projectId, taskId);
+    const decoded = jsonl
+      .split("\n")
+      .filter(Boolean)
+      .map((line) => decodeEvent(line));
+    const wide = decoded.find(
+      (event) =>
+        event.recordType === "adaptive-capacity-snapshot" && event.recordId === wideSnapshotId,
+    );
+    assert.isDefined(wide);
+    assert.isAtLeast(wide!.facts.length, 100);
+    assert.equal(wide!.facts.find((fact) => fact.key === "windows.count")?.value, 50);
+  }).pipe(Effect.provide(layerTest)),
+);
