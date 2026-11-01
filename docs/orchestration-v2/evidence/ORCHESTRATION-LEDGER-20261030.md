@@ -918,3 +918,25 @@ These decisions are prospective and recorded before repair implementation. They 
 - **Alternatives rejected:** retrying the rate-limited Claude instance immediately (likely wasted capacity); Claude B as a second fallback only if Codex also fails; self-review (not independent).
 - **Selection mechanism:** forced capacity substitution.
 - `machine`: `{"schema":"t3-orchestration-evidence-v2","event_id":"ev0-repair-20261101-d06a","event_type":"routing_decision","occurred_at":"2026-11-01T19:58Z","recorded_at":"2026-11-01T19:58Z","project":"t3-fork","task":"evidence-v0-repaired-head-review-substitute","orchestrator":{"provider":"opencode","model":"opencode-go/deepseek-v4.1-flash"},"selected":{"provider":"codex","model":"gpt-6.1-sol"},"difficulty":{"ambiguity":0.30,"scope_breadth":0.55,"reasoning_complexity":0.70,"integration_tool_complexity":0.40,"risk":0.65,"verification_burden":0.60,"band":"HIGH","confidence":0.67},"selection":"forced_capacity_substitution","prior_attempt":"ev0-repair-20261101-d06","outcome":"PENDING"}`
+
+## Appended outcome — D-EV0R-06a Codex review rounds 1–2
+
+- `decision_id`: `ev0-repair-20261101-d06a`
+- `recorded_at`: 2026-11-01T20:12Z
+- **State:** `COMPLETED WITH FINDINGS` across two review rounds; fresh round 3 could not start.
+- **Round 1 (`6107400197`):** `REVIEW FAIL` — 5 blocking findings (V2 execution IDs lost, V2 sequence ordering non-transitive, long Runtime verification summaries broke JSONL, proof refs dropped, single source clock duplicated as occurred+recorded).
+- **Round 2 (`d193021e`):** `REVIEW FAIL` — prior findings 2/3/5 repaired, prior 1/4 partial; additional blockers: 300-char proof refs exceeded `EvidenceId` cap, 50-window capacity snapshot exceeded 100-fact cap, payload-only run IDs bypassed the run filter, reconciliation ties ignored revision order, Runtime decision still duplicated `createdAt`.
+- **Repairs after round 2:** final head `fedfcdf7` preserves root-node/provider-thread/detached-session/context-handoff refs; proof refs stay in uncapped facts; facts cap raised to 2,000 and covered by a 50-window test; loader/projector share payload-derived run identity; reconciliation ordering uses revision before id; Runtime task/decision clocks use `recordedAt` with explicit `occurredAt` UNKNOWN.
+- **Round 3 attempt:** blocked before any review output — `You've hit your usage limit... try again at Nov 4th, 2026 9:06 AM`. No round-3 verdict exists.
+
+### D-EV0R-06b — Second capacity substitution for final review
+
+- `decision_id`: `ev0-repair-20261101-d06b`
+- `recorded_at`: 2026-11-01T20:16Z
+- **Difficulty:** same as d06 (ambiguity 0.30; scope 0.55; reasoning 0.70; integration/tool 0.40; risk 0.65; verification 0.60; band `HIGH`; confidence 0.65).
+- **Candidates:** Claude B — Pro (`claudeAgent_claude_b_pro`); Claude A; DeepSeek self (rejected as non-independent).
+- **Selected executor:** Claude B — Pro / `claude-opus-5-5`, read-only review.
+- **Rationale:** Codex is capacity-blocked until 2026-11-04. Claude B was the successful independent reviewer in the prior Evidence V0 run and is a different provider/model from the DeepSeek implementer. Claude A was rate-limited earlier in this run; Claude B is the next-best independent option.
+- **Alternatives rejected:** waiting for Codex reset (blocked for days); self-review (not independent); shipping without a final review (would leave the repaired head unreviewed).
+- **Selection mechanism:** forced capacity substitution.
+- `machine`: `{"schema":"t3-orchestration-evidence-v2","event_id":"ev0-repair-20261101-d06b","event_type":"routing_decision","occurred_at":"2026-11-01T20:16Z","recorded_at":"2026-11-01T20:16Z","project":"t3-fork","task":"evidence-v0-final-review-substitute","orchestrator":{"provider":"opencode","model":"opencode-go/deepseek-v4.1-flash"},"selected":{"provider":"claudeAgent_claude_b_pro","model":"claude-opus-5-5"},"difficulty":{"ambiguity":0.30,"scope_breadth":0.55,"reasoning_complexity":0.70,"integration_tool_complexity":0.40,"risk":0.65,"verification_burden":0.60,"band":"HIGH","confidence":0.65},"selection":"forced_capacity_substitution","prior_attempt":"ev0-repair-20261101-d06a","outcome":"PENDING"}`
