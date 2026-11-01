@@ -52,18 +52,23 @@ export const OrchestrationEvidenceRecordType = Schema.Literals([
 ]);
 export type OrchestrationEvidenceRecordType = typeof OrchestrationEvidenceRecordType.Type;
 
-/** Decision-time and post-outcome records must remain distinguishable after export. */
-export const OrchestrationEvidenceClass = Schema.Literals([
+/**
+ * Lifecycle axis for task-history ordering. This is deliberately not the ledger's
+ * `evidence_class` (OBSERVED_FACT / ORCHESTRATOR_CLAIM / ...): that axis classifies
+ * how a claim is known, while this one classifies where it sits in a decision.
+ */
+export const OrchestrationEvidenceLifecycleClass = Schema.Literals([
   "decision",
   "assessment",
   "outcome",
   "correction",
   "observation",
 ]);
-export type OrchestrationEvidenceClass = typeof OrchestrationEvidenceClass.Type;
+export type OrchestrationEvidenceLifecycleClass = typeof OrchestrationEvidenceLifecycleClass.Type;
 
-export const OrchestrationEvidenceNature = Schema.Literals(["canonical", "derived"]);
-export type OrchestrationEvidenceNature = typeof OrchestrationEvidenceNature.Type;
+/** A canonical insert-only record versus a view over mutable or aggregated state. */
+export const OrchestrationEvidenceBasis = Schema.Literals(["canonical-record", "derived-view"]);
+export type OrchestrationEvidenceBasis = typeof OrchestrationEvidenceBasis.Type;
 
 export const OrchestrationEvidenceSource = Schema.Literals(["runtime", "adaptive-routing"]);
 export type OrchestrationEvidenceSource = typeof OrchestrationEvidenceSource.Type;
@@ -86,8 +91,8 @@ export const OrchestrationEvidenceEvent = Schema.Struct({
   eventId: EvidenceId,
   recordType: OrchestrationEvidenceRecordType,
   recordId: EvidenceId,
-  evidenceClass: OrchestrationEvidenceClass,
-  recordNature: OrchestrationEvidenceNature,
+  lifecycleClass: OrchestrationEvidenceLifecycleClass,
+  recordBasis: OrchestrationEvidenceBasis,
   source: OrchestrationEvidenceSource,
   projectId: ProjectId,
   taskId: Schema.NullOr(ProjectRuntimeTaskId),

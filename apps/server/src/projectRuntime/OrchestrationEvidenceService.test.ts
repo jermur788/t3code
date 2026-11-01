@@ -38,6 +38,7 @@ import {
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
+import * as TestClock from "effect/testing/TestClock";
 import * as SqlClient from "effect/sql/SqlClient";
 import { type SqlError } from "effect/sql/SqlError";
 
@@ -176,6 +177,22 @@ const attempt: RuntimeExecutionAttempt = {
   },
 };
 
+const pendingAttemptId = RuntimeExecutionAttemptId.make("ev0-attempt-pending");
+const pendingThreadId = ThreadId.make("thread:ev0-pending");
+const pendingRunId = RunId.make("run:ev0-pending");
+
+const pendingAttempt: RuntimeExecutionAttempt = {
+  ...attempt,
+  attemptId: pendingAttemptId,
+  threadId: pendingThreadId,
+  status: "pending",
+  revision: 1,
+  runId: null,
+  failure: null,
+  createdAt: createdAttempt,
+  updatedAt: createdAttempt,
+};
+
 const pool: AdaptiveCapacityPool = {
   schemaVersion: 1,
   capacityPoolId: poolId,
@@ -293,7 +310,7 @@ const initialOutcome: AdaptiveAcceptedOutcome = {
   provenance: {
     authority: "runtime_task",
     reference: "runtime-task:ev0-task",
-    observedAt: completedAttempt,
+    observedAt: acceptedAt,
   },
   evidenceRefs: ["handoff:l2"],
   reconciledAt: acceptedAt,
@@ -375,6 +392,12 @@ const seedRuntime = Effect.gen(function* () {
       created_at, updated_at, payload_json)
     VALUES (${attemptId}, ${projectId}, ${taskId}, ${attempt.status}, ${attempt.revision},
       ${threadId}, ${runId}, NULL, ${attempt.createdAt}, ${attempt.updatedAt}, ${encodeAttempt(attempt)})`;
+  yield* sql`INSERT INTO project_runtime_execution_attempts
+    (attempt_id, project_id, task_id, status, revision, thread_id, run_id, request_key,
+      created_at, updated_at, payload_json)
+    VALUES (${pendingAttemptId}, ${projectId}, ${taskId}, ${pendingAttempt.status},
+      ${pendingAttempt.revision}, ${pendingThreadId}, NULL, NULL, ${pendingAttempt.createdAt},
+      ${pendingAttempt.updatedAt}, ${encodeAttempt(pendingAttempt)})`;
 });
 
 const layerTest = Layer.merge(
@@ -415,7 +438,7 @@ it.effect("exports a versioned envelope and reconstructs task-first chronologica
       (item) => item.recordType === "execution-attempt-decision",
     );
     assert.isDefined(decision);
-    assert.equal(decision?.evidenceClass, "decision");
+    assert.equal(decision?.lifecycleClass, "decision");
     assert.equal(
       decision?.facts.find((fact) => fact.key === "route.selected.model")?.value,
       "opencode-go/deepseek-v4.1-flash",
@@ -424,7 +447,7 @@ it.effect("exports a versioned envelope and reconstructs task-first chronologica
     const observed = reconstructed.events.find(
       (item) => item.recordType === "adaptive-execution-observation",
     );
-    assert.equal(observed?.evidenceClass, "outcome");
+    assert.equal(observed?.lifecycleClass, "outcome");
     assert.equal(
       observed?.facts.find((fact) => fact.key === "configuration.executed.quality")?.value,
       "unknown",
@@ -434,7 +457,7 @@ it.effect("exports a versioned envelope and reconstructs task-first chronologica
     const outcome = reconstructed.events.find(
       (item) => item.recordType === "adaptive-accepted-outcome",
     );
-    assert.equal(outcome?.evidenceClass, "outcome");
+    assert.equal(outcome?.lifecycleClass, "outcome");
 
     const decisionIndex = reconstructed.events.indexOf(decision!);
     const observationIndex = reconstructed.events.indexOf(observed!);
@@ -452,43 +475,56 @@ it.effect("resolves every canonical reference and creates no evidence table", ()
     const sql = yield* SqlClient.SqlClient;
     const exported = yield* evidence.exportTask(projectId, taskId);
 
-    const resolvers: Record<string, () => Effect.Effect<ReadonlyArray<unknown>, SqlError>> = {
-      "project-runtime-task": () =>
-        sql`SELECT 1 FROM project_runtime_tasks WHERE project_id = ${projectId} AND task_id = ${taskId}`,
-      "execution-attempt": () =>
-        sql`SELECT 1 FROM project_runtime_execution_attempts WHERE attempt_id = ${attemptId}`,
-      "execution-attempt-decision": () =>
-        sql`SELECT 1 FROM project_runtime_execution_attempts WHERE attempt_id = ${attemptId}`,
-      "execution-attempt-outcome": () =>
-        sql`SELECT 1 FROM project_runtime_execution_attempts WHERE attempt_id = ${attemptId}`,
-      "adaptive-outcome-reconciliation": () =>
-        sql`SELECT 1 FROM adaptive_outcome_reconciliations WHERE reconciliation_id = ${reconciliationId}`,
-      "adaptive-difficulty-prediction": () =>
-        sql`SELECT 1 FROM adaptive_difficulty_predictions WHERE prediction_id = ${predictionId}`,
-      "adaptive-realized-difficulty": () =>
-        sql`SELECT 1 FROM adaptive_realized_difficulties WHERE realized_difficulty_id = ${realizedDifficultyId}`,
-      "adaptive-execution-observation": () =>
-        sql`SELECT 1 FROM adaptive_execution_observations WHERE observation_id = ${observationId}`,
-      "adaptive-accepted-outcome": () =>
-        sql`SELECT 1 FROM adaptive_accepted_outcomes WHERE outcome_id = ${outcomeId}`,
-      "adaptive-capacity-pool": () =>
-        sql`SELECT 1 FROM adaptive_capacity_pools WHERE capacity_pool_id = ${poolId}`,
-      "adaptive-capacity-snapshot": () =>
-        sql`SELECT 1 FROM adaptive_capacity_snapshots WHERE snapshot_id = ${snapshotId}`,
-      "adaptive-recommendation-receipt": () =>
-        sql`SELECT 1 FROM adaptive_recommendation_receipts WHERE recommendation_receipt_id = ${receiptId}`,
-      "adaptive-experiment-assignment": () =>
-        sql`SELECT 1 FROM adaptive_experiment_assignments WHERE assignment_id = ${assignmentId}`,
+    const resolvers: Record<
+      string,
+      (recordId: string) => Effect.Effect<ReadonlyArray<unknown>, SqlError>
+    > = {
+      "project-runtime-task": (recordId) =>
+        sql`SELECT 1 FROM project_runtime_tasks WHERE project_id = ${projectId} AND task_id = ${recordId}`,
+      "execution-attempt": (recordId) =>
+        sql`SELECT 1 FROM project_runtime_execution_attempts WHERE attempt_id = ${recordId}`,
+      "execution-attempt-decision": (recordId) =>
+        sql`SELECT 1 FROM project_runtime_execution_attempts WHERE attempt_id = ${recordId}`,
+      "execution-attempt-outcome": (recordId) =>
+        sql`SELECT 1 FROM project_runtime_execution_attempts WHERE attempt_id = ${recordId}`,
+      "adaptive-outcome-reconciliation": (recordId) =>
+        sql`SELECT 1 FROM adaptive_outcome_reconciliations WHERE reconciliation_id = ${recordId}`,
+      "adaptive-difficulty-prediction": (recordId) =>
+        sql`SELECT 1 FROM adaptive_difficulty_predictions WHERE prediction_id = ${recordId}`,
+      "adaptive-realized-difficulty": (recordId) =>
+        sql`SELECT 1 FROM adaptive_realized_difficulties WHERE realized_difficulty_id = ${recordId}`,
+      "adaptive-execution-observation": (recordId) =>
+        sql`SELECT 1 FROM adaptive_execution_observations WHERE observation_id = ${recordId}`,
+      "adaptive-accepted-outcome": (recordId) =>
+        sql`SELECT 1 FROM adaptive_accepted_outcomes WHERE outcome_id = ${recordId}`,
+      "adaptive-capacity-pool": (recordId) =>
+        sql`SELECT 1 FROM adaptive_capacity_pools WHERE capacity_pool_id = ${recordId}`,
+      "adaptive-capacity-snapshot": (recordId) =>
+        sql`SELECT 1 FROM adaptive_capacity_snapshots WHERE snapshot_id = ${recordId}`,
+      "adaptive-recommendation-receipt": (recordId) =>
+        sql`SELECT 1 FROM adaptive_recommendation_receipts WHERE recommendation_receipt_id = ${recordId}`,
+      "adaptive-experiment-assignment": (recordId) =>
+        sql`SELECT 1 FROM adaptive_experiment_assignments WHERE assignment_id = ${recordId}`,
     };
 
     for (const item of exported.events) {
       const resolver = resolvers[item.recordType];
       assert.isDefined(resolver, `missing resolver for ${item.recordType}`);
-      assert.isAtLeast((yield* resolver!()).length, 1, `unresolved ${item.recordId}`);
+      assert.isAtLeast((yield* resolver!(item.recordId)).length, 1, `unresolved ${item.recordId}`);
+      for (const reference of item.references) {
+        const referenceResolver = resolvers[reference.recordType];
+        if (referenceResolver === undefined) continue;
+        assert.isAtLeast(
+          (yield* referenceResolver(reference.recordId)).length,
+          1,
+          `unresolved reference ${reference.recordType}:${reference.recordId}`,
+        );
+      }
     }
 
     const v2Ids: ReadonlySet<string> = new Set([
       threadId,
+      pendingThreadId,
       runId,
       runAttemptId,
       nodeId,
@@ -525,10 +561,10 @@ it.effect(
       assert.isNull(capacity?.recordedAt ?? null);
       assert.isTrue(capacity?.unknownFields.includes("recordedAt"));
       assert.equal(
-        capacity?.facts.find((fact) => fact.key === "window.session.used.quality")?.value,
+        capacity?.facts.find((fact) => fact.key === "window.0.used.quality")?.value,
         "unknown",
       );
-      assert.isUndefined(capacity?.facts.find((fact) => fact.key === "window.session.used.value"));
+      assert.isUndefined(capacity?.facts.find((fact) => fact.key === "window.0.used.value"));
 
       const assignmentEvent = exported.events.find(
         (item) => item.recordType === "adaptive-experiment-assignment",
@@ -575,14 +611,27 @@ it.effect("appends corrections without rewriting the earlier decision export", (
       (item) => item.recordType === "adaptive-outcome-reconciliation",
     );
     assert.isDefined(correction);
-    assert.equal(correction?.evidenceClass, "correction");
+    assert.equal(correction?.lifecycleClass, "correction");
     assert.equal(correction?.facts.find((fact) => fact.key === "fromRevision")?.value, 1);
     assert.equal(correction?.facts.find((fact) => fact.key === "toRevision")?.value, 2);
+
+    const revisionFacts = (event: (typeof afterCorrection.events)[number]) =>
+      event.facts.find((fact) => fact.key === "revision")?.value;
+    const superseded = afterCorrection.events.find(
+      (item) => item.recordType === "adaptive-accepted-outcome" && revisionFacts(item) === 1,
+    );
+    assert.isDefined(superseded, "the superseded revision must remain recoverable");
+    assert.equal(superseded?.facts.find((fact) => fact.key === "state")?.value, "unresolved");
+    assert.equal(superseded?.facts.find((fact) => fact.key === "superseded")?.value, true);
+    const head = afterCorrection.events.find(
+      (item) => item.recordType === "adaptive-accepted-outcome" && revisionFacts(item) === 2,
+    );
+    assert.isDefined(head);
 
     const beforeLines = new Set(before.split("\n"));
     for (const line of beforeLines) {
       const event = decodeEvent(line);
-      if (event.evidenceClass === "outcome" || event.evidenceClass === "correction") continue;
+      if (event.lifecycleClass === "outcome" || event.lifecycleClass === "correction") continue;
       assert.isTrue(after.split("\n").includes(line), "earlier decision changed");
     }
   }).pipe(Effect.provide(layerTest)),
@@ -620,7 +669,7 @@ it.effect("represents the L2-style sequence without fabricating ledger-only deci
       ),
     );
 
-    const classes = new Set(reconstructed.events.map((item) => item.evidenceClass));
+    const classes = new Set(reconstructed.events.map((item) => item.lifecycleClass));
     assert.isTrue(classes.has("decision"));
     assert.isTrue(classes.has("outcome"));
 
@@ -650,5 +699,59 @@ it.effect("fails cleanly when the task does not exist", () =>
       evidence.exportTask(projectId, ProjectRuntimeTaskId.make("missing-task")),
     );
     assert.equal(error._tag, "OrchestrationEvidenceTaskNotFoundError");
+  }).pipe(Effect.provide(layerTest)),
+);
+
+it.effect("keeps JSONL deterministic when export time advances", () =>
+  Effect.gen(function* () {
+    yield* seedRuntime;
+    yield* seedAdaptive;
+    const evidence = yield* OrchestrationEvidenceService.OrchestrationEvidenceService;
+
+    const first = yield* evidence.exportTaskJsonl(projectId, taskId);
+    yield* TestClock.adjust("1 hour");
+    const second = yield* evidence.exportTaskJsonl(projectId, taskId);
+    assert.strictEqual(first, second);
+  }).pipe(Effect.provide(layerTest)),
+);
+
+it.effect("does not put post-launch run identity on the decision event", () =>
+  Effect.gen(function* () {
+    yield* seedRuntime;
+    yield* seedAdaptive;
+    const evidence = yield* OrchestrationEvidenceService.OrchestrationEvidenceService;
+    const sql = yield* SqlClient.SqlClient;
+
+    const eventId = `oev0:execution-attempt-decision:${pendingAttemptId}`;
+    const lineFor = (jsonl: string) => {
+      const line = jsonl
+        .split("\n")
+        .find((candidate) => decodeEvent(candidate).eventId === eventId);
+      assert.isDefined(line);
+      return line!;
+    };
+
+    const beforeLine = lineFor(yield* evidence.exportTaskJsonl(projectId, taskId));
+    const before = decodeEvent(beforeLine);
+    assert.isNull(before.runId);
+    assert.isFalse(
+      before.references.some((reference) => reference.recordType === "orchestration-v2-run"),
+    );
+
+    const completedPending: RuntimeExecutionAttempt = {
+      ...pendingAttempt,
+      status: "completed",
+      revision: 2,
+      runId: pendingRunId,
+      updatedAt: "2026-11-01T08:25:00.000Z",
+    };
+    yield* sql`UPDATE project_runtime_execution_attempts
+      SET status = ${completedPending.status}, revision = ${completedPending.revision},
+        run_id = ${pendingRunId}, updated_at = ${completedPending.updatedAt},
+        payload_json = ${encodeAttempt(completedPending)}
+      WHERE attempt_id = ${pendingAttemptId}`;
+
+    const afterLine = lineFor(yield* evidence.exportTaskJsonl(projectId, taskId));
+    assert.strictEqual(afterLine, beforeLine);
   }).pipe(Effect.provide(layerTest)),
 );

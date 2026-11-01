@@ -13,7 +13,7 @@ import {
   OrchestrationEvidenceTaskNotFoundError,
   ProjectRuntimeTask,
   RuntimeExecutionAttempt,
-  type OrchestrationEvidenceClass,
+  type OrchestrationEvidenceLifecycleClass,
   type OrchestrationEvidenceExport,
   type OrchestrationEvidenceFact,
   type OrchestrationEvidenceReconstruction,
@@ -84,14 +84,20 @@ const decodeCapacityPool = Schema.decodeUnknownEffect(CapacityPoolJson);
 const decodeCapacitySnapshot = Schema.decodeUnknownEffect(CapacitySnapshotJson);
 const encodeEvidenceEventJson = Schema.encodeEffect(EvidenceEventJson);
 
-const CLASS_ORDER: Record<OrchestrationEvidenceClass, number> = {
+const CLASS_ORDER: Record<OrchestrationEvidenceLifecycleClass, number> = {
   observation: 0,
   decision: 1,
   assessment: 2,
   outcome: 3,
   correction: 4,
 };
-const UNKNOWN_TIME = "9999-12-31T23:59:59.999Z";
+const UNKNOWN_TIME = Number.POSITIVE_INFINITY;
+
+const sortTime = (value: string | null): number => {
+  if (value === null) return UNKNOWN_TIME;
+  const parsed = Date.parse(value);
+  return Number.isFinite(parsed) ? parsed : UNKNOWN_TIME;
+};
 
 const facts = (
   entries: ReadonlyArray<readonly [key: string, value: FactValue | undefined]>,
@@ -113,14 +119,14 @@ const isTerminalAttemptStatus = (status: RuntimeExecutionAttemptStatus): boolean
   status === "cancelled" ||
   status === "interrupted";
 
-const taskEvent = (task: ProjectRuntimeTask, generatedAt: string): OrchestrationEvidenceEvent =>
+const taskEvent = (task: ProjectRuntimeTask): OrchestrationEvidenceEvent =>
   event({
     schemaVersion: ORCHESTRATION_EVIDENCE_SCHEMA_VERSION,
     eventId: `oev0:project-runtime-task:${task.taskId}`,
     recordType: "project-runtime-task",
     recordId: task.taskId,
-    evidenceClass: "observation",
-    recordNature: "derived",
+    lifecycleClass: "observation",
+    recordBasis: "derived-view",
     source: "runtime",
     projectId: task.projectId,
     taskId: task.taskId,
@@ -128,9 +134,9 @@ const taskEvent = (task: ProjectRuntimeTask, generatedAt: string): Orchestration
     threadId: null,
     runId: null,
     occurredAt: task.updatedAt,
-    recordedAt: generatedAt,
+    recordedAt: null,
     summary: `Runtime task ${task.status} at revision ${task.revision}`,
-    unknownFields: [],
+    unknownFields: ["recordedAt"],
     references: references([["project-runtime-handoff", task.latestHandoffId]]),
     facts: facts([
       ["status", task.status],
@@ -151,25 +157,30 @@ const attemptDecisionEvent = (attempt: RuntimeExecutionAttempt): OrchestrationEv
     eventId: `oev0:execution-attempt-decision:${attempt.attemptId}`,
     recordType: "execution-attempt-decision",
     recordId: attempt.attemptId,
-    evidenceClass: "decision",
-    recordNature: "derived",
+    lifecycleClass: "decision",
+    recordBasis: "derived-view",
     source: "runtime",
     projectId: attempt.projectId,
     taskId: attempt.taskId,
     attemptId: attempt.attemptId,
     threadId: attempt.threadId,
-    runId: attempt.runId,
+    runId: null,
     occurredAt: attempt.createdAt,
     recordedAt: attempt.createdAt,
     summary:
       selected === null
         ? `Routing decision ${attempt.receipt.route.status} without a selected route`
         : `Routing decision ${attempt.receipt.route.source}: ${selected.providerInstanceId}/${selected.model}`,
-    unknownFields: [],
+    unknownFields: [
+      "runId",
+      "choiceSet.perCandidateState",
+      "capacity",
+      "context",
+      "selectionMechanism",
+    ],
     references: references([
       ["project-runtime-task", attempt.taskId],
       ["orchestration-v2-thread", attempt.threadId],
-      ["orchestration-v2-run", attempt.runId],
     ]),
     facts: facts([
       ["route.status", attempt.receipt.route.status],
@@ -201,20 +212,20 @@ const attemptOutcomeEvent = (attempt: RuntimeExecutionAttempt): OrchestrationEvi
     eventId: `oev0:execution-attempt-outcome:${attempt.attemptId}`,
     recordType: "execution-attempt-outcome",
     recordId: attempt.attemptId,
-    evidenceClass: "outcome",
-    recordNature: "derived",
+    lifecycleClass: "outcome",
+    recordBasis: "derived-view",
     source: "runtime",
     projectId: attempt.projectId,
     taskId: attempt.taskId,
     attemptId: attempt.attemptId,
     threadId: attempt.threadId,
     runId: attempt.runId,
-    occurredAt: terminal ? attempt.updatedAt : null,
+    occurredAt: null,
     recordedAt: attempt.updatedAt,
     summary: terminal
       ? `Execution attempt ${attempt.status}`
       : `Execution attempt ${attempt.status}; terminal outcome not yet observed`,
-    unknownFields: terminal ? [] : ["occurredAt", "outcome"],
+    unknownFields: terminal ? ["occurredAt"] : ["occurredAt", "outcome"],
     references: references([
       ["execution-attempt-decision", attempt.attemptId],
       ["project-runtime-task", attempt.taskId],
@@ -237,8 +248,8 @@ const difficultyPredictionEvent = (
     eventId: `oev0:adaptive-difficulty-prediction:${prediction.predictionId}`,
     recordType: "adaptive-difficulty-prediction",
     recordId: prediction.predictionId,
-    evidenceClass: "decision",
-    recordNature: "canonical",
+    lifecycleClass: "decision",
+    recordBasis: "canonical-record",
     source: "adaptive-routing",
     projectId: prediction.projectId,
     taskId: prediction.taskId,
@@ -274,8 +285,8 @@ const realizedDifficultyEvent = (
     eventId: `oev0:adaptive-realized-difficulty:${realized.realizedDifficultyId}`,
     recordType: "adaptive-realized-difficulty",
     recordId: realized.realizedDifficultyId,
-    evidenceClass: "assessment",
-    recordNature: "canonical",
+    lifecycleClass: "assessment",
+    recordBasis: "canonical-record",
     source: "adaptive-routing",
     projectId: realized.projectId,
     taskId: realized.taskId,
@@ -306,8 +317,8 @@ const executionObservationEvent = (
     eventId: `oev0:adaptive-execution-observation:${observation.observationId}`,
     recordType: "adaptive-execution-observation",
     recordId: observation.observationId,
-    evidenceClass: "outcome",
-    recordNature: "canonical",
+    lifecycleClass: "outcome",
+    recordBasis: "canonical-record",
     source: "adaptive-routing",
     projectId: observation.projectId,
     taskId: observation.taskId,
@@ -367,18 +378,18 @@ const executionObservationEvent = (
 const acceptedOutcomeEvent = (outcome: AdaptiveAcceptedOutcome): OrchestrationEvidenceEvent =>
   event({
     schemaVersion: ORCHESTRATION_EVIDENCE_SCHEMA_VERSION,
-    eventId: `oev0:adaptive-accepted-outcome:${outcome.outcomeId}`,
+    eventId: `oev0:adaptive-accepted-outcome:${outcome.outcomeId}:r${outcome.revision}`,
     recordType: "adaptive-accepted-outcome",
     recordId: outcome.outcomeId,
-    evidenceClass: "outcome",
-    recordNature: "canonical",
+    lifecycleClass: "outcome",
+    recordBasis: "derived-view",
     source: "adaptive-routing",
     projectId: outcome.projectId,
     taskId: outcome.taskId,
     attemptId: null,
     threadId: null,
     runId: null,
-    occurredAt: outcome.reconciledAt,
+    occurredAt: outcome.provenance.observedAt,
     recordedAt: outcome.reconciledAt,
     summary: `Accepted outcome revision ${outcome.revision}: ${outcome.state}`,
     unknownFields: [],
@@ -400,15 +411,15 @@ const outcomeReconciliationEvent = (
     eventId: `oev0:adaptive-outcome-reconciliation:${reconciliation.reconciliationId}`,
     recordType: "adaptive-outcome-reconciliation",
     recordId: reconciliation.reconciliationId,
-    evidenceClass: "correction",
-    recordNature: "canonical",
+    lifecycleClass: "correction",
+    recordBasis: "canonical-record",
     source: "adaptive-routing",
     projectId: reconciliation.projectId,
     taskId: reconciliation.taskId,
     attemptId: null,
     threadId: null,
     runId: null,
-    occurredAt: reconciliation.reconciledAt,
+    occurredAt: reconciliation.provenance.observedAt,
     recordedAt: reconciliation.reconciledAt,
     summary: `Outcome corrected ${reconciliation.fromRevision}->${reconciliation.toRevision}: ${reconciliation.fromState} -> ${reconciliation.toState}`,
     unknownFields: [],
@@ -436,8 +447,8 @@ const recommendationReceiptEvent = (
     eventId: `oev0:adaptive-recommendation-receipt:${receipt.recommendationReceiptId}`,
     recordType: "adaptive-recommendation-receipt",
     recordId: receipt.recommendationReceiptId,
-    evidenceClass: "decision",
-    recordNature: "canonical",
+    lifecycleClass: "decision",
+    recordBasis: "canonical-record",
     source: "adaptive-routing",
     projectId: receipt.projectId,
     taskId: receipt.taskId,
@@ -479,8 +490,8 @@ const experimentAssignmentEvent = (
     eventId: `oev0:adaptive-experiment-assignment:${assignment.assignmentId}`,
     recordType: "adaptive-experiment-assignment",
     recordId: assignment.assignmentId,
-    evidenceClass: "decision",
-    recordNature: "canonical",
+    lifecycleClass: "decision",
+    recordBasis: "canonical-record",
     source: "adaptive-routing",
     projectId: assignment.projectId,
     taskId: assignment.taskId,
@@ -517,8 +528,8 @@ const capacityPoolEvent = (
     eventId: `oev0:adaptive-capacity-pool:${pool.capacityPoolId}`,
     recordType: "adaptive-capacity-pool",
     recordId: pool.capacityPoolId,
-    evidenceClass: "observation",
-    recordNature: "canonical",
+    lifecycleClass: "observation",
+    recordBasis: "canonical-record",
     source: "adaptive-routing",
     projectId,
     taskId: null,
@@ -529,7 +540,7 @@ const capacityPoolEvent = (
     recordedAt: pool.createdAt,
     summary: `Capacity pool ${pool.providerDriver} identity=${pool.identityQuality}`,
     unknownFields: [],
-    references: references([["provider-instance", pool.providerInstanceId]]),
+    references: [],
     facts: facts([
       ["scope", "environment"],
       ["providerDriver", pool.providerDriver],
@@ -547,8 +558,8 @@ const capacitySnapshotEvent = (
     eventId: `oev0:adaptive-capacity-snapshot:${snapshot.snapshotId}`,
     recordType: "adaptive-capacity-snapshot",
     recordId: snapshot.snapshotId,
-    evidenceClass: "observation",
-    recordNature: "canonical",
+    lifecycleClass: "observation",
+    recordBasis: "canonical-record",
     source: "adaptive-routing",
     projectId,
     taskId: null,
@@ -563,27 +574,62 @@ const capacitySnapshotEvent = (
     facts: facts([
       ["scope", "environment"],
       ["sourceQuality", snapshot.sourceQuality],
+      ["sourceRef", snapshot.sourceRef],
       ["windows.count", snapshot.windows.length],
       ["subscriptionPlanLabel.present", snapshot.subscriptionPlanLabel !== undefined],
-      ...snapshot.windows.flatMap((window) => [
-        [`window.${window.windowId}.windowType`, window.windowType] as const,
-        [`window.${window.windowId}.used.quality`, window.used.quality] as const,
+      ...snapshot.windows.flatMap((window, index) => [
+        [`window.${index}.id`, window.windowId] as const,
+        [`window.${index}.windowType`, window.windowType] as const,
+        [`window.${index}.used.quality`, window.used.quality] as const,
         [
-          `window.${window.windowId}.used.value`,
+          `window.${index}.used.value`,
           window.used.quality === "unknown" ? undefined : window.used.value,
         ] as const,
-        [`window.${window.windowId}.remaining.quality`, window.remaining.quality] as const,
+        [`window.${index}.remaining.quality`, window.remaining.quality] as const,
         [
-          `window.${window.windowId}.remaining.value`,
+          `window.${index}.remaining.value`,
           window.remaining.quality === "unknown" ? undefined : window.remaining.value,
         ] as const,
-        [`window.${window.windowId}.limit.quality`, window.limit.quality] as const,
+        [`window.${index}.limit.quality`, window.limit.quality] as const,
         [
-          `window.${window.windowId}.limit.value`,
+          `window.${index}.limit.value`,
           window.limit.quality === "unknown" ? undefined : window.limit.value,
         ] as const,
-        [`window.${window.windowId}.resetAt`, window.resetAt] as const,
+        [`window.${index}.resetAt`, window.resetAt] as const,
       ]),
+    ]),
+  });
+
+const supersededOutcomeEvent = (
+  reconciliation: AdaptiveOutcomeReconciliation,
+): OrchestrationEvidenceEvent =>
+  event({
+    schemaVersion: ORCHESTRATION_EVIDENCE_SCHEMA_VERSION,
+    eventId: `oev0:adaptive-accepted-outcome:${reconciliation.outcomeId}:from-r${reconciliation.fromRevision}`,
+    recordType: "adaptive-accepted-outcome",
+    recordId: reconciliation.outcomeId,
+    lifecycleClass: "outcome",
+    recordBasis: "derived-view",
+    source: "adaptive-routing",
+    projectId: reconciliation.projectId,
+    taskId: reconciliation.taskId,
+    attemptId: null,
+    threadId: null,
+    runId: null,
+    occurredAt: null,
+    recordedAt: null,
+    summary: `Accepted outcome revision ${reconciliation.fromRevision} (superseded): ${reconciliation.fromState}`,
+    unknownFields: ["occurredAt", "recordedAt"],
+    references: references([
+      ["project-runtime-task", reconciliation.taskId],
+      ["adaptive-accepted-outcome", reconciliation.outcomeId],
+      ["adaptive-outcome-reconciliation", reconciliation.reconciliationId],
+    ]),
+    facts: facts([
+      ["state", reconciliation.fromState],
+      ["revision", reconciliation.fromRevision],
+      ["superseded", true],
+      ["supersededBy", reconciliation.reconciliationId],
     ]),
   });
 
@@ -592,11 +638,11 @@ const compareEvents = (left: OrchestrationEvidenceEvent, right: OrchestrationEvi
   const rightTask = right.recordType === "project-runtime-task";
   if (leftTask !== rightTask) return leftTask ? -1 : 1;
 
-  const leftTime = left.occurredAt ?? left.recordedAt ?? UNKNOWN_TIME;
-  const rightTime = right.occurredAt ?? right.recordedAt ?? UNKNOWN_TIME;
+  const leftTime = sortTime(left.occurredAt ?? left.recordedAt);
+  const rightTime = sortTime(right.occurredAt ?? right.recordedAt);
   if (leftTime !== rightTime) return leftTime < rightTime ? -1 : 1;
 
-  const classDifference = CLASS_ORDER[left.evidenceClass] - CLASS_ORDER[right.evidenceClass];
+  const classDifference = CLASS_ORDER[left.lifecycleClass] - CLASS_ORDER[right.lifecycleClass];
   if (classDifference !== 0) return classDifference;
 
   return left.eventId < right.eventId ? -1 : left.eventId > right.eventId ? 1 : 0;
@@ -771,7 +817,7 @@ const make = Effect.gen(function* () {
 
     const generatedAt = yield* now;
     const events = sortEvents([
-      taskEvent(task, generatedAt),
+      taskEvent(task),
       ...attempts.flatMap((attempt) => [
         attemptDecisionEvent(attempt),
         attemptOutcomeEvent(attempt),
@@ -781,6 +827,7 @@ const make = Effect.gen(function* () {
       ...observations.map(executionObservationEvent),
       ...outcomes.map(acceptedOutcomeEvent),
       ...reconciliations.map(outcomeReconciliationEvent),
+      ...reconciliations.map(supersededOutcomeEvent),
       ...receipts.map(recommendationReceiptEvent),
       ...assignments.map(experimentAssignmentEvent),
       ...capacity.pools.map((pool) => capacityPoolEvent(projectId, pool)),
