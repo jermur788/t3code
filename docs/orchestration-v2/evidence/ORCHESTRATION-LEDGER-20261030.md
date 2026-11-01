@@ -801,3 +801,100 @@ V0 therefore exports and reconstructs what canonical state supports and marks th
 - Different provider family and different account instance from the orchestrator and from the d03a Codex cross-check.
 - The review verdict applies to `30b20c12cc`; the repairs in `00d8ca71bc` were validated by focused tests, typecheck, lint, knip, and formatting, but were **not** sent through a second independent review.
 - Reviewer false positives it dismissed: second datastore, parallel identity, invented executed model, dishonest capacity `recordedAt`, label errors on insert-only ARM records, rebase risk, CCF-specific code, privacy leakage, event-ID overflow.
+
+---
+
+# Run 3 — Orchestration Evidence V0 governing-spec repair — decision-time records
+
+Run: Local DeepSeek Evidence V0 repair (B1–B7)
+Date: 2026-11-01
+Orchestrator: DeepSeek V4.1 Flash (`opencode-go/deepseek-v4.1-flash`, OpenCode harness, variant `max`, agent `build`)
+Base: `e51c1c5d74aed9824927d391590ddb33026c8d56`
+Starting head: `14f0f10c5f2bb980aaabbb5da385daaa28267424`
+Governing spec: `docs/internals/orchestration-evidence-v0-spec.md @ d3a31b7fb89fd75c0d452c3b29a3d2ca9bb98acf`
+
+These decisions are prospective and recorded before repair implementation. They do not rewrite `ev0-20261101-d01..d12`.
+
+### D-EV0R-01 — Overall repair orchestration
+
+- `decision_id`: `ev0-repair-20261101-d01`
+- `recorded_at`: 2026-11-01T19:45Z
+- **Difficulty:** ambiguity 0.20; scope 0.75; reasoning 0.60; integration/tool 0.65; risk 0.60; verification 0.80; band `HIGH`; confidence 0.80.
+- **Candidates:** DeepSeek self (orchestrator, one writer); Claude/Codex bounded cross-checks; independent reviewer after repair.
+- **Selected executor:** DeepSeek self for orchestration and implementation; independent review by a non-DeepSeek provider after the repaired head exists.
+- **Rationale:** the repair is bounded to one isolated branch and one service/contract/test lane. DeepSeek already holds the archaeology and review context, and the directive keeps orchestration with DeepSeek. Independence remains mandatory for review.
+- **Alternatives rejected:** handing orchestration to a stronger model (violates the current prospective routing directive and would discard context); parallel writers on the same files (conflict risk).
+- **Selection mechanism:** forced orchestrator + planned independent review.
+- `machine`: `{"schema":"t3-orchestration-evidence-v2","event_id":"ev0-repair-20261101-d01","event_type":"routing_decision","occurred_at":"2026-11-01T19:45Z","recorded_at":"2026-11-01T19:45Z","project":"t3-fork","task":"evidence-v0-spec-repair-orchestration","orchestrator":{"provider":"opencode","model":"opencode-go/deepseek-v4.1-flash"},"selected":{"provider":"opencode","model":"opencode-go/deepseek-v4.1-flash"},"reviewer_planned":{"provider":"claudeAgent","model":"claude-opus-5-5"},"difficulty":{"ambiguity":0.20,"scope_breadth":0.75,"reasoning_complexity":0.60,"integration_tool_complexity":0.65,"risk":0.60,"verification_burden":0.80,"band":"HIGH","confidence":0.80},"selection":"forced_orchestrator_plus_planned_review","outcome":"PENDING"}`
+
+### D-EV0R-02 — V2 read-seam archaeology
+
+- `decision_id`: `ev0-repair-20261101-d02`
+- `recorded_at`: 2026-11-01T19:45Z
+- **Difficulty:** ambiguity 0.35; scope 0.55; reasoning 0.50; integration/tool 0.60; risk 0.35; verification 0.45; band `MEDIUM-HIGH`; confidence 0.80.
+- **Candidates:** DeepSeek self; bounded Claude/Codex read-only cross-check.
+- **Selected executor:** DeepSeek self.
+- **Rationale:** the governing spec explicitly prefers existing event-store seams. The relevant surfaces (`EventStoreV2.read`, bounded by `threadId`/`limit`) are local and inspectable; a second reader would add coordination cost without reducing risk.
+- **Alternatives rejected:** direct SQL over `orchestration_events` (duplicates the repository-owned read semantics); a new projection/read model (second truth surface).
+- **Selection mechanism:** exploit.
+- `machine`: `{"schema":"t3-orchestration-evidence-v2","event_id":"ev0-repair-20261101-d02","event_type":"routing_decision","occurred_at":"2026-11-01T19:45Z","recorded_at":"2026-11-01T19:45Z","project":"t3-fork","task":"evidence-v0-v2-read-seam-archaeology","orchestrator":{"provider":"opencode","model":"opencode-go/deepseek-v4.1-flash"},"selected":{"provider":"opencode","model":"opencode-go/deepseek-v4.1-flash"},"difficulty":{"ambiguity":0.35,"scope_breadth":0.55,"reasoning_complexity":0.50,"integration_tool_complexity":0.60,"risk":0.35,"verification_burden":0.45,"band":"MEDIUM-HIGH","confidence":0.80},"selection":"exploit","outcome":"PENDING"}`
+
+### D-EV0R-03 — Contract repair (authority, staging, export clock)
+
+- `decision_id`: `ev0-repair-20261101-d03`
+- `recorded_at`: 2026-11-01T19:45Z
+- **Difficulty:** ambiguity 0.25; scope 0.55; reasoning 0.55; integration/tool 0.50; risk 0.55; verification 0.60; band `MEDIUM-HIGH`; confidence 0.78.
+- **Candidates:** DeepSeek self; bounded contract review by reviewer.
+- **Selected executor:** DeepSeek self.
+- **Rationale:** these are additive envelope semantics required by the governing spec (B2, B6). Keeping them in one lane avoids split ownership of the contract.
+- **Alternatives rejected:** a second parallel envelope (duplicate contract); an export header only (still requires per-item or header clock semantics and is harder to test).
+- **Selection mechanism:** exploit + planned review.
+- `machine`: `{"schema":"t3-orchestration-evidence-v2","event_id":"ev0-repair-20261101-d03","event_type":"routing_decision","occurred_at":"2026-11-01T19:45Z","recorded_at":"2026-11-01T19:45Z","project":"t3-fork","task":"evidence-v0-contract-repair","orchestrator":{"provider":"opencode","model":"opencode-go/deepseek-v4.1-flash"},"selected":{"provider":"opencode","model":"opencode-go/deepseek-v4.1-flash"},"difficulty":{"ambiguity":0.25,"scope_breadth":0.55,"reasoning_complexity":0.55,"integration_tool_complexity":0.50,"risk":0.55,"verification_burden":0.60,"band":"MEDIUM-HIGH","confidence":0.78},"selection":"exploit_plus_planned_review","outcome":"PENDING"}`
+
+### D-EV0R-04 — Recommendation ambiguity and staging design
+
+- `decision_id`: `ev0-repair-20261101-d04`
+- `recorded_at`: 2026-11-01T19:45Z
+- **Difficulty:** ambiguity 0.45; scope 0.50; reasoning 0.65; integration/tool 0.45; risk 0.55; verification 0.55; band `HIGH`; confidence 0.75.
+- **Candidates:** DeepSeek self; independent reviewer for semantic check.
+- **Selected executor:** DeepSeek self.
+- **Rationale:** B3 and B4 are semantic classification problems over existing identities. They need one coherent design in the same service; splitting them risks inconsistent authority vocabulary.
+- **Alternatives rejected:** adding a canonical recommendation-to-attempt foreign key (explicitly prohibited for convenience); persisting staging rows (prohibited second datastore).
+- **Selection mechanism:** exploit + planned review.
+- `machine`: `{"schema":"t3-orchestration-evidence-v2","event_id":"ev0-repair-20261101-d04","event_type":"routing_decision","occurred_at":"2026-11-01T19:45Z","recorded_at":"2026-11-01T19:45Z","project":"t3-fork","task":"evidence-v0-ambiguity-staging-design","orchestrator":{"provider":"opencode","model":"opencode-go/deepseek-v4.1-flash"},"selected":{"provider":"opencode","model":"opencode-go/deepseek-v4.1-flash"},"difficulty":{"ambiguity":0.45,"scope_breadth":0.50,"reasoning_complexity":0.65,"integration_tool_complexity":0.45,"risk":0.55,"verification_burden":0.55,"band":"HIGH","confidence":0.75},"selection":"exploit_plus_planned_review","outcome":"PENDING"}`
+
+### D-EV0R-05 — Focused test implementation
+
+- `decision_id`: `ev0-repair-20261101-d05`
+- `recorded_at`: 2026-11-01T19:45Z
+- **Difficulty:** ambiguity 0.15; scope 0.60; reasoning 0.45; integration/tool 0.55; risk 0.35; verification 0.70; band `MEDIUM-HIGH`; confidence 0.85.
+- **Candidates:** DeepSeek self; delegate to a bounded test-only worker.
+- **Selected executor:** DeepSeek self.
+- **Rationale:** tests must preserve existing assertions and tie directly to the repaired implementation. The file is small and tightly coupled to the service; a test-only delegate would still need the same context.
+- **Alternatives rejected:** weakening or deleting existing tests (prohibited); a separate test harness/framework (unnecessary).
+- **Selection mechanism:** exploit.
+- `machine`: `{"schema":"t3-orchestration-evidence-v2","event_id":"ev0-repair-20261101-d05","event_type":"routing_decision","occurred_at":"2026-11-01T19:45Z","recorded_at":"2026-11-01T19:45Z","project":"t3-fork","task":"evidence-v0-repair-tests","orchestrator":{"provider":"opencode","model":"opencode-go/deepseek-v4.1-flash"},"selected":{"provider":"opencode","model":"opencode-go/deepseek-v4.1-flash"},"difficulty":{"ambiguity":0.15,"scope_breadth":0.60,"reasoning_complexity":0.45,"integration_tool_complexity":0.55,"risk":0.35,"verification_burden":0.70,"band":"MEDIUM-HIGH","confidence":0.85},"selection":"exploit","outcome":"PENDING"}`
+
+### D-EV0R-06 — Independent architecture/evidence review of repaired head
+
+- `decision_id`: `ev0-repair-20261101-d06`
+- `recorded_at`: 2026-11-01T19:45Z
+- **Difficulty:** ambiguity 0.30; scope 0.55; reasoning 0.70; integration/tool 0.40; risk 0.65; verification 0.60; band `HIGH`; confidence 0.70.
+- **Candidates:** Claude Opus 5.5 (`claudeAgent`); Claude B — Pro; Codex gpt-6.1-sol; DeepSeek self (rejected as non-independent).
+- **Selected executor:** Claude provider instance first, capacity substitution appended if needed.
+- **Rationale:** the pre-repair review does not cover B1–B7. The reviewer must inspect duplicate-source risk, V2 lifecycle duplication, outcome leakage, ambiguity, provenance, staging classification, bounded reads, export clocks, upstream compatibility, and genericity.
+- **Alternatives rejected:** reusing the prior review verdict (not applicable to the new head); self-review (not independent).
+- **Selection mechanism:** explore independent review + capacity substitution rule.
+- `machine`: `{"schema":"t3-orchestration-evidence-v2","event_id":"ev0-repair-20261101-d06","event_type":"routing_decision","occurred_at":"2026-11-01T19:45Z","recorded_at":"2026-11-01T19:45Z","project":"t3-fork","task":"evidence-v0-repaired-head-review","orchestrator":{"provider":"opencode","model":"opencode-go/deepseek-v4.1-flash"},"selected":{"provider":"claudeAgent","model":"claude-opus-5-5"},"difficulty":{"ambiguity":0.30,"scope_breadth":0.55,"reasoning_complexity":0.70,"integration_tool_complexity":0.40,"risk":0.65,"verification_burden":0.60,"band":"HIGH","confidence":0.70},"selection":"explore_independent_review","outcome":"PENDING"}`
+
+### D-EV0R-07 — Final verification and durable handoff
+
+- `decision_id`: `ev0-repair-20261101-d07`
+- `recorded_at`: 2026-11-01T19:45Z
+- **Difficulty:** ambiguity 0.15; scope 0.40; reasoning 0.35; integration/tool 0.45; risk 0.50; verification 0.80; band `MEDIUM`; confidence 0.85.
+- **Candidates:** DeepSeek self; delegate verification.
+- **Selected executor:** DeepSeek self.
+- **Rationale:** forced orchestrator responsibility. Verification must run on the repaired head and the handoff must reconcile every route and outcome honestly.
+- **Alternatives rejected:** delegating synthesis (orchestrator owns reconciliation).
+- **Selection mechanism:** forced orchestrator.
+- `machine`: `{"schema":"t3-orchestration-evidence-v2","event_id":"ev0-repair-20261101-d07","event_type":"routing_decision","occurred_at":"2026-11-01T19:45Z","recorded_at":"2026-11-01T19:45Z","project":"t3-fork","task":"evidence-v0-repair-verification-handoff","orchestrator":{"provider":"opencode","model":"opencode-go/deepseek-v4.1-flash"},"selected":{"provider":"opencode","model":"opencode-go/deepseek-v4.1-flash"},"difficulty":{"ambiguity":0.15,"scope_breadth":0.40,"reasoning_complexity":0.35,"integration_tool_complexity":0.45,"risk":0.50,"verification_burden":0.80,"band":"MEDIUM","confidence":0.85},"selection":"forced_orchestrator","outcome":"PENDING"}`

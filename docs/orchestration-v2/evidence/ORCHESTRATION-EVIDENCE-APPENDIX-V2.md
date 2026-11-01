@@ -228,3 +228,39 @@ Working branch: `feat/orchestration-evidence-v0-20261101`
 - **Blocking:** 3 (determinism, pre-launch run identity in a decision, mutable outcome head). All repaired in `00d8ca71bc`.
 - **Non-blocking:** 8; 7 addressed, 1 (RPC/MCP/CLI wiring) explicitly deferred as V0 scope.
 - **Re-review:** the repairs were not independently re-reviewed. They were verified by the expanded 9/9 focused suite, typecheck, lint, knip, and formatting.
+
+---
+
+# Run 3 — Orchestration Evidence V0 governing-spec repair — decision-time appendix
+
+Run: Local DeepSeek Evidence V0 repair (B1–B7)
+Date: 2026-11-01
+Orchestrator: DeepSeek V4.1 Flash (`opencode-go/deepseek-v4.1-flash`, OpenCode harness, variant `max`, agent `build`)
+Starting head: `14f0f10c5f2bb980aaabbb5da385daaa28267424`
+Base: `e51c1c5d74aed9824927d391590ddb33026c8d56`
+Governing spec: `docs/internals/orchestration-evidence-v0-spec.md @ d3a31b7fb89fd75c0d452c3b29a3d2ca9bb98acf`
+
+This section is recorded before repair execution. Outcomes are appended later and do not rewrite these rows.
+
+## R3.1 Routing and decomposition — decision-time entries
+
+| Decision                  | Work unit                                 | Band / confidence  | Selected            | Reviewer                | Selection                    | Recorded at       |
+| ------------------------- | ----------------------------------------- | ------------------ | ------------------- | ----------------------- | ---------------------------- | ----------------- |
+| `ev0-repair-20261101-d01` | Overall repair orchestration              | HIGH / 0.80        | DeepSeek V4.1 Flash | Claude Opus 5.5 planned | forced orchestrator + review | 2026-11-01T19:45Z |
+| `ev0-repair-20261101-d02` | V2 read-seam archaeology                  | MEDIUM-HIGH / 0.80 | DeepSeek V4.1 Flash | none                    | exploit                      | 2026-11-01T19:45Z |
+| `ev0-repair-20261101-d03` | Contract repair (authority/staging/clock) | MEDIUM-HIGH / 0.78 | DeepSeek V4.1 Flash | Claude Opus 5.5 planned | exploit + planned review     | 2026-11-01T19:45Z |
+| `ev0-repair-20261101-d04` | Ambiguity/staging design                  | HIGH / 0.75        | DeepSeek V4.1 Flash | Claude Opus 5.5 planned | exploit + planned review     | 2026-11-01T19:45Z |
+| `ev0-repair-20261101-d05` | Focused test implementation               | MEDIUM-HIGH / 0.85 | DeepSeek V4.1 Flash | none                    | exploit                      | 2026-11-01T19:45Z |
+| `ev0-repair-20261101-d06` | Independent review of repaired head       | HIGH / 0.70        | Claude Opus 5.5     | N/A                     | explore independent review   | 2026-11-01T19:45Z |
+| `ev0-repair-20261101-d07` | Final verification / handoff              | MEDIUM / 0.85      | DeepSeek V4.1 Flash | N/A                     | forced orchestrator          | 2026-11-01T19:45Z |
+
+## R3.2 Capacity at decision time
+
+| Provider/pool                               | State                            | Remaining capacity | Source                    | Observed at       |
+| ------------------------------------------- | -------------------------------- | ------------------ | ------------------------- | ----------------- |
+| OpenCode / DeepSeek V4.1 Flash              | AVAILABLE (running this session) | `UNKNOWN`          | T3 live catalog + session | 2026-11-01T19:45Z |
+| Claude A (`claudeAgent`)                    | AVAILABLE (listed)               | `UNKNOWN`          | T3 live catalog           | 2026-11-01T19:45Z |
+| Claude B — Pro (`claudeAgent_claude_b_pro`) | AVAILABLE (listed)               | `UNKNOWN`          | T3 live catalog           | 2026-11-01T19:45Z |
+| Codex / OpenAI B                            | AVAILABLE (listed)               | `UNKNOWN`          | T3 live catalog           | 2026-11-01T19:45Z |
+
+At dispatch: capacity-to-completion `SUFFICIENT` for DeepSeek local work; `UNKNOWN` for independent review until dispatched. Capacity substitution, if needed, will be appended as a new decision rather than editing these rows.
