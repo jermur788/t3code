@@ -11,6 +11,7 @@ import {
   type ServerProviderModel,
   type ServerSettings,
 } from "@t3tools/contracts";
+import type { ProviderInstanceCapacity } from "@t3tools/shared/usageLimits";
 import { assert, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 import * as Result from "effect/Result";
@@ -72,6 +73,7 @@ interface ViewState {
   readonly providers: ReadonlyArray<ServerProvider>;
   readonly settings: ServerSettings;
   readonly orchestrationCapableInstanceIds: ReadonlySet<ProviderInstanceId>;
+  readonly capacityByInstanceId: ReadonlyMap<ProviderInstanceId, ProviderInstanceCapacity>;
 }
 
 const layerFor = (state: ViewState) =>
@@ -89,6 +91,7 @@ const defaultState: ViewState = {
   providers: [provider()],
   settings: DEFAULT_SERVER_SETTINGS,
   orchestrationCapableInstanceIds: new Set([codex]),
+  capacityByInstanceId: new Map(),
 };
 
 it.effect("saves, resets, and compare-and-sets project routing", () =>

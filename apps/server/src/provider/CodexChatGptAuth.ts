@@ -34,6 +34,14 @@ import * as ServerEnvironment from "../environment/ServerEnvironment.ts";
 const isSetupError = Schema.is(ProviderSetupError);
 const RESOURCE = "https://api.openai.com/v1";
 const REQUIRED_SCOPE = "chatgpt.tokens.use.direct";
+const REFRESH_REJECTION_CODES = new Set([
+  "invalid_grant",
+  "invalid_refresh_token",
+  "token_expired",
+  "refresh_token_expired",
+  "refresh_token_invalidated",
+  "refresh_token_reused",
+]);
 const DISCOVERY = "https://auth.openai.com/.well-known/openid-configuration";
 const TokenResponse = Schema.Struct({
   access_token: Schema.NonEmptyString,
@@ -402,17 +410,14 @@ export const makeCodexChatGptAuth = Effect.fn("makeCodexChatGptAuth")(function* 
         try: () => decodeOAuthError(response.raw).error,
         catch: () => failure("exchange", "ChatGPT did not accept this sign-in. Try again."),
       });
-      if (
-        body.get("grant_type") === "refresh_token" &&
-        [
-          "invalid_grant",
-          "invalid_refresh_token",
-          "token_expired",
-          "refresh_token_expired",
-          "refresh_token_invalidated",
-          "refresh_token_reused",
-        ].includes(error)
-      ) {
+      if (body.get("grant_type") === "refresh_token" && REFRESH_REJECTION_CODES.has(error)) {
+        yield* Effect.logWarning("ChatGPT refresh token rejected").pipe(
+          Effect.annotateLogs({
+            instanceId: options.instanceId,
+            operation: "refresh",
+            oauthError: error,
+          }),
+        );
         yield* remove;
         return yield* failure(
           "refresh",
