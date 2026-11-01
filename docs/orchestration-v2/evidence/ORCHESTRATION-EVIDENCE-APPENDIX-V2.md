@@ -264,3 +264,19 @@ This section is recorded before repair execution. Outcomes are appended later an
 | Codex / OpenAI B                            | AVAILABLE (listed)               | `UNKNOWN`          | T3 live catalog           | 2026-11-01T19:45Z |
 
 At dispatch: capacity-to-completion `SUFFICIENT` for DeepSeek local work; `UNKNOWN` for independent review until dispatched. Capacity substitution, if needed, will be appended as a new decision rather than editing these rows.
+
+## R3.3 Outcome summary
+
+| Decision                   | Actual executor         | State                   | Key evidence                                                                |
+| -------------------------- | ----------------------- | ----------------------- | --------------------------------------------------------------------------- |
+| `ev0-repair-20261101-d01`  | DeepSeek V4.1 Flash     | STATIC PASS             | Repair orchestration; no merge                                              |
+| `ev0-repair-20261101-d02`  | DeepSeek V4.1 Flash     | COMPLETED               | Bounded `EventStoreV2.read` seam; no global corpus                          |
+| `ev0-repair-20261101-d03`  | DeepSeek V4.1 Flash     | COMPLETED               | Authority vocabulary, staging basis, `exportedAt`                           |
+| `ev0-repair-20261101-d04`  | DeepSeek V4.1 Flash     | COMPLETED               | Unique/AMBIGUOUS recommendation links; staging coexistence                  |
+| `ev0-repair-20261101-d05`  | DeepSeek V4.1 Flash     | STATIC PASS             | 24/24 focused exporter tests; 32/32 neighbors                               |
+| `ev0-repair-20261101-d06`  | none (Claude A)         | BLOCKED                 | `provider_capacity`: Claude API rate limit                                  |
+| `ev0-repair-20261101-d06a` | Codex gpt-6.1-sol       | REVIEW FAIL ×2          | Two independent rounds; all blockers repaired; round 3 blocked by usage cap |
+| `ev0-repair-20261101-d06b` | Claude B — Pro Opus 5.5 | REVIEW PASS W/ FINDINGS | No blockers; N1–N3 repaired and re-reviewed at `7db996d`                    |
+| `ev0-repair-20261101-d07`  | DeepSeek V4.1 Flash     | STATIC PASS             | Final handoff; no RUNTIME PASS, no merge                                    |
+
+Remaining non-blocking/UNKNOWN: V2 1,000-event read cap has no truncation marker; cross-task staging references are dropped; 2,000-reference cap is finite; no transport wiring or live-service/real-DB verification; ARM producers remain the next milestone. PR #14 stayed frozen at `e51c1c5d74`.

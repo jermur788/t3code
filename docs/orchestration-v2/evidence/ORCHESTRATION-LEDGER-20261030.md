@@ -940,3 +940,32 @@ These decisions are prospective and recorded before repair implementation. They 
 - **Alternatives rejected:** waiting for Codex reset (blocked for days); self-review (not independent); shipping without a final review (would leave the repaired head unreviewed).
 - **Selection mechanism:** forced capacity substitution.
 - `machine`: `{"schema":"t3-orchestration-evidence-v2","event_id":"ev0-repair-20261101-d06b","event_type":"routing_decision","occurred_at":"2026-11-01T20:16Z","recorded_at":"2026-11-01T20:16Z","project":"t3-fork","task":"evidence-v0-final-review-substitute","orchestrator":{"provider":"opencode","model":"opencode-go/deepseek-v4.1-flash"},"selected":{"provider":"claudeAgent_claude_b_pro","model":"claude-opus-5-5"},"difficulty":{"ambiguity":0.30,"scope_breadth":0.55,"reasoning_complexity":0.70,"integration_tool_complexity":0.40,"risk":0.65,"verification_burden":0.60,"band":"HIGH","confidence":0.65},"selection":"forced_capacity_substitution","prior_attempt":"ev0-repair-20261101-d06a","outcome":"PENDING"}`
+
+## Appended outcome — D-EV0R-06b final independent review
+
+- `decision_id`: `ev0-repair-20261101-d06b`
+- `recorded_at`: 2026-11-01T20:37Z
+- **State:** `REVIEW PASS WITH FINDINGS`; no blocking findings.
+- **Actual executor:** Claude B — Pro (`claudeAgent_claude_b_pro`) / `claude-opus-5-5`, effort `high`, read-only.
+- **Reviewed code head:** `fedfcdf7f575eecc223037640e0bec5e2042e35e`. The review found no blocking defects. Non-blocking findings:
+  - N1: `provider-session.detached` produced a false unresolved marker because the resolver skipped events without `payload.id` before the detached branch.
+  - N2: comparator was not transitive and could emit later outcome heads before superseded revisions.
+  - N3: >100 references (101 admissible receipts) produced an invalid link item and JSONL export failure.
+  - N4: V2 reads stop silently at 1,000 events per thread with no truncation marker (not repaired).
+- **Repairs:** detached branch moved before the id guard; comparator rewritten into contiguous V2 / outcome-head / correction blocks with revision-first ordering inside blocks; references cap raised to 2,000 with a 101-receipt test.
+- **Repaired head re-review (`7db996d23a87bb8eab9041bf2d969e38c1129865`):** `REVIEW PASS WITH FINDINGS`, no new blockers. N1/N2/N3 = REPAIRED. Remaining non-blocking/UNKNOWN: N4 silent 1,000-event truncation marker; cross-task staging references silently dropped; theoretical V2 ID length; hard 2,000-reference cap; outcome-head block ordering is a deliberate deterministic choice rather than true chronology; contract cap loosening may affect consumers still on the old 100-reference limit.
+- **Verdict discipline:** static/test-level only. No `RUNTIME PASS`.
+
+## Appended outcome — D-EV0R-07 final verification and handoff
+
+- `decision_id`: `ev0-repair-20261101-d07`
+- `recorded_at`: 2026-11-01T20:39Z
+- **State:** `STATIC PASS / REVIEW PASS WITH FINDINGS / NOT RUNTIME PASS / NOT MERGED`.
+- **Code head:** `7db996d23a87bb8eab9041bf2d969e38c1129865` (this docs commit follows it). Base/merge-base remains `e51c1c5d74aed9824927d391590ddb33026c8d56`.
+- **Focused tests:** `OrchestrationEvidenceService.test.ts` 24/24 pass; `AdaptiveRoutingService.test.ts` + `RuntimeTaskExecutionService.test.ts` 32/32 pass; combined 56/56.
+- **Typechecks:** `@t3tools/contracts` pass; `t3` server pass.
+- **Static gates:** per-commit `vp fmt`, `vp lint`, and `vp run knip:check` passed; targeted `knip` over `apps/server` and `packages/contracts` clean; `git diff --check` clean.
+- **B1–B7:** B1 bounded V2 reads/refs (including detached and context-handoff refs) satisfied; B2 six authorities; B3 unique/ambiguous recommendation links; B4 real L2 staging coexistence; B5 requested/selected/executed separation with executed UNKNOWN; B6 separate occurrence/recording/export clocks with stable item identity; B7 Runtime verification/handoff distinct from ARM verification.
+- **Remaining UNKNOWNs/blockers:** no live-service/real-database exercise; no RPC/MCP/CLI/UI transport; 1,000-event V2 read limit lacks a truncation marker; cross-task staging references are dropped; ARM producers remain unwired (later milestone); 2,000-reference cap is finite.
+- **PR #14:** untouched at `sync/upstream-20261031 @ e51c1c5d74aed9824927d391590ddb33026c8d56`; not merged, not advanced, not strengthened by this work.
+- **Next action:** Browser Overall inspects the exact final diff and evidence; do not merge. Transport wiring plus live/real-DB verification is the next milestone.
