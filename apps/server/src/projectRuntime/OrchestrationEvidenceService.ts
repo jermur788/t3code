@@ -266,10 +266,10 @@ const difficultyPredictionEvent = (prediction: AdaptiveDifficultyPrediction): Dr
     attemptId: null,
     threadId: null,
     runId: null,
-    occurredAt: prediction.createdAt,
+    occurredAt: null,
     recordedAt: prediction.createdAt,
     summary: `Difficulty prediction ${prediction.assessment.band}`,
-    unknownFields: [],
+    unknownFields: ["occurredAt"],
     references: references([["project-runtime-task", prediction.taskId]]),
     facts: facts([
       ["band", prediction.assessment.band],
@@ -301,10 +301,10 @@ const realizedDifficultyEvent = (realized: AdaptiveRealizedDifficulty): DraftEve
     attemptId: null,
     threadId: null,
     runId: null,
-    occurredAt: realized.createdAt,
+    occurredAt: null,
     recordedAt: realized.createdAt,
     summary: `Realized difficulty ${realized.assessment.band}`,
-    unknownFields: [],
+    unknownFields: ["occurredAt"],
     references: references([["project-runtime-task", realized.taskId]]),
     facts: facts([
       ["band", realized.assessment.band],
@@ -333,10 +333,11 @@ const executionObservationEvent = (
     attemptId: observation.attemptId,
     threadId: observation.execution?.threadId ?? null,
     runId: observation.execution?.runId ?? null,
-    occurredAt: observation.createdAt,
+    occurredAt: null,
     recordedAt: observation.createdAt,
     summary: `Execution observation failure=${observation.failure?.class ?? "none"} verification=${verification?.result ?? "unknown"}`,
     unknownFields: [
+      "occurredAt",
       ...(configuration === undefined ? ["configuration"] : []),
       ...(executed?.quality === "unknown" ? ["configuration.executed"] : []),
       ...(verification === undefined ? ["verification"] : []),
@@ -356,6 +357,11 @@ const executionObservationEvent = (
       ["orchestration-v2-provider-session", observation.execution?.providerSessionId],
       ["orchestration-v2-provider-thread", observation.execution?.providerThreadId],
       ["orchestration-v2-context-transfer", observation.execution?.contextTransferId],
+      [
+        "adaptive-execution-evidence",
+        executed?.quality === "unknown" ? undefined : executed?.evidenceRef,
+      ],
+      ["adaptive-failure-evidence", observation.failure?.evidenceRef],
     ]),
     facts: facts([
       ["configuration.requested.instanceId", configuration?.requested.instanceId],
@@ -372,7 +378,12 @@ const executionObservationEvent = (
         executed?.quality === "unknown" ? undefined : executed?.selection.model,
       ],
       ["configuration.substitutionReason", configuration?.substitutionReason],
+      [
+        "configuration.executed.evidenceRef",
+        executed?.quality === "unknown" ? undefined : executed?.evidenceRef,
+      ],
       ["failure.class", observation.failure?.class],
+      ["failure.evidenceRef", observation.failure?.evidenceRef],
       ["verification.profileId", verification?.profileId],
       ["verification.result", verification?.result],
       ["verification.independence", verification?.independence],
@@ -459,13 +470,13 @@ const recommendationReceiptEvent = (receipt: AdaptiveRecommendationReceipt): Dra
     attemptId: null,
     threadId: null,
     runId: null,
-    occurredAt: receipt.createdAt,
+    occurredAt: null,
     recordedAt: receipt.createdAt,
     summary:
       receipt.recommendedCandidate === null
         ? "Advisory routing recommendation with no candidate"
         : `Advisory routing recommendation: ${receipt.recommendedCandidate.instanceId}/${receipt.recommendedCandidate.model}`,
-    unknownFields: [],
+    unknownFields: ["occurredAt"],
     references: references([
       ["project-runtime-task", receipt.taskId],
       ["adaptive-difficulty-prediction", receipt.predictionId],
@@ -500,10 +511,11 @@ const experimentAssignmentEvent = (assignment: AdaptiveExperimentAssignment): Dr
     attemptId: null,
     threadId: null,
     runId: null,
-    occurredAt: assignment.createdAt,
+    occurredAt: null,
     recordedAt: assignment.createdAt,
     summary: `Experiment assignment ${assignment.method}: ${assignment.assignedCandidate.instanceId}/${assignment.assignedCandidate.model}`,
-    unknownFields: assignment.propensity === undefined ? ["propensity"] : [],
+    unknownFields:
+      assignment.propensity === undefined ? ["occurredAt", "propensity"] : ["occurredAt"],
     references: references([
       ["project-runtime-task", assignment.taskId],
       ...assignment.capacitySnapshotIds.map(
@@ -538,10 +550,10 @@ const capacityPoolEvent = (
     attemptId: null,
     threadId: null,
     runId: null,
-    occurredAt: pool.createdAt,
+    occurredAt: null,
     recordedAt: pool.createdAt,
     summary: `Capacity pool ${pool.providerDriver} identity=${pool.identityQuality}`,
-    unknownFields: [],
+    unknownFields: ["occurredAt"],
     references: [],
     facts: facts([
       ["scope", "environment"],
@@ -652,7 +664,7 @@ const runtimeVerificationEvent = (
     runId: null,
     occurredAt: null,
     recordedAt: evidence.recordedAt,
-    summary: `Runtime verification ${evidence.result}: ${evidence.summary}`,
+    summary: `Runtime verification ${evidence.result} for ${evidence.evidenceId}`,
     unknownFields: ["occurredAt"],
     references: references([["project-runtime-task", task.taskId]]),
     facts: facts([
@@ -744,6 +756,31 @@ const v2Event = (
 ): DraftEvent => {
   const occurredAt = DateTime.formatIso(stored.event.occurredAt);
   const sequenceKey = String(stored.sequence).padStart(12, "0");
+  const payload = stored.event.payload as {
+    readonly id?: string;
+    readonly runId?: string;
+  };
+  const payloadRunId =
+    typeof payload.runId === "string"
+      ? payload.runId
+      : stored.event.type === "run.created" || stored.event.type === "run.updated"
+        ? payload.id
+        : undefined;
+  const executionRunId = stored.event.runId ?? payloadRunId ?? null;
+  const payloadEntityReference: readonly [string, string | null] | null =
+    typeof payload.id !== "string"
+      ? null
+      : stored.event.type.startsWith("run-attempt.")
+        ? ["orchestration-v2-run-attempt", payload.id]
+        : stored.event.type === "node.updated"
+          ? ["orchestration-v2-node", payload.id]
+          : stored.event.type.startsWith("provider-session.")
+            ? ["orchestration-v2-provider-session", payload.id]
+            : stored.event.type === "provider-thread.updated"
+              ? ["orchestration-v2-provider-thread", payload.id]
+              : stored.event.type.startsWith("context-transfer.")
+                ? ["orchestration-v2-context-transfer", payload.id]
+                : null;
   return event({
     schemaVersion: ORCHESTRATION_EVIDENCE_SCHEMA_VERSION,
     eventId: `oev0:orchestration-v2-event:${sequenceKey}:${stored.event.id}`,
@@ -756,7 +793,7 @@ const v2Event = (
     taskId,
     attemptId,
     threadId: stored.event.threadId,
-    runId: stored.event.runId ?? null,
+    runId: executionRunId,
     occurredAt,
     recordedAt: null,
     summary: `Orchestration V2 ${stored.event.type} at sequence ${stored.sequence}`,
@@ -764,11 +801,14 @@ const v2Event = (
     references: references([
       ["orchestration-v2-event", stored.event.id],
       ["orchestration-v2-thread", stored.event.threadId],
-      ["orchestration-v2-run", stored.event.runId],
+      ["orchestration-v2-run", executionRunId],
+      ...(payloadEntityReference === null ? [] : [payloadEntityReference]),
     ]),
     facts: facts([
       ["sequence", stored.sequence],
       ["event.type", stored.event.type],
+      ["payload.id", payload.id],
+      ["payload.runId", payload.runId],
       ["source.occurredAt", occurredAt],
       ["source.recordedAt", null],
     ]),
@@ -838,20 +878,21 @@ const stagingEvent = (reference: OrchestrationEvidenceStagingReference): DraftEv
     ]),
   });
 
-const compareEvents = (left: DraftEvent, right: DraftEvent) => {
+const makeEventComparator = (v2BlockTime: number) => (left: DraftEvent, right: DraftEvent) => {
   const leftTask = left.recordType === "project-runtime-task";
   const rightTask = right.recordType === "project-runtime-task";
   if (leftTask !== rightTask) return leftTask ? -1 : 1;
 
-  if (
-    left.recordType === "orchestration-v2-event" &&
-    right.recordType === "orchestration-v2-event"
-  ) {
+  const leftV2 = left.recordType === "orchestration-v2-event";
+  const rightV2 = right.recordType === "orchestration-v2-event";
+  if (leftV2 && rightV2) {
     return left.eventId < right.eventId ? -1 : left.eventId > right.eventId ? 1 : 0;
   }
 
-  const leftTime = sortTime(left.occurredAt ?? left.recordedAt);
-  const rightTime = sortTime(right.occurredAt ?? right.recordedAt);
+  // V2 events stay in one contiguous block so canonical event-store sequence is a
+  // total order. The block is positioned by its earliest V2 occurrence time.
+  const leftTime = leftV2 ? v2BlockTime : sortTime(left.occurredAt ?? left.recordedAt);
+  const rightTime = rightV2 ? v2BlockTime : sortTime(right.occurredAt ?? right.recordedAt);
   if (leftTime !== rightTime) return leftTime < rightTime ? -1 : 1;
 
   const classDifference = CLASS_ORDER[left.lifecycleClass] - CLASS_ORDER[right.lifecycleClass];
@@ -860,8 +901,13 @@ const compareEvents = (left: DraftEvent, right: DraftEvent) => {
   return left.eventId < right.eventId ? -1 : left.eventId > right.eventId ? 1 : 0;
 };
 
-const sortEvents = (events: ReadonlyArray<DraftEvent>): ReadonlyArray<DraftEvent> =>
-  [...events].sort(compareEvents);
+const sortEvents = (events: ReadonlyArray<DraftEvent>): ReadonlyArray<DraftEvent> => {
+  const v2Times = events
+    .filter((event) => event.recordType === "orchestration-v2-event")
+    .map((event) => sortTime(event.occurredAt ?? event.recordedAt));
+  const v2BlockTime = v2Times.length === 0 ? UNKNOWN_TIME : Math.min(...v2Times);
+  return [...events].sort(makeEventComparator(v2BlockTime));
+};
 
 const make = Effect.gen(function* () {
   const sql = yield* SqlClient.SqlClient;
@@ -967,7 +1013,7 @@ const make = Effect.gen(function* () {
       resolved.get("orchestration-v2-thread")!.add(event.threadId);
       if (event.runId !== undefined) resolved.get("orchestration-v2-run")!.add(event.runId);
       if (event.nodeId !== undefined) resolved.get("orchestration-v2-node")!.add(event.nodeId);
-      const payload = event.payload as { readonly id?: string };
+      const payload = event.payload as { readonly id?: string; readonly runId?: string };
       if (typeof payload.id !== "string") continue;
       if (event.type.startsWith("thread.")) {
         resolved.get("orchestration-v2-thread")!.add(payload.id);
@@ -975,6 +1021,9 @@ const make = Effect.gen(function* () {
         resolved.get("orchestration-v2-run")!.add(payload.id);
       } else if (event.type.startsWith("run-attempt.")) {
         resolved.get("orchestration-v2-run-attempt")!.add(payload.id);
+        if (typeof payload.runId === "string") {
+          resolved.get("orchestration-v2-run")!.add(payload.runId);
+        }
       } else if (event.type === "node.updated") {
         resolved.get("orchestration-v2-node")!.add(payload.id);
       } else if (event.type.startsWith("provider-session.")) {

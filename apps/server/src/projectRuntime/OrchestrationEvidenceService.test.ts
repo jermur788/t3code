@@ -11,11 +11,14 @@ import {
   AdaptiveRecommendationReceiptId,
   EventId,
   MessageId,
+  NodeId,
   OrchestrationEvidenceEvent,
   ProjectId,
   ProjectRuntimeTaskId,
   ProviderDriverKind,
   ProviderInstanceId,
+  ProviderThreadId,
+  RunAttemptId,
   RunId,
   RuntimeExecutionAttemptId,
   ThreadId,
@@ -56,6 +59,9 @@ const taskId = ProjectRuntimeTaskId.make("ev0-task");
 const attemptId = RuntimeExecutionAttemptId.make("ev0-attempt");
 const threadId = ThreadId.make("thread:ev0");
 const runId = RunId.make("run:ev0");
+const runAttemptId = RunAttemptId.make("run-attempt:ev0");
+const providerThreadId = ProviderThreadId.make("provider-thread:ev0");
+const nodeId = NodeId.make("node:ev0");
 const predictionId = AdaptiveDifficultyPredictionId.make("ev0-prediction");
 const realizedDifficultyId = AdaptiveRealizedDifficultyId.make("ev0-realized");
 const observationId = AdaptiveExecutionObservationId.make("ev0-observation");
@@ -486,6 +492,53 @@ const v2RunCreated: OrchestrationV2DomainEvent = {
     contextHandoffId: null,
   },
 };
+
+const v2RunAttemptCreatedId = EventId.make("event:ev0-run-attempt-created");
+const v2RunAttemptCreated: OrchestrationV2DomainEvent = {
+  id: v2RunAttemptCreatedId,
+  type: "run-attempt.created",
+  threadId,
+  occurredAt: v2At,
+  payload: {
+    id: runAttemptId,
+    runId,
+    attemptOrdinal: 1,
+    rootNodeId: nodeId,
+    providerInstanceId: opencode,
+    providerThreadId,
+    providerTurnId: null,
+    reason: "initial",
+    status: "running",
+    startedAt: v2At,
+    completedAt: null,
+  },
+};
+
+const v2NodeUpdated = (id: NodeId, occurredAt: string): OrchestrationV2DomainEvent => ({
+  id: EventId.make(`event:${id}:updated`),
+  type: "node.updated",
+  threadId,
+  runId,
+  nodeId: id,
+  occurredAt: DateTime.makeUnsafe(occurredAt),
+  payload: {
+    id,
+    threadId,
+    runId,
+    parentNodeId: null,
+    rootNodeId: id,
+    kind: "root_turn",
+    status: "running",
+    countsForRun: true,
+    providerThreadId: null,
+    providerTurnId: null,
+    nativeItemRef: null,
+    runtimeRequestId: null,
+    checkpointScopeId: null,
+    startedAt: null,
+    completedAt: null,
+  },
+});
 
 const seedV2 = Effect.gen(function* () {
   const eventStore = yield* EventStore.EventStoreV2;
@@ -1157,4 +1210,121 @@ it.effect("uses explicit authorities for Runtime, ARM, V2, and staging evidence"
     assert.isTrue(authorities.has("orchestration-v2"));
     assert.isTrue(authorities.has("project-staging"));
   }).pipe(Effect.provide(layerTest)),
+);
+
+it.effect("preserves run-attempt execution identities in V2 evidence", () =>
+  Effect.gen(function* () {
+    yield* seedAll;
+    const eventStore = yield* EventStore.EventStoreV2;
+    yield* eventStore.append({ events: [v2RunAttemptCreated] });
+    const evidence = yield* OrchestrationEvidenceService.OrchestrationEvidenceService;
+    const exported = yield* evidence.exportTask(projectId, taskId);
+
+    const item = exported.events.find((event) => event.recordId === v2RunAttemptCreatedId);
+    assert.isDefined(item);
+    assert.equal(item?.runId, runId);
+    assert.equal(item?.facts.find((fact) => fact.key === "payload.runId")?.value, runId);
+    assert.isTrue(
+      item?.references.some(
+        (reference) =>
+          reference.recordType === "orchestration-v2-run-attempt" &&
+          reference.recordId === runAttemptId,
+      ),
+    );
+    assert.isFalse(
+      exported.events.some(
+        (event) =>
+          event.recordType === "orchestration-v2-unresolved" && event.recordId === runAttemptId,
+      ),
+    );
+  }).pipe(Effect.provide(layerTest)),
+);
+
+it.effect("orders V2 evidence by canonical sequence even when source times disagree", () =>
+  Effect.gen(function* () {
+    yield* seedAll;
+    const eventStore = yield* EventStore.EventStoreV2;
+    const firstNodeId = NodeId.make("node:ev0-sequence-three");
+    const secondNodeId = NodeId.make("node:ev0-sequence-four");
+    yield* eventStore.append({
+      events: [
+        v2NodeUpdated(firstNodeId, "2026-11-01T09:00:00.000Z"),
+        v2NodeUpdated(secondNodeId, "2026-11-01T07:00:00.000Z"),
+      ],
+    });
+    const evidence = yield* OrchestrationEvidenceService.OrchestrationEvidenceService;
+    const exported = yield* evidence.exportTask(projectId, taskId);
+    const sequences = exported.events
+      .filter((event) => event.recordType === "orchestration-v2-event")
+      .map((event) => event.facts.find((fact) => fact.key === "sequence")?.value);
+    assert.deepEqual(sequences, [1, 2, 3, 4]);
+  }).pipe(Effect.provide(layerTest)),
+);
+
+it.effect("keeps long Runtime verification summaries decodable in JSONL", () =>
+  Effect.gen(function* () {
+    yield* seedAll;
+    const sql = yield* SqlClient.SqlClient;
+    const evidence = yield* OrchestrationEvidenceService.OrchestrationEvidenceService;
+    const longSummary = `verification ${"x".repeat(800)}`;
+    const modifiedTask: ProjectRuntimeTask = {
+      ...task,
+      verification: {
+        ...task.verification,
+        evidence: task.verification.evidence.map((item, index) =>
+          index === 0 ? { ...item, summary: longSummary } : item,
+        ),
+      },
+    };
+    yield* sql`UPDATE project_runtime_tasks
+      SET payload_json = ${encodeTask(modifiedTask)}
+      WHERE task_id = ${taskId} AND project_id = ${projectId}`;
+
+    const jsonl = yield* evidence.exportTaskJsonl(projectId, taskId);
+    const decoded = jsonl
+      .split("\n")
+      .filter(Boolean)
+      .map((line) => decodeEvent(line));
+    const verification = decoded.find(
+      (event) => event.recordType === "project-runtime-verification",
+    );
+    assert.isDefined(verification);
+    assert.isAtMost(verification!.summary.length, 512);
+    assert.equal(verification!.facts.find((fact) => fact.key === "summary")?.value, longSummary);
+  }).pipe(Effect.provide(layerTest)),
+);
+
+it.effect(
+  "leaves unsupported occurrence clocks UNKNOWN when ARM records expose only createdAt",
+  () =>
+    Effect.gen(function* () {
+      yield* seedAll;
+      const evidence = yield* OrchestrationEvidenceService.OrchestrationEvidenceService;
+      const exported = yield* evidence.exportTask(projectId, taskId);
+      const byType = (recordType: string) =>
+        exported.events.find((event) => event.recordType === recordType);
+
+      const prediction = byType("adaptive-difficulty-prediction");
+      assert.isNull(prediction?.occurredAt ?? null);
+      assert.equal(prediction?.recordedAt, createdTask);
+      assert.isTrue(prediction?.unknownFields.includes("occurredAt"));
+
+      const receiptEvent = byType("adaptive-recommendation-receipt");
+      assert.isNull(receiptEvent?.occurredAt ?? null);
+      assert.equal(receiptEvent?.recordedAt, createdTask);
+      assert.isTrue(receiptEvent?.unknownFields.includes("occurredAt"));
+
+      const observationEvent = byType("adaptive-execution-observation");
+      assert.isNull(observationEvent?.occurredAt ?? null);
+      assert.equal(observationEvent?.recordedAt, completedAttempt);
+      assert.isTrue(observationEvent?.unknownFields.includes("occurredAt"));
+
+      const capacityPoolEvent = byType("adaptive-capacity-pool");
+      assert.isNull(capacityPoolEvent?.occurredAt ?? null);
+      assert.equal(capacityPoolEvent?.recordedAt, createdAttempt);
+
+      const capacitySnapshotEvent = byType("adaptive-capacity-snapshot");
+      assert.equal(capacitySnapshotEvent?.occurredAt, createdAttempt);
+      assert.isNull(capacitySnapshotEvent?.recordedAt ?? null);
+    }).pipe(Effect.provide(layerTest)),
 );
