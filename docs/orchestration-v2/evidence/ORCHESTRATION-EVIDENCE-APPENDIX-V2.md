@@ -313,3 +313,20 @@ This section is recorded before repair execution. Outcomes are appended later an
 | Codex / OpenAI B                            | AVAILABLE (listed)               | `UNKNOWN`          | T3 live catalog           | 2026-11-01T21:25Z |
 
 At dispatch: capacity-to-completion `SUFFICIENT` for the narrow local repair; `UNKNOWN` for independent re-review until dispatched. Capacity substitution, if needed, will be appended as a new decision rather than editing these rows.
+
+## R4.3 Outcome summary
+
+| Decision                  | Actual executor         | State                   | Key evidence                                                                        |
+| ------------------------- | ----------------------- | ----------------------- | ----------------------------------------------------------------------------------- |
+| `ev0-repair-20261101-d08` | DeepSeek V4.1 Flash     | COMPLETED               | P1 derived-view verification; P2 canonical handoff resolution + unresolved fallback |
+| `ev0-repair-20261101-d09` | Claude B — Pro Opus 5.5 | REVIEW PASS W/ FINDINGS | Three focused rounds; no blockers; blocking-class findings repaired                 |
+| `ev0-repair-20261101-d10` | DeepSeek V4.1 Flash     | STATIC PASS             | Final handoff; no RUNTIME PASS, no merge                                            |
+
+- **Final code head:** `e1f201defad33ba758ffb48abf37e844ff65cf22`.
+- **Focused tests:** 27/27 exporter; 32/32 routing/execution neighbors; 59/59 combined.
+- **Static gates:** contracts/server typecheck, format, lint, knip, `git diff --check` all pass.
+- **P1:** Runtime verification projected from the mutable task snapshot is `recordBasis: "derived-view"` with retained authority/evidence ID/recordedAt and current task revision.
+- **P2:** canonical `project-runtime-handoff` only after bounded exact-row load plus `ProjectRuntimeHandoff` decode plus payload/row identity agreement; otherwise explicit `project-runtime-handoff-unresolved` derived evidence. No private handoff body copied; no duplicate store.
+- **Remaining non-blocking/UNKNOWN:** `projectId`/`taskId` guard branches untested; pre-existing task-payload identity not checked; handoff thread reference not V2 cross-checked; corrupt handoff row aborts export (fail-loud); V2 1,000-event cap has no truncation marker; cross-task staging references dropped; finite 2,000 caps; no transport wiring; no live-service/real-DB proof; ARM producers remain the next milestone.
+- **PR #14:** untouched at `e51c1c5d74aed9824927d391590ddb33026c8d56`; OPEN / DRAFT / NOT MERGED.
+- **Next action:** Browser Overall inspects the exact final delta; do not merge. Transport wiring plus live/real-DB verification is the next milestone.

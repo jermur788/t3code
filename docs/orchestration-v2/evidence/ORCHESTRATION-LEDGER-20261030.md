@@ -1020,3 +1020,35 @@ These decisions are prospective and recorded before repair implementation. They 
 - **Alternatives rejected:** delegating synthesis (orchestrator owns reconciliation).
 - **Selection mechanism:** forced orchestrator.
 - `machine`: `{"schema":"t3-orchestration-evidence-v2","event_id":"ev0-repair-20261101-d10","event_type":"routing_decision","occurred_at":"2026-11-01T21:25Z","recorded_at":"2026-11-01T21:25Z","project":"t3-fork","task":"evidence-v0-provenance-verification-handoff","orchestrator":{"provider":"opencode","model":"opencode-go/deepseek-v4.1-flash"},"selected":{"provider":"opencode","model":"opencode-go/deepseek-v4.1-flash"},"difficulty":{"ambiguity":0.10,"scope_breadth":0.25,"reasoning_complexity":0.25,"integration_tool_complexity":0.30,"risk":0.40,"verification_burden":0.70,"band":"MEDIUM","confidence":0.90},"selection":"forced_orchestrator","outcome":"PENDING"}`
+
+## Appended outcome — D-EV0R2-01 narrow provenance repair
+
+- `decision_id`: `ev0-repair-20261101-d08`
+- `recorded_at`: 2026-11-01T21:40Z
+- **State:** `COMPLETED`.
+- **P1 repaired:** `project-runtime-verification` items are now `recordBasis: "derived-view"` because they are nested inside the mutable `project_runtime_tasks.payload_json` snapshot. `authority: "project-runtime"`, the source `evidenceId`, and `recordedAt` are preserved; the current `taskRevision` is exported as a fact; no ARM independence/strength/required-kind facts are inferred.
+- **P2 repaired:** when `latestHandoffId` is non-null the service performs a bounded exact-row read of `project_runtime_handoffs` (`project_id`, `task_id`, `handoff_id`) and decodes it with the existing `ProjectRuntimeHandoff` contract. A canonical `project-runtime-handoff` item is emitted only after the payload identity also matches the row/pointer. Missing or identity-mismatched rows emit `project-runtime-handoff-unresolved` (`recordBasis: "derived-view"`, null times, `canonicalRecord` in `unknownFields`, `status=unresolved`). No new store or read model was added.
+- **Private content:** no handoff summary, result, failure notes, next action, file/test bodies, or decisions were copied; only bounded scalars/counts.
+- **Tests added:** verification record-basis and task revision; canonical handoff resolution; dangling pointer; payload/row identity mismatch with JSONL round-trip.
+
+## Appended outcome — D-EV0R2-02 independent re-review
+
+- `decision_id`: `ev0-repair-20261101-d09`
+- `recorded_at`: 2026-11-01T21:43Z
+- **Actual executor:** Claude B — Pro (`claudeAgent_claude_b_pro`) / `claude-opus-5-5`, effort `high`, read-only. No capacity substitution was needed.
+- **Round 1 (`508b1aca10`):** `PASS WITH FINDINGS`, no blockers. Five non-blocking findings: payload IDs not checked against row IDs; corrupt handoff decode aborts export; handoff thread not cross-checked; `canonicalRecord` both unknown and false; redundant `snapshotSourceTaskId`.
+- **Round 2 (`0b3e38344a`):** `PASS WITH FINDINGS`, no blockers. Findings 1/4/5 REPAIRED; 2 DISMISSED (fail-loud on corrupt canonical row); 3 STILL OPEN (deferred). New non-blocking N1 (mismatch test lacked JSONL round-trip), N2 (only `handoffId` guard branch tested), N3 (unresolved summary wording), N4 (pre-existing task-payload identity).
+- **Round 3 (`e1f201defa`):** `PASS WITH FINDINGS`, no blockers. N1 and N3 REPAIRED; N2 and N4 remain open and non-blocking.
+- **Verdict discipline:** static/test-level only. No `RUNTIME PASS`.
+
+## Appended outcome — D-EV0R2-03 final verification and handoff
+
+- `decision_id`: `ev0-repair-20261101-d10`
+- `recorded_at`: 2026-11-01T21:45Z
+- **State:** `STATIC PASS / REVIEW PASS WITH FINDINGS / NOT RUNTIME PASS / NOT MERGED`.
+- **Code head:** `e1f201defad33ba758ffb48abf37e844ff65cf22` (this docs commit follows it).
+- **Tests:** `OrchestrationEvidenceService.test.ts` 27/27 pass; `AdaptiveRoutingService.test.ts` + `RuntimeTaskExecutionService.test.ts` 32/32 pass; combined 59/59.
+- **Static gates:** contracts and server typecheck pass; `vp fmt --check` pass; `vp lint --report-unused-disable-directives` pass (only pre-existing unrelated warnings); `vp run knip:check` 2/2 pass; `git diff --check` clean.
+- **Remaining non-blocking/UNKNOWN:** N2 guard branches (`projectId`/`taskId`) untested; N4 pre-existing task payload identity not checked against row keys; handoff thread reference not added to V2 unresolved cross-checking; corrupt canonical handoff row aborts export (fail-loud, consistent with other rows); V2 1,000-event read cap has no truncation marker; cross-task staging references are dropped; 2,000-reference cap is finite; no transport wiring; no live-service/real-DB proof; ARM producers remain the next milestone.
+- **PR #14:** untouched at `sync/upstream-20261031 @ e51c1c5d74aed9824927d391590ddb33026c8d56`; not merged, not advanced, not strengthened by this work.
+- **Next action:** Browser Overall inspects the exact final delta and evidence; do not merge. Transport wiring plus live/real-DB verification is the next milestone.
