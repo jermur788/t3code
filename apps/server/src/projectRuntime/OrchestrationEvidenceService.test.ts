@@ -1330,6 +1330,16 @@ it.effect(
       const byType = (recordType: string) =>
         exported.events.find((event) => event.recordType === recordType);
 
+      const taskEvent = byType("project-runtime-task");
+      assert.isNull(taskEvent?.occurredAt ?? null);
+      assert.equal(taskEvent?.recordedAt, completedAttempt);
+      assert.isTrue(taskEvent?.unknownFields.includes("occurredAt"));
+
+      const decisionEvent = byType("execution-attempt-decision");
+      assert.isNull(decisionEvent?.occurredAt ?? null);
+      assert.equal(decisionEvent?.recordedAt, createdAttempt);
+      assert.isTrue(decisionEvent?.unknownFields.includes("occurredAt"));
+
       const prediction = byType("adaptive-difficulty-prediction");
       assert.isNull(prediction?.occurredAt ?? null);
       assert.equal(prediction?.recordedAt, createdTask);
