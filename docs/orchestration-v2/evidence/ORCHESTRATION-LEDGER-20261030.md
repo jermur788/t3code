@@ -669,3 +669,104 @@ Work unit 3 (archaeology) and unit 4 (classification) were kept separate because
 - **Alternatives rejected:** Claude A retry (same observed limit; likely repeat); Codex as first choice (already used for the d03a cross-check, so a same-model review would be less independent); self-review (not independent).
 - **Selection mechanism:** `forced_capacity_substitution`.
 - `machine`: `{"schema":"t3-orchestration-evidence-v2","event_id":"ev0-20261101-d11a","event_type":"routing_decision","occurred_at":"2026-11-01T17:30Z","recorded_at":"2026-11-01T17:30Z","project":"t3-fork","task":"evidence-v0-independent-review-substitute","orchestrator":{"provider":"opencode","model":"opencode-go/deepseek-v4.1-flash"},"selected":{"provider":"claudeAgent_claude_b_pro","model":"claude-opus-5-5"},"difficulty":{"ambiguity":0.30,"scope_breadth":0.50,"reasoning_complexity":0.70,"integration_tool_complexity":0.40,"risk":0.60,"verification_burden":0.60,"band":"HIGH","confidence":0.70},"selection":"forced_capacity_substitution","prior_attempt":"ev0-20261101-d11","outcome":"PENDING"}`
+
+## Appended outcome — D-EV0-04 archaeology and field classification
+
+- `decision_id`: `ev0-20261101-d04`
+- `recorded_at`: 2026-11-01T17:10Z
+- **State:** `COMPLETED`.
+- **Actual executor:** DeepSeek V4.1 Flash (primary); Codex gpt-6.1-sol independent read-only cross-check (d03a). No substitution during synthesis.
+- **Observed evidence:** [implementation archaeology at exact base](file:///home/jer/dev/t3code-evidence-v0-20261101) — `packages/contracts/src/{projectRuntime,runtimeExecution,adaptiveRouting,orchestrationV2,baseSchemas}.ts`; `apps/server/src/projectRuntime/{ProjectRuntimeService,RuntimeTaskExecutionService,AdaptiveRoutingService}.ts`; `apps/server/src/persistence/Migrations/Fork/{001_ProjectRuntime,005_RuntimeExecutionAttempts,007_AdaptiveRouting}.ts`; `apps/server/src/persistence/Migrations/055_OrchestrationV2.ts`; `apps/server/src/orchestration-v2/{EventStore,ProjectionStore}.ts`.
+
+### Classification
+
+| Evidence field                                                                                   | Class                                                                    | Where it actually lives                                                                                                                                 |
+| ------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Project / Runtime task identity                                                                  | `ALREADY CANONICAL`                                                      | `ProjectRuntimeTaskId`; `project_runtime_tasks` (mutable payload with revision CAS)                                                                     |
+| Runtime execution-attempt identity                                                               | `ALREADY CANONICAL`                                                      | `RuntimeExecutionAttemptId`; `project_runtime_execution_attempts`                                                                                       |
+| Provider instance identity                                                                       | `ALREADY CANONICAL`                                                      | `ProviderInstanceId`; settings/registry, no dedicated identity table                                                                                    |
+| V2 thread / run / run-attempt / node / provider-session / provider-thread / context-transfer IDs | `ALREADY CANONICAL`                                                      | Branded IDs in `baseSchemas.ts`; authoritative `orchestration_events`, mutable `orchestration_v2_projection_*`                                          |
+| Requested route                                                                                  | `ALREADY CANONICAL`                                                      | Attempt `receipt.route` + `receipt.launch`                                                                                                              |
+| Selected route                                                                                   | `ALREADY CANONICAL`                                                      | Attempt `receipt.route.selected`; launch `modelSelection`                                                                                               |
+| Executed model/provider                                                                          | `AMBIGUOUS` / `MISSING`                                                  | ARM `configuration.executed` can be `provider_reported`, `t3_observed`, or `unknown`; no active producer; the Runtime attempt does not attest execution |
+| Difficulty prediction                                                                            | `ALREADY CANONICAL` (record), producer `AMBIGUOUS`                       | `AdaptiveDifficultyPrediction`; `adaptive_difficulty_predictions`                                                                                       |
+| Realized difficulty                                                                              | `ALREADY CANONICAL` (derived record)                                     | `adaptive_realized_difficulties`                                                                                                                        |
+| Recommendation / receipt                                                                         | `ALREADY CANONICAL` (record), producer `AMBIGUOUS`                       | `adaptive_recommendation_receipts`; advisory only                                                                                                       |
+| Capacity identity / snapshots                                                                    | `ALREADY CANONICAL` (record), producer `AMBIGUOUS`                       | `adaptive_capacity_pools` / `adaptive_capacity_snapshots`; capture API exists but no dispatch-time link                                                 |
+| Verification profile / result / independence                                                     | `ALREADY CANONICAL` (optional)                                           | ARM `verification`; task `verification.milestone/evidence`                                                                                              |
+| Failure / blocker taxonomy                                                                       | `ALREADY CANONICAL`                                                      | ARM `failure.class`; task `blocker.classification`                                                                                                      |
+| Accepted outcome / reconciliation                                                                | `ALREADY CANONICAL`                                                      | `adaptive_accepted_outcomes` (mutable CAS head) + `adaptive_outcome_reconciliations` (append history)                                                   |
+| Experiment assignment                                                                            | `ALREADY CANONICAL` (record), producer `AMBIGUOUS`                       | `adaptive_experiment_assignments`                                                                                                                       |
+| Choice set (considered / rejected / never evaluated)                                             | `AMBIGUOUS`                                                              | Route has selected + rejected reasons; per-candidate state, belief, capacity-to-completion, and never-evaluated candidates are not all present          |
+| Orchestrator rationale / policy version / selection mechanism                                    | `AMBIGUOUS`                                                              | Route `source` + revisions; ARM `reasons`/`scoringVersion`; no canonical free-text rationale or selection mechanism at dispatch                         |
+| Decision-time capacity / context observation                                                     | `MISSING`                                                                | Optional snapshot links; no dispatch-time capture; context limit/compaction not recorded                                                                |
+| Reviewer identity, relation/independence, verdict, artifact judged                               | `MISSING`                                                                | Only coarse ARM `verification.independence/result`; no reviewer identity, artifact hash, or assessment chain                                            |
+| Rework / retry / salvage count                                                                   | `DERIVABLE` for retries; `MISSING` for semantic rework/salvage           | Attempt ordinals and run-attempt reasons; no canonical rework/salvage counter                                                                           |
+| `occurred_at` vs `recorded_at`                                                                   | `AMBIGUOUS`                                                              | ARM/Runtime use `createdAt`; V2 events store `occurred_at` only; capacity snapshots store `observed_at` only                                            |
+| Explicit UNKNOWN                                                                                 | `ALREADY CANONICAL` selectively                                          | ARM `executed.quality: unknown`, capacity measurement `unknown`; not universal, so the exporter adds `unknownFields`                                    |
+| Append-only correction                                                                           | `ALREADY CANONICAL` for ARM outcomes; `MISSING` for task/attempt history | Outcome reconciliation table; task payload overwritten by revision CAS                                                                                  |
+| Stable task -> attempt -> V2 refs                                                                | `ALREADY CANONICAL`; `AMBIGUOUS` for optional ARM -> V2 links            | Attempt `threadId`/`runId`; ARM `execution` block optional                                                                                              |
+| Export / serialization seam                                                                      | `MISSING` before this run                                                | No unified Runtime/ARM/V2 evidence exporter; only task/attempt read RPCs and visible transcript HTTP                                                    |
+
+### Cross-check findings adopted
+
+- ARM persistence APIs exist for all ten records, but **no active production producer path** was found outside the service. V0 export will often see empty ARM tables. This is a producer gap, not an exporter gap.
+- The Runtime receipt is **selected launch intent**, not executed-model attestation.
+- `orchestration_events` is authoritative over projections, but `ProjectionMaintenance` deletes superseded events; event-sourced does **not** guarantee permanently complete history.
+- Runtime attempts join to V2 by `threadId`/`runId`, **not** `RunAttemptId`.
+
+## Appended outcome — D-EV0-05 L2 sequence mapping and gap list
+
+- `decision_id`: `ev0-20261101-d05`
+- `recorded_at`: 2026-11-01T17:12Z
+- **State:** `COMPLETED` (`STATIC`).
+- **Reference:** `docs/t3-fork-orchestration-evidence-20261101 @ 6b143992cbc811cbb2deec8b32d9ebd2a1ac87cd`, decisions `l2-20261101-d01`..`d08`.
+
+| L2 decision                            | Reconstructable from canonical state? | What exists                                    | Gap                                                              |
+| -------------------------------------- | ------------------------------------- | ---------------------------------------------- | ---------------------------------------------------------------- |
+| `d01` overall orchestration            | No                                    | Task record only                               | No per-decision routing record for the orchestrator role         |
+| `d02` repo safety / exact-SHA worktree | No                                    | Task `base` metadata optionally                | No per-decision record, no worktree-audit record                 |
+| `d03` focused tests + typecheck        | Partial                               | Task `verification.evidence`                   | Not linked to a routing decision; no per-command runtime record  |
+| `d04` Runtime/V2 provenance            | Partial                               | Attempt receipt + optional ARM observation     | Executed provenance may be `UNKNOWN`; no active producer         |
+| `d05` rendered UI / restart            | Partial                               | Task verification evidence                     | No artifact hash or rendered-evidence reference                  |
+| `d06` real-provider availability       | Partial                               | Task blocker `operational-blocker`             | Credential/account facts are not canonical (correct for privacy) |
+| `d07` independent review               | Partial                               | ARM `verification.independence/result`         | No reviewer identity, artifact judged, or assessment chain       |
+| `d08` final handoff synthesis          | Partial                               | Task `result`, `nextAction`, `latestHandoffId` | No decision record for the synthesis route                       |
+
+**Gap list (implementation target):**
+
+1. No per-subtask routing-decision record; L2 `d01`, `d02`, `d05`, `d08` are ledger-only.
+2. No executed-model attestation at the Runtime attempt boundary; ARM has a slot but no producer.
+3. No decision-time capacity/context capture at dispatch.
+4. No reviewer identity / artifact-judged / append-only assessment chain.
+5. V2 events lack `recorded_at`; compaction can remove superseded history.
+6. No task-revision history; the task row is a current snapshot.
+7. ARM producer paths are unwired in production, so ARM evidence may be empty.
+8. No canonical per-candidate choice-set state (belief, capacity-to-completion, never-evaluated).
+
+V0 therefore exports and reconstructs what canonical state supports and marks the rest `UNKNOWN` or absent. It does not invent the ledger-only decisions.
+
+## Appended outcome — D-EV0-06 browser-spec reconciliation
+
+- `decision_id`: `ev0-20261101-d06`
+- `recorded_at`: 2026-11-01T17:14Z
+- **State:** `COMPLETED` — no material conflict; no stop condition.
+- **OBSERVED FACT — expected path absent:** `docs/internals/orchestration-evidence-v0-spec.md` was not present on any fetched branch at decision time.
+- **OBSERVED FACT — published artifacts consumed:** `docs/orchestration-v2/orchestration-learning-evidence-plan-v0.md` and `docs/orchestration-v2/orchestration-evidence-ledger-standard-v3.md` on `docs/orchestration-evidence-v0-20261101 @ 12ef457e0c7a764cc35a4c7e60a43c401a9134ed`. Both are marked **Proposed**.
+- **Reconciliation:** the local map agrees with the plan's authority boundaries, decision/outcome separation, refs-first export, and no-second-store rule. The plan's WP0 gap audit is satisfied by d04/d05. The local implementation is limited to the read-only exporter/reconstructor (WP4-shaped); producers (WP2/WP3) were not implemented because they are architecture-sensitive and the exact governing spec is not yet published.
+- **Naming difference:** file placement/path is a routine difference, not a product decision.
+- **Discrepancy record:** none material. Browser Overall should confirm that a read-only exporter over canonical records is the accepted V0 slice before any producer work begins.
+
+## Appended outcome — D-EV0-09/D-EV0-10 implementation and focused tests
+
+- `decision_id`: `ev0-20261101-d09`, `ev0-20261101-d10`
+- `recorded_at`: 2026-11-01T17:27Z
+- **State:** `IMPLEMENTED` + `STATIC PASS` (no runtime/browser claim).
+- **Commit:** `30b20c12cc` on `feat/orchestration-evidence-v0-20261101`, base `e51c1c5d74aed9824927d391590ddb33026c8d56`.
+- **Files:** `packages/contracts/src/orchestrationEvidence.ts`; `packages/contracts/src/index.ts`; `apps/server/src/projectRuntime/OrchestrationEvidenceService.ts`; `apps/server/src/projectRuntime/OrchestrationEvidenceService.test.ts`; project evidence files.
+- **Behavior:** read-only `exportTask`, `exportTaskJsonl`, and `reconstructTaskHistory` over `project_runtime_tasks`, `project_runtime_execution_attempts`, and the ARM tables. No new table, migration, insert, launcher, catalog, or poller. JSONL is the versioned `orchestration-evidence/v0` envelope. `unknownFields` carries explicit unknowns. Corrections are emitted from `adaptive_outcome_reconciliations`, not by mutating prior decision events.
+- **Verification:**
+  - focused test file: 6/6 pass (`vp test run apps/server/src/projectRuntime/OrchestrationEvidenceService.test.ts`);
+  - `@t3tools/contracts` typecheck pass; `t3` (server) typecheck pass;
+  - `vp run check:changed`: format, lint, knip 1/2, graphql, typecheck (39/39 packages), and react compiler pass; knip 2/2 initially failed on one unused export (`ORCHESTRATION_EVIDENCE_BOUNDS`), fixed and rechecked clean; the repo-wide 699-file test step hit its 900 s budget (`TIMEOUT`, explicitly not a failure).
+- **Limits:** the service is not wired to RPC/MCP/CLI/UI, so this is not a runtime surface. No real database was exercised with production data; tests use an in-memory SQLite layer. No executed-model attestation is claimed.
