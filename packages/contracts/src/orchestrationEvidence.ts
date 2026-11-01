@@ -41,6 +41,7 @@ export const OrchestrationEvidenceRecordType = Schema.Literals([
   "project-runtime-verification",
   "project-runtime-handoff",
   "project-runtime-handoff-unresolved",
+  "runtime-route-resolution",
   "execution-attempt-decision",
   "execution-attempt-outcome",
   "adaptive-difficulty-prediction",

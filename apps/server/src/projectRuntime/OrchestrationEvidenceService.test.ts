@@ -58,6 +58,7 @@ const projectId = ProjectId.make("ev0-project");
 const opencode = ProviderInstanceId.make("opencode");
 const claude = ProviderInstanceId.make("claudeAgent");
 const opencodeDriver = ProviderDriverKind.make("opencode");
+const claudeDriver = ProviderDriverKind.make("claudeAgent");
 const taskId = ProjectRuntimeTaskId.make("ev0-task");
 const attemptId = RuntimeExecutionAttemptId.make("ev0-attempt");
 const threadId = ThreadId.make("thread:ev0");
@@ -175,7 +176,20 @@ const routeResolution: RuntimeRouteResolution = {
     eligibility: "eligible-at-resolution",
   },
   inheritedFrom: null,
-  rejected: [],
+  rejected: [
+    {
+      source: "task",
+      candidateIndex: 1,
+      candidate: {
+        providerInstanceId: claude,
+        driverKind: claudeDriver,
+        model: "claude-opus-5-5",
+        isolation: "worktree",
+      },
+      reason: "provider_auth_required",
+      detail: "claude credentials are unavailable in this fixture",
+    },
+  ],
   failure: null,
   revisions: { task: 1, projectRouting: 0, profile: null, assignment: null },
 };
@@ -611,6 +625,41 @@ const seedAdaptive = Effect.gen(function* () {
 
 const decodeEvent = Schema.decodeUnknownSync(Schema.fromJsonString(OrchestrationEvidenceEvent));
 
+const validEvidenceEvent = {
+  schemaVersion: "orchestration-evidence/v0",
+  eventId: "oev0:contract-validation:1",
+  recordType: "execution-attempt-decision",
+  recordId: "attempt:contract-validation",
+  lifecycleClass: "decision",
+  recordBasis: "derived-view",
+  authority: "runtime-execution",
+  projectId: "project:contract-validation",
+  taskId: null,
+  attemptId: null,
+  threadId: null,
+  runId: null,
+  occurredAt: null,
+  recordedAt: null,
+  exportedAt: "2026-11-01T00:00:00.000Z",
+  summary: "Contract validation fixture",
+  unknownFields: [],
+  references: [],
+  facts: [],
+};
+
+it("rejects malformed Evidence V0 required schema, version, and identity fields", () => {
+  const decode = Schema.decodeUnknownSync(OrchestrationEvidenceEvent);
+  assert.doesNotThrow(() => decode(validEvidenceEvent));
+  assert.throws(() =>
+    decode({ ...validEvidenceEvent, schemaVersion: "orchestration-evidence/v1" }),
+  );
+  const { eventId: _eventId, ...withoutEventId } = validEvidenceEvent;
+  assert.throws(() => decode(withoutEventId));
+  assert.throws(() => decode({ ...validEvidenceEvent, eventId: "" }));
+  assert.throws(() => decode({ ...validEvidenceEvent, recordId: "" }));
+  assert.throws(() => decode({ ...validEvidenceEvent, projectId: "" }));
+});
+
 it.effect("exports a versioned envelope and reconstructs task-first chronological history", () =>
   Effect.gen(function* () {
     yield* seedAll;
@@ -625,13 +674,29 @@ it.effect("exports a versioned envelope and reconstructs task-first chronologica
     assert.equal(reconstructed.ordering, "task-first-then-chronological");
     assert.equal(reconstructed.events[0]?.recordType, "project-runtime-task");
 
+    const routeResolution = reconstructed.events.find(
+      (item) => item.recordType === "runtime-route-resolution",
+    );
+    assert.isDefined(routeResolution);
+    assert.equal(routeResolution?.authority, "runtime-routing");
+    assert.equal(routeResolution?.lifecycleClass, "decision");
+    assert.equal(
+      routeResolution?.facts.find((fact) => fact.key === "route.selected.model")?.value,
+      "opencode-go/deepseek-v4.1-flash",
+    );
+    assert.equal(
+      routeResolution?.facts.find((fact) => fact.key === "route.rejected.0.reason")?.value,
+      "provider_auth_required",
+    );
+
     const decision = reconstructed.events.find(
       (item) => item.recordType === "execution-attempt-decision",
     );
     assert.isDefined(decision);
+    assert.equal(decision?.authority, "runtime-execution");
     assert.equal(decision?.lifecycleClass, "decision");
     assert.equal(
-      decision?.facts.find((fact) => fact.key === "route.selected.model")?.value,
+      decision?.facts.find((fact) => fact.key === "launch.modelSelection.model")?.value,
       "opencode-go/deepseek-v4.1-flash",
     );
 
@@ -674,6 +739,8 @@ it.effect("resolves canonical references, bounded V2 events, and explicit unreso
       "project-runtime-verification": (_recordId) =>
         sql`SELECT 1 FROM project_runtime_tasks WHERE project_id = ${projectId} AND task_id = ${taskId}`,
       "execution-attempt": (recordId) =>
+        sql`SELECT 1 FROM project_runtime_execution_attempts WHERE attempt_id = ${recordId}`,
+      "runtime-route-resolution": (recordId) =>
         sql`SELECT 1 FROM project_runtime_execution_attempts WHERE attempt_id = ${recordId}`,
       "execution-attempt-decision": (recordId) =>
         sql`SELECT 1 FROM project_runtime_execution_attempts WHERE attempt_id = ${recordId}`,
@@ -1412,7 +1479,7 @@ it.effect("does not claim a canonical handoff when payload identity disagrees wi
   }).pipe(Effect.provide(layerTest)),
 );
 
-it.effect("uses explicit authorities for Runtime, ARM, V2, and staging evidence", () =>
+it.effect("uses all six explicit authorities and keeps Routing separate from Execution", () =>
   Effect.gen(function* () {
     yield* seedAll;
     const evidence = yield* OrchestrationEvidenceService.OrchestrationEvidenceService;
@@ -1420,11 +1487,54 @@ it.effect("uses explicit authorities for Runtime, ARM, V2, and staging evidence"
       stagingReferences: [l2StagingReference],
     });
     const authorities = new Set(reconstructed.events.map((item) => item.authority));
-    assert.isTrue(authorities.has("project-runtime"));
-    assert.isTrue(authorities.has("runtime-execution"));
-    assert.isTrue(authorities.has("arm"));
-    assert.isTrue(authorities.has("orchestration-v2"));
-    assert.isTrue(authorities.has("project-staging"));
+    assert.deepEqual([...authorities].sort(), [
+      "arm",
+      "orchestration-v2",
+      "project-runtime",
+      "project-staging",
+      "runtime-execution",
+      "runtime-routing",
+    ]);
+
+    const routingItems = reconstructed.events.filter(
+      (item) => item.recordType === "runtime-route-resolution",
+    );
+    assert.isAtLeast(routingItems.length, 1);
+    for (const item of routingItems) {
+      assert.equal(item.authority, "runtime-routing");
+      assert.equal(item.recordBasis, "derived-view");
+      assert.equal(
+        item.facts.find((fact) => fact.key === "route.selected.model")?.value,
+        "opencode-go/deepseek-v4.1-flash",
+      );
+      assert.equal(
+        item.facts.find((fact) => fact.key === "route.rejected.0.reason")?.value,
+        "provider_auth_required",
+      );
+      assert.isFalse(item.facts.some((fact) => fact.key.startsWith("launch.")));
+      assert.isFalse(item.facts.some((fact) => fact.key.startsWith("packet.")));
+    }
+
+    const decisionItems = reconstructed.events.filter(
+      (item) => item.recordType === "execution-attempt-decision",
+    );
+    assert.isAtLeast(decisionItems.length, 1);
+    for (const item of decisionItems) {
+      assert.equal(item.authority, "runtime-execution");
+      assert.equal(
+        item.facts.find((fact) => fact.key === "launch.modelSelection.model")?.value,
+        "opencode-go/deepseek-v4.1-flash",
+      );
+      assert.isFalse(item.facts.some((fact) => fact.key.startsWith("route.")));
+      assert.isFalse(item.facts.some((fact) => fact.key === "status"));
+      assert.isTrue(
+        item.references.some(
+          (reference) =>
+            reference.recordType === "runtime-route-resolution" &&
+            reference.recordId === item.recordId,
+        ),
+      );
+    }
   }).pipe(Effect.provide(layerTest)),
 );
 

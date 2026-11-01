@@ -164,8 +164,84 @@ const taskEvent = (task: ProjectRuntimeTask): DraftEvent =>
     ]),
   });
 
+const routeResolutionEvent = (attempt: RuntimeExecutionAttempt): DraftEvent => {
+  const route = attempt.receipt.route;
+  const selected = route.selected;
+  return event({
+    schemaVersion: ORCHESTRATION_EVIDENCE_SCHEMA_VERSION,
+    eventId: `oev0:runtime-route-resolution:${attempt.attemptId}`,
+    recordType: "runtime-route-resolution",
+    recordId: attempt.attemptId,
+    lifecycleClass: "decision",
+    // Projected from the route resolution embedded in the attempt receipt.
+    recordBasis: "derived-view",
+    authority: "runtime-routing",
+    projectId: attempt.projectId,
+    taskId: attempt.taskId,
+    attemptId: attempt.attemptId,
+    threadId: attempt.threadId,
+    runId: null,
+    occurredAt: null,
+    recordedAt: attempt.createdAt,
+    summary:
+      selected === null
+        ? `Route resolution ${route.status} without a selected route`
+        : `Route resolution ${route.status} via ${route.source}: ${selected.providerInstanceId}/${selected.model}`,
+    unknownFields: [
+      "occurredAt",
+      "runId",
+      "choiceSet.perCandidateState",
+      "capacity",
+      "context",
+      "selectionMechanism",
+    ],
+    references: references([
+      ["execution-attempt", attempt.attemptId],
+      ["project-runtime-task", attempt.taskId],
+      ["orchestration-v2-thread", attempt.threadId],
+    ]),
+    facts: facts([
+      ["route.status", route.status],
+      ["route.source", route.source],
+      ["route.role", route.role],
+      ["route.inheritedFrom", route.inheritedFrom],
+      ["route.selected.present", selected !== null],
+      ["route.selected.candidateIndex", selected?.candidateIndex],
+      ["route.selected.providerInstanceId", selected?.providerInstanceId],
+      ["route.selected.driverKind", selected?.driverKind],
+      ["route.selected.model", selected?.model],
+      ["route.selected.isolation", selected?.isolation],
+      ["route.selected.runtimeMode", selected?.runtimeMode],
+      ["route.selected.interactionMode", selected?.interactionMode],
+      ["route.failure.source", route.failure?.source],
+      ["route.failure.reason", route.failure?.reason],
+      ["route.rejected.count", route.rejected.length],
+      ...route.rejected.flatMap((rejection, index) => [
+        [`route.rejected.${index}.source`, rejection.source] as const,
+        [`route.rejected.${index}.candidateIndex`, rejection.candidateIndex] as const,
+        [
+          `route.rejected.${index}.providerInstanceId`,
+          rejection.candidate.providerInstanceId,
+        ] as const,
+        [`route.rejected.${index}.driverKind`, rejection.candidate.driverKind] as const,
+        [`route.rejected.${index}.model`, rejection.candidate.model] as const,
+        [`route.rejected.${index}.reason`, rejection.reason] as const,
+        [`route.rejected.${index}.detail`, rejection.detail] as const,
+      ]),
+      ["route.revisions.task", route.revisions.task],
+      ["route.revisions.projectRouting", route.revisions.projectRouting],
+      ["route.revisions.profile.present", route.revisions.profile !== null],
+      ["route.revisions.profile.profileId", route.revisions.profile?.profileId],
+      ["route.revisions.profile.revision", route.revisions.profile?.revision],
+      ["route.revisions.assignment.present", route.revisions.assignment !== null],
+      ["route.revisions.assignment.projectId", route.revisions.assignment?.projectId],
+      ["route.revisions.assignment.profileId", route.revisions.assignment?.profileId],
+      ["route.revisions.assignment.revision", route.revisions.assignment?.revision],
+    ]),
+  });
+};
+
 const attemptDecisionEvent = (attempt: RuntimeExecutionAttempt): DraftEvent => {
-  const selected = attempt.receipt.route.selected;
   const launch = attempt.receipt.launch;
   return event({
     schemaVersion: ORCHESTRATION_EVIDENCE_SCHEMA_VERSION,
@@ -182,32 +258,15 @@ const attemptDecisionEvent = (attempt: RuntimeExecutionAttempt): DraftEvent => {
     runId: null,
     occurredAt: null,
     recordedAt: attempt.createdAt,
-    summary:
-      selected === null
-        ? `Routing decision ${attempt.receipt.route.status} without a selected route`
-        : `Routing decision ${attempt.receipt.route.source}: ${selected.providerInstanceId}/${selected.model}`,
-    unknownFields: [
-      "occurredAt",
-      "runId",
-      "choiceSet.perCandidateState",
-      "capacity",
-      "context",
-      "selectionMechanism",
-    ],
+    summary: `Launch selected ${launch.modelSelection.instanceId}/${launch.modelSelection.model} (${launch.runtimeMode}/${launch.interactionMode}; ${launch.workspaceStrategy.type})`,
+    unknownFields: ["occurredAt", "runId"],
     references: references([
+      ["execution-attempt", attempt.attemptId],
       ["project-runtime-task", attempt.taskId],
       ["orchestration-v2-thread", attempt.threadId],
+      ["runtime-route-resolution", attempt.attemptId],
     ]),
     facts: facts([
-      ["route.status", attempt.receipt.route.status],
-      ["route.source", attempt.receipt.route.source],
-      ["route.role", attempt.receipt.route.role],
-      ["route.selected.present", selected !== null],
-      ["route.selected.providerInstanceId", selected?.providerInstanceId],
-      ["route.selected.driverKind", selected?.driverKind],
-      ["route.selected.model", selected?.model],
-      ["route.selected.isolation", selected?.isolation],
-      ["route.rejected.count", attempt.receipt.route.rejected.length],
       ["launch.modelSelection.instanceId", launch.modelSelection.instanceId],
       ["launch.modelSelection.model", launch.modelSelection.model],
       ["launch.runtimeMode", launch.runtimeMode],
@@ -1409,6 +1468,7 @@ const make = Effect.gen(function* () {
       ...task.verification.evidence.map((evidence) => runtimeVerificationEvent(task, evidence)),
       ...(handoffEvent === null ? [] : [handoffEvent]),
       ...attempts.flatMap((attempt) => [
+        routeResolutionEvent(attempt),
         attemptDecisionEvent(attempt),
         attemptOutcomeEvent(attempt),
         recommendationAttemptLinkEvent(attempt, recommendationCandidatesFor(attempt)),
