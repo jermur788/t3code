@@ -766,7 +766,38 @@ V0 therefore exports and reconstructs what canonical state supports and marks th
 - **Files:** `packages/contracts/src/orchestrationEvidence.ts`; `packages/contracts/src/index.ts`; `apps/server/src/projectRuntime/OrchestrationEvidenceService.ts`; `apps/server/src/projectRuntime/OrchestrationEvidenceService.test.ts`; project evidence files.
 - **Behavior:** read-only `exportTask`, `exportTaskJsonl`, and `reconstructTaskHistory` over `project_runtime_tasks`, `project_runtime_execution_attempts`, and the ARM tables. No new table, migration, insert, launcher, catalog, or poller. JSONL is the versioned `orchestration-evidence/v0` envelope. `unknownFields` carries explicit unknowns. Corrections are emitted from `adaptive_outcome_reconciliations`, not by mutating prior decision events.
 - **Verification:**
-  - focused test file: 6/6 pass (`vp test run apps/server/src/projectRuntime/OrchestrationEvidenceService.test.ts`);
-  - `@t3tools/contracts` typecheck pass; `t3` (server) typecheck pass;
+  - focused test file: 9/9 pass after review fixes (`vp test run apps/server/src/projectRuntime/OrchestrationEvidenceService.test.ts`);
+  - `@t3tools/contracts` typecheck pass; `t3` (server) typecheck pass; neighbor `AdaptiveRoutingService` + `RuntimeTaskExecutionService` tests 32/32 pass;
   - `vp run check:changed`: format, lint, knip 1/2, graphql, typecheck (39/39 packages), and react compiler pass; knip 2/2 initially failed on one unused export (`ORCHESTRATION_EVIDENCE_BOUNDS`), fixed and rechecked clean; the repo-wide 699-file test step hit its 900 s budget (`TIMEOUT`, explicitly not a failure).
 - **Limits:** the service is not wired to RPC/MCP/CLI/UI, so this is not a runtime surface. No real database was exercised with production data; tests use an in-memory SQLite layer. No executed-model attestation is claimed.
+
+## Appended outcome — D-EV0-11a independent review
+
+- `decision_id`: `ev0-20261101-d11`, `ev0-20261101-d11a`
+- `recorded_at`: 2026-11-01T17:45Z
+- **State:** `REVIEW PASS WITH FINDINGS`; all blocking findings repaired.
+- **Actual executor:** Claude B — Pro (`claudeAgent_claude_b_pro`) / `claude-opus-5-5`, effort `high`, read-only. No substitution during the task.
+- **Scope reviewed:** base `e51c1c5d74` through implementation commit `30b20c12cc` (plus the test-only `8fef8e56a1`). The reviewer ran the focused test file and reported 7 tests at review time.
+
+### Blocking findings and repairs (commit `00d8ca71bc`)
+
+1. **B1 — JSONL not deterministic on real data.** The task event used `generatedAt` as `recordedAt`, so every real export changed. Repaired: task `recordedAt` is `null` with `unknownFields: ["recordedAt"]`; `generatedAt` stays only in the envelope. Added a test that advances `TestClock` one hour and requires byte-identical JSONL.
+2. **B2 — post-launch `runId` leaked into the decision record.** `runId` is null at attempt creation and filled after launch, while the decision event claimed a decision-time recording time. Repaired: the decision event drops `runId` and the V2 run reference, and marks `runId` and other absent decision-time facts in `unknownFields`. Added a test that exports a pending attempt, promotes it to completed with a run id, and requires the decision line to stay byte-identical.
+3. **B3 — mutable accepted-outcome head labelled canonical.** Repaired: the head is `recordBasis: "derived-view"` with the revision in `eventId`; each reconciliation also emits a superseded-revision event carrying the prior state, with `occurredAt`/`recordedAt` explicitly unknown because the overwritten row has no preserved time. The correction test now requires both revisions to remain recoverable.
+
+### Non-blocking findings disposition
+
+- **N1 attempt outcome occurrence:** now `occurredAt: null` with `unknownFields: ["occurredAt"]`; `recordedAt` remains the row write time.
+- **N2 accepted outcome occurrence:** now `occurredAt = provenance.observedAt`, `recordedAt = reconciledAt`.
+- **N3 capacity attribution:** kept the exporting project for envelope context, retained `scope: "environment"`, and added `sourceRef` provenance.
+- **N4 vocabulary collision:** renamed the envelope axis to `lifecycleClass` and the canonical/derived axis to `recordBasis` (`canonical-record` / `derived-view`); documented that this is not the ledger's `evidence_class`.
+- **N5 decision unknowns:** decision events now list `runId`, `choiceSet.perCandidateState`, `capacity`, `context`, and `selectionMechanism` as unknown.
+- **N6 tests:** reference checks now resolve each `recordId` and each resolvable reference against its canonical table; added wall-clock determinism and pre-launch decision-stability tests; correction test asserts the superseded revision.
+- **N7 validation:** window fact keys are ordinal (`window.<index>.id` + `.id` fact), and sorting parses ISO times rather than comparing text.
+- **N8 wiring:** the service remains unwired to RPC/MCP/CLI/UI. This is a deliberate V0 scope limit, recorded in the result and in the ledger.
+
+### Review independence and limits
+
+- Different provider family and different account instance from the orchestrator and from the d03a Codex cross-check.
+- The review verdict applies to `30b20c12cc`; the repairs in `00d8ca71bc` were validated by focused tests, typecheck, lint, knip, and formatting, but were **not** sent through a second independent review.
+- Reviewer false positives it dismissed: second datastore, parallel identity, invented executed model, dishonest capacity `recordedAt`, label errors on insert-only ARM records, rebase risk, CCF-specific code, privacy leakage, event-ID overflow.

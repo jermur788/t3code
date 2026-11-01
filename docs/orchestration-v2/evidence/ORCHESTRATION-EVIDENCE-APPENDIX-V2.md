@@ -190,26 +190,26 @@ Working branch: `feat/orchestration-evidence-v0-20261101`
 
 ## R2.4 Outcome summary
 
-| Decision            | Actual executor          | State       | Key evidence                                                                         |
-| ------------------- | ------------------------ | ----------- | ------------------------------------------------------------------------------------ |
-| `ev0-20261101-d01`  | DeepSeek V4.1 Flash      | PASS        | Orchestration and reconciliation; no substitution                                    |
-| `ev0-20261101-d02`  | DeepSeek V4.1 Flash      | PASS        | New worktree at exact base; clean status; frozen candidate untouched                 |
-| `ev0-20261101-d03`  | none (Claude Sonnet 5.5) | BLOCKED     | `provider_capacity`: Claude API rate limit                                           |
-| `ev0-20261101-d03a` | Codex gpt-6.1-sol        | COMPLETED   | Independent read-only archaeology cross-check                                        |
-| `ev0-20261101-d04`  | DeepSeek V4.1 Flash      | COMPLETED   | Field classification table; no material conflict with cross-check                    |
-| `ev0-20261101-d05`  | DeepSeek V4.1 Flash      | COMPLETED   | L2 d01–d08 mapping and eight-item gap list                                           |
-| `ev0-20261101-d06`  | DeepSeek V4.1 Flash      | COMPLETED   | Expected spec path absent; proposed plan + standard consumed; no material divergence |
-| `ev0-20261101-d07`  | DeepSeek V4.1 Flash      | COMPLETED   | Versioned refs-first envelope; no second store                                       |
-| `ev0-20261101-d08`  | DeepSeek V4.1 Flash      | COMPLETED   | Deterministic task-first chronological reconstruction                                |
-| `ev0-20261101-d09`  | DeepSeek V4.1 Flash      | STATIC PASS | 7/7 focused tests; determinism, refs, UNKNOWN, corrections, no new table             |
-| `ev0-20261101-d10`  | DeepSeek V4.1 Flash      | IMPLEMENTED | Commit `30b20c12cc` (+ test-only `8fef8e56a1`)                                       |
-| `ev0-20261101-d11`  | none (Claude Opus 5.5 A) | BLOCKED     | `provider_capacity`: Claude API rate limit                                           |
-| `ev0-20261101-d11a` | Claude B — Pro Opus 5.5  | See R2.6    | Independent read-only review                                                         |
-| `ev0-20261101-d12`  | DeepSeek V4.1 Flash      | COMPLETED   | Durable result; no merge to `sync/upstream-20261031` or `main`                       |
+| Decision            | Actual executor          | State       | Key evidence                                                                                |
+| ------------------- | ------------------------ | ----------- | ------------------------------------------------------------------------------------------- |
+| `ev0-20261101-d01`  | DeepSeek V4.1 Flash      | PASS        | Orchestration and reconciliation; no substitution                                           |
+| `ev0-20261101-d02`  | DeepSeek V4.1 Flash      | PASS        | New worktree at exact base; clean status; frozen candidate untouched                        |
+| `ev0-20261101-d03`  | none (Claude Sonnet 5.5) | BLOCKED     | `provider_capacity`: Claude API rate limit                                                  |
+| `ev0-20261101-d03a` | Codex gpt-6.1-sol        | COMPLETED   | Independent read-only archaeology cross-check                                               |
+| `ev0-20261101-d04`  | DeepSeek V4.1 Flash      | COMPLETED   | Field classification table; no material conflict with cross-check                           |
+| `ev0-20261101-d05`  | DeepSeek V4.1 Flash      | COMPLETED   | L2 d01–d08 mapping and eight-item gap list                                                  |
+| `ev0-20261101-d06`  | DeepSeek V4.1 Flash      | COMPLETED   | Expected spec path absent; proposed plan + standard consumed; no material divergence        |
+| `ev0-20261101-d07`  | DeepSeek V4.1 Flash      | COMPLETED   | Versioned refs-first envelope; no second store                                              |
+| `ev0-20261101-d08`  | DeepSeek V4.1 Flash      | COMPLETED   | Deterministic task-first chronological reconstruction                                       |
+| `ev0-20261101-d09`  | DeepSeek V4.1 Flash      | STATIC PASS | 9/9 focused tests after review fixes; determinism, refs, UNKNOWN, corrections, no new table |
+| `ev0-20261101-d10`  | DeepSeek V4.1 Flash      | IMPLEMENTED | Commit `30b20c12cc` (+ test-only `8fef8e56a1`)                                              |
+| `ev0-20261101-d11`  | none (Claude Opus 5.5 A) | BLOCKED     | `provider_capacity`: Claude API rate limit                                                  |
+| `ev0-20261101-d11a` | Claude B — Pro Opus 5.5  | See R2.6    | Independent read-only review                                                                |
+| `ev0-20261101-d12`  | DeepSeek V4.1 Flash      | COMPLETED   | Durable result; no merge to `sync/upstream-20261031` or `main`                              |
 
 ## R2.5 Exact verification
 
-- `OrchestrationEvidenceService.test.ts` — 7/7 pass.
+- `OrchestrationEvidenceService.test.ts` — 9/9 pass after review fixes.
 - Affected typecheck: `@t3tools/contracts` pass; `t3` (server) pass; `vp run check:changed` typecheck step passed for all 39 packages.
 - `vp run check:changed`: format pass; lint pass; knip 1/2 pass; knip 2/2 failed once on one unused export (`ORCHESTRATION_EVIDENCE_BOUNDS`), fixed, rechecked clean; graphql checks pass; react compiler pass (371/371, 949 skipped); repo-wide 699-file test step `TIMEOUT` at 900 s (explicitly not a failure).
 - No RUNTIME PASS is claimed. The service is not wired to RPC/MCP/CLI/UI and was not exercised against a live server or real database.
@@ -220,3 +220,11 @@ Working branch: `feat/orchestration-evidence-v0-20261101`
 - **Self-execution was adequate for design and implementation.** DeepSeek held the archaeology context and the one-writer constraint. The independent cross-check added specific value; it did not find a different architecture.
 - **The gap audit changed the meaning of V0.** The exporter is correct but will often produce sparse evidence because the producers are unwired. This validates the browser plan's warning that V0 is both an evidence-production and an export project.
 - **No autonomy claim.** Routing records are evidence, not authorization. No learned router, no automatic route, no second model catalog.
+
+## R2.7 Independent review result
+
+- **Reviewer:** Claude B — Pro / Opus 5.5, read-only, different provider family and account instance from the orchestrator.
+- **Verdict:** `REVIEW PASS WITH FINDINGS`.
+- **Blocking:** 3 (determinism, pre-launch run identity in a decision, mutable outcome head). All repaired in `00d8ca71bc`.
+- **Non-blocking:** 8; 7 addressed, 1 (RPC/MCP/CLI wiring) explicitly deferred as V0 scope.
+- **Re-review:** the repairs were not independently re-reviewed. They were verified by the expanded 9/9 focused suite, typecheck, lint, knip, and formatting.
