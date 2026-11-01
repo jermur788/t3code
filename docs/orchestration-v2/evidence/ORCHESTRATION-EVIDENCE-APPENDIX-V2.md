@@ -330,3 +330,46 @@ At dispatch: capacity-to-completion `SUFFICIENT` for the narrow local repair; `U
 - **Remaining non-blocking/UNKNOWN:** `projectId`/`taskId` guard branches untested; pre-existing task-payload identity not checked; handoff thread reference not V2 cross-checked; corrupt handoff row aborts export (fail-loud); V2 1,000-event cap has no truncation marker; cross-task staging references dropped; finite 2,000 caps; no transport wiring; no live-service/real-DB proof; ARM producers remain the next milestone.
 - **PR #14:** untouched at `e51c1c5d74aed9824927d391590ddb33026c8d56`; OPEN / DRAFT / NOT MERGED.
 - **Next action:** Browser Overall inspects the exact final delta; do not merge. Transport wiring plus live/real-DB verification is the next milestone.
+
+---
+
+# Run 5 — Evidence V0 authority repair — decision-time appendix
+
+Run: Local DeepSeek Evidence V0 authority repair (B2)
+Date: 2026-11-01
+Orchestrator: DeepSeek V4.1 Flash (`opencode-go/deepseek-v4.1-flash`, OpenCode harness, variant `max`, agent `build`)
+Starting docs/result head: `8a40c0b7436e0698fedbfb26b48073996a94812e`
+Starting code head: `e1f201defad33ba758ffb48abf37e844ff65cf22`
+Base: `e51c1c5d74aed9824927d391590ddb33026c8d56`
+Governing spec: `docs/internals/orchestration-evidence-v0-spec.md @ d3a31b7fb89fd75c0d452c3b29a3d2ca9bb98acf`
+
+The packet's named starting head (`c235f00d`) predates the Manager-accepted provenance repair (`8a40c0b7`); this Run 5 starts from the accepted head to preserve B1/B3–B7 and performs no rebase or merge.
+
+This section is recorded before repair execution. Outcomes are appended later and do not rewrite these rows.
+
+## R5.1 Routing and decomposition — decision-time entries
+
+| Decision                  | Work unit                            | Band / confidence | Selected              | Reviewer               | Selection                  | Recorded at       |
+| ------------------------- | ------------------------------------ | ----------------- | --------------------- | ---------------------- | -------------------------- | ----------------- |
+| `ev0-repair-20261101-d11` | Split Runtime Routing from Execution | MEDIUM / 0.90     | DeepSeek V4.1 Flash   | Claude B — Pro planned | exploit + planned review   | 2026-11-01T21:55Z |
+| `ev0-repair-20261101-d12` | Focused independent authority review | MEDIUM / 0.80     | Claude B — Pro Opus 5 | N/A                    | explore independent review | 2026-11-01T21:55Z |
+| `ev0-repair-20261101-d13` | Final verification / handoff         | MEDIUM / 0.90     | DeepSeek V4.1 Flash   | N/A                    | forced orchestrator        | 2026-11-01T21:55Z |
+
+## R5.2 Capacity at decision time
+
+| Provider/pool                               | State                            | Remaining capacity | Source                    | Observed at       |
+| ------------------------------------------- | -------------------------------- | ------------------ | ------------------------- | ----------------- |
+| OpenCode / DeepSeek V4.1 Flash              | AVAILABLE (running this session) | `UNKNOWN`          | T3 live catalog + session | 2026-11-01T21:55Z |
+| Claude B — Pro (`claudeAgent_claude_b_pro`) | AVAILABLE (listed)               | `UNKNOWN`          | T3 live catalog           | 2026-11-01T21:55Z |
+| Claude A (`claudeAgent`)                    | AVAILABLE (listed)               | `UNKNOWN`          | T3 live catalog           | 2026-11-01T21:55Z |
+| Codex / OpenAI B                            | AVAILABLE (listed)               | `UNKNOWN`          | T3 live catalog           | 2026-11-01T21:55Z |
+
+At dispatch: capacity-to-completion `SUFFICIENT` for the narrow local repair; `UNKNOWN` for independent review until dispatched. Capacity substitution, if needed, will be appended as a new decision rather than editing these rows.
+
+## R5.3 Outcome summary
+
+| Decision                  | Actual executor | State   | Key evidence                           |
+| ------------------------- | --------------- | ------- | -------------------------------------- |
+| `ev0-repair-20261101-d11` | PENDING         | PENDING | Authority split implementation pending |
+| `ev0-repair-20261101-d12` | PENDING         | PENDING | Independent review pending             |
+| `ev0-repair-20261101-d13` | PENDING         | PENDING | Final verification and handoff pending |

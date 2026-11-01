@@ -1052,3 +1052,56 @@ These decisions are prospective and recorded before repair implementation. They 
 - **Remaining non-blocking/UNKNOWN:** N2 guard branches (`projectId`/`taskId`) untested; N4 pre-existing task payload identity not checked against row keys; handoff thread reference not added to V2 unresolved cross-checking; corrupt canonical handoff row aborts export (fail-loud, consistent with other rows); V2 1,000-event read cap has no truncation marker; cross-task staging references are dropped; 2,000-reference cap is finite; no transport wiring; no live-service/real-DB proof; ARM producers remain the next milestone.
 - **PR #14:** untouched at `sync/upstream-20261031 @ e51c1c5d74aed9824927d391590ddb33026c8d56`; not merged, not advanced, not strengthened by this work.
 - **Next action:** Browser Overall inspects the exact final delta and evidence; do not merge. Transport wiring plus live/real-DB verification is the next milestone.
+
+---
+
+# Run 5 — Evidence V0 authority repair — decision-time records
+
+Run: Local DeepSeek Evidence V0 authority repair (B2)
+Date: 2026-11-01
+Orchestrator: DeepSeek V4.1 Flash (`opencode-go/deepseek-v4.1-flash`, OpenCode harness, variant `max`, agent `build`)
+Starting docs/result head: `8a40c0b7436e0698fedbfb26b48073996a94812e`
+Starting code head: `e1f201defad33ba758ffb48abf37e844ff65cf22`
+Base: `e51c1c5d74aed9824927d391590ddb33026c8d56`
+Governing spec: `docs/internals/orchestration-evidence-v0-spec.md @ d3a31b7fb89fd75c0d452c3b29a3d2ca9bb98acf`
+Browser blocker: `2026-11-01-evidence-v0-authority-blocker-manager-update.md` B2
+
+These decisions are prospective and recorded before repair implementation. They do not rewrite `ev0-*`, `ev0-repair-20261101-d01..d07`, or `ev0-repair-20261101-d08..d10` records.
+
+**Starting-head reconciliation (OBSERVED FACT):** the authority-repair handoff names starting HEAD `c235f00d3ade9d548ad106a03c58f9dad88b50ea` and reviewed code ancestor `7db996d23a87bb8eab9041bf2d969e38c1129865`, but those predate the already Manager-accepted provenance repair at `8a40c0b7436e0698fedbfb26b48073996a94812e` (code head `e1f201defad33ba758ffb48abf37e844ff65cf22`). This repair therefore starts from `8a40c0b7`, not from `c235f00d`, so the accepted B1/B3–B7 provenance behaviour is preserved. No rebase or merge is performed.
+
+### D-EV0R3-01 — Split Runtime Routing evidence from Runtime Execution evidence
+
+- `decision_id`: `ev0-repair-20261101-d11`
+- `recorded_at`: 2026-11-01T21:55Z
+- **Difficulty:** ambiguity 0.20; scope 0.35; reasoning 0.50; integration/tool 0.25; risk 0.55; verification 0.60; band `MEDIUM`; confidence 0.90.
+- **Candidates:** DeepSeek self (single writer); bounded independent reviewer after repair.
+- **Selected executor:** DeepSeek self.
+- **Rationale:** the defect is one authority classification inside one existing derived projection. Route-resolution facts already exist canonically in `attempt.receipt.route`; the repair projects them as a distinct `runtime-routing` item and keeps `receipt.launch`/packet facts under `runtime-execution`. No new datastore, canonical routing record, or routing behaviour change is needed.
+- **Alternatives rejected:** a new route-resolution table or canonical routing identity (duplicate truth, prohibited); minting a synthetic routing record id solely for export (prohibited); leaving both domains merged under `runtime-execution` (the B2 blocker).
+- **Selection mechanism:** exploit + planned focused review.
+- `machine`: `{"schema":"t3-orchestration-evidence-v2","event_id":"ev0-repair-20261101-d11","event_type":"routing_decision","occurred_at":"2026-11-01T21:55Z","recorded_at":"2026-11-01T21:55Z","project":"t3-fork","task":"evidence-v0-authority-repair","orchestrator":{"provider":"opencode","model":"opencode-go/deepseek-v4.1-flash"},"selected":{"provider":"opencode","model":"opencode-go/deepseek-v4.1-flash"},"difficulty":{"ambiguity":0.20,"scope_breadth":0.35,"reasoning_complexity":0.50,"integration_tool_complexity":0.25,"risk":0.55,"verification_burden":0.60,"band":"MEDIUM","confidence":0.90},"selection":"exploit_plus_planned_review","outcome":"PENDING"}`
+
+### D-EV0R3-02 — Focused independent review of the authority split
+
+- `decision_id`: `ev0-repair-20261101-d12`
+- `recorded_at`: 2026-11-01T21:55Z
+- **Difficulty:** ambiguity 0.25; scope 0.30; reasoning 0.55; integration/tool 0.25; risk 0.55; verification 0.60; band `MEDIUM`; confidence 0.80.
+- **Candidates:** Claude B — Pro (`claudeAgent_claude_b_pro`) / `claude-opus-5-5`; Codex (`codex`) / `gpt-6.1-sol`; DeepSeek self (rejected as non-independent).
+- **Selected executor:** Claude B — Pro first, with recorded capacity substitution if unavailable.
+- **Rationale:** the repair changes authority ownership semantics after the reviewed `7db996d` head, so a fresh different-provider review must explicitly check Routing vs Execution ownership, duplicate/conflicting authority, decision/outcome separation, stable identities/references, six-authority coverage, and the negative schema test.
+- **Alternatives rejected:** relying on the provenance-repair review (it reviewed different semantics); self-review (not independent).
+- **Selection mechanism:** explore independent review + capacity substitution rule.
+- `machine`: `{"schema":"t3-orchestration-evidence-v2","event_id":"ev0-repair-20261101-d12","event_type":"routing_decision","occurred_at":"2026-11-01T21:55Z","recorded_at":"2026-11-01T21:55Z","project":"t3-fork","task":"evidence-v0-authority-repair-review","orchestrator":{"provider":"opencode","model":"opencode-go/deepseek-v4.1-flash"},"selected":{"provider":"claudeAgent_claude_b_pro","model":"claude-opus-5-5"},"difficulty":{"ambiguity":0.25,"scope_breadth":0.30,"reasoning_complexity":0.55,"integration_tool_complexity":0.25,"risk":0.55,"verification_burden":0.60,"band":"MEDIUM","confidence":0.80},"selection":"explore_independent_review","outcome":"PENDING"}`
+
+### D-EV0R3-03 — Final verification and handoff
+
+- `decision_id`: `ev0-repair-20261101-d13`
+- `recorded_at`: 2026-11-01T21:55Z
+- **Difficulty:** ambiguity 0.10; scope 0.25; reasoning 0.25; integration/tool 0.30; risk 0.40; verification 0.70; band `MEDIUM`; confidence 0.90.
+- **Candidates:** DeepSeek self.
+- **Selected executor:** DeepSeek self.
+- **Rationale:** forced orchestrator responsibility; verification must run on the exact repaired head and the handoff must reconcile every outcome honestly.
+- **Alternatives rejected:** delegating synthesis (orchestrator owns reconciliation).
+- **Selection mechanism:** forced orchestrator.
+- `machine`: `{"schema":"t3-orchestration-evidence-v2","event_id":"ev0-repair-20261101-d13","event_type":"routing_decision","occurred_at":"2026-11-01T21:55Z","recorded_at":"2026-11-01T21:55Z","project":"t3-fork","task":"evidence-v0-authority-verification-handoff","orchestrator":{"provider":"opencode","model":"opencode-go/deepseek-v4.1-flash"},"selected":{"provider":"opencode","model":"opencode-go/deepseek-v4.1-flash"},"difficulty":{"ambiguity":0.10,"scope_breadth":0.25,"reasoning_complexity":0.25,"integration_tool_complexity":0.30,"risk":0.40,"verification_burden":0.70,"band":"MEDIUM","confidence":0.90},"selection":"forced_orchestrator","outcome":"PENDING"}`
