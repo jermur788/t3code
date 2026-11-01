@@ -898,3 +898,23 @@ These decisions are prospective and recorded before repair implementation. They 
 - **Alternatives rejected:** delegating synthesis (orchestrator owns reconciliation).
 - **Selection mechanism:** forced orchestrator.
 - `machine`: `{"schema":"t3-orchestration-evidence-v2","event_id":"ev0-repair-20261101-d07","event_type":"routing_decision","occurred_at":"2026-11-01T19:45Z","recorded_at":"2026-11-01T19:45Z","project":"t3-fork","task":"evidence-v0-repair-verification-handoff","orchestrator":{"provider":"opencode","model":"opencode-go/deepseek-v4.1-flash"},"selected":{"provider":"opencode","model":"opencode-go/deepseek-v4.1-flash"},"difficulty":{"ambiguity":0.15,"scope_breadth":0.40,"reasoning_complexity":0.35,"integration_tool_complexity":0.45,"risk":0.50,"verification_burden":0.80,"band":"MEDIUM","confidence":0.85},"selection":"forced_orchestrator","outcome":"PENDING"}`
+
+## Appended outcome — D-EV0R-06 independent review attempt 1
+
+- `decision_id`: `ev0-repair-20261101-d06`
+- `recorded_at`: 2026-11-01T19:58Z
+- **State:** `BLOCKED` — provider capacity, not a review result.
+- **Observed evidence:** delegated review task to `claudeAgent` / `claude-opus-5-5` (effort `max`) returned `Claude API rate limit reached. Try again later.` No review report was produced and it is not counted as evidence.
+- **Repair:** append a new substitution decision (`ev0-repair-20261101-d06a`) and route the bounded review to an available different provider.
+
+### D-EV0R-06a — Capacity substitution for repaired-head review
+
+- `decision_id`: `ev0-repair-20261101-d06a`
+- `recorded_at`: 2026-11-01T19:58Z
+- **Difficulty:** same as d06 (ambiguity 0.30; scope 0.55; reasoning 0.70; integration/tool 0.40; risk 0.65; verification 0.60; band `HIGH`; confidence 0.67).
+- **Candidates:** Codex gpt-6.1-sol; Claude B — Pro; DeepSeek self (rejected as non-independent).
+- **Selected executor:** Codex `gpt-6.1-sol`, read-only review.
+- **Rationale:** the planned Claude instance is rate-limited. Codex is available, is a different provider/model from the DeepSeek implementer, and already performed a useful independent archaeology cross-check in the prior run.
+- **Alternatives rejected:** retrying the rate-limited Claude instance immediately (likely wasted capacity); Claude B as a second fallback only if Codex also fails; self-review (not independent).
+- **Selection mechanism:** forced capacity substitution.
+- `machine`: `{"schema":"t3-orchestration-evidence-v2","event_id":"ev0-repair-20261101-d06a","event_type":"routing_decision","occurred_at":"2026-11-01T19:58Z","recorded_at":"2026-11-01T19:58Z","project":"t3-fork","task":"evidence-v0-repaired-head-review-substitute","orchestrator":{"provider":"opencode","model":"opencode-go/deepseek-v4.1-flash"},"selected":{"provider":"codex","model":"gpt-6.1-sol"},"difficulty":{"ambiguity":0.30,"scope_breadth":0.55,"reasoning_complexity":0.70,"integration_tool_complexity":0.40,"risk":0.65,"verification_burden":0.60,"band":"HIGH","confidence":0.67},"selection":"forced_capacity_substitution","prior_attempt":"ev0-repair-20261101-d06","outcome":"PENDING"}`
