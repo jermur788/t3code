@@ -163,3 +163,103 @@ No precise quota number is inferred from the absence of errors.
 ## Event log
 
 Outcome events are appended below after execution. Decision records above are not edited retroactively.
+
+### CORRECTION — decision-record timing (appended 2026-11-01T08:26Z)
+
+The L2 test worktree was created at 2026-11-01T08:01:11Z and setup finished at 08:01:45Z. The d01–d08 decision records were written at 08:05Z, before the first focused test at 08:06:03Z and before any runtime, rendered-UI, restart, OAuth, or CI work. D-L2-02's worktree action therefore predates its record by about four minutes. No outcome was known when the records were written; this correction preserves the decision-time/outcome separation rather than rewriting the original record.
+
+### OUTCOME — l2-20261101-d01 / d08 — orchestration and final synthesis
+
+- **Actual executor:** DeepSeek V4.1 Flash, OpenCode harness, variant `max`, agent `build`.
+- **Substitutions/escalations:** none for orchestration. One bounded independent review was delegated to Claude Sonnet 5.5 (D-L2-07), as planned.
+- **State:** `RUNTIME PASS` for the focused local scope, with external blockers separated (see below).
+- **Evidence:** exact candidate `e51c1c5d74aed9824927d391590ddb33026c8d56` from `origin/sync/upstream-20261031`; detached clean test worktree `/home/jer/dev/t3code-l2-combined-20261101`; local branch `sync/upstream-20261031` in the main checkout remained stale at `f68e6078` and was not used as the candidate ref. No force-push, history rewrite, PR #14 merge, or code change.
+- **Learning assessment:** self-orchestration was sufficient; the main value of the Claude review was catching write-up/evidence gaps, not a code defect. See the appendix learning section.
+
+### OUTCOME — l2-20261101-d02 — repository safety and exact-SHA isolation
+
+- **Actual executor:** DeepSeek V4.1 Flash.
+- **State:** PASS.
+- **Observed facts:** test worktree detached at exact SHA; `git status --porcelain` empty; origin ref exact; no other writer used the test worktree. The main checkout's local `sync/upstream-20261031` branch was at `f68e6078` (behind 9) and is checked out in the browser worktree; it was not moved. No stash/reset/discard was performed. A stray untracked `/home/jer/dev/t3code/hub-l2.pid` created by an L2 fixture command was removed; the main checkout returned to clean.
+- **Residual:** the decision record timing correction above.
+
+### OUTCOME — l2-20261101-d03 — focused tests and typecheck
+
+- **Actual executor:** DeepSeek V4.1 Flash.
+- **State:** PASS.
+- **Observed results (all in the test worktree at exact SHA):**
+  - `vp test run apps/server/src/projectRuntime/AdaptiveRoutingService.test.ts` — 14/14;
+  - `vp test run apps/server/src/persistence/Migrations/Fork/007_AdaptiveRouting.test.ts` — 9/9;
+  - `vp test run packages/shared/src/usageLimits.test.ts` — 68/68;
+  - `vp test run apps/server/src/runtimeRouting/RuntimeRoutingProviderView.test.ts apps/server/src/runtimeRouting/RuntimeRoutingService.test.ts` — 10/10;
+  - `vp test run apps/server/src/provider/CodexChatGptAuth.test.ts` — 56/56;
+  - `vp test run apps/server/src/projectRuntime/ProjectRuntimeRpc.test.ts apps/server/src/projectRuntime/RuntimeTaskExecutionQualification.test.ts apps/server/src/projectRuntime/RuntimeTaskExecutionService.test.ts` — 27/27;
+  - `vp test run apps/web/src/components/usage/UsageLimitsPooled.browser.test.tsx` — 2/2;
+  - `vp run --filter @t3tools/shared --filter @t3tools/web --filter t3 typecheck` — 3/3 successful.
+- **Totals:** 186 unique focused tests passed across 10 test files; affected typecheck 3/3.
+- **Limits:** rejection tests assert `PersistenceSqlError` plus zero rows, not the exact error detail. The missing-attempt/wrong-project and NULL-thread branches are code-present but not separately tested with `execution` supplied. These do not contradict the required four-case matrix.
+
+### OUTCOME — l2-20261101-d04 — Runtime/V2 execution provenance
+
+- **Actual executor:** DeepSeek V4.1 Flash; independent interpretation review by Claude Sonnet 5.5.
+- **State:** PASS (service-level executable evidence).
+- **Observed facts:**
+  - focused `-t "supplied execution"` run: 4 passed, 10 filtered out;
+  - the four required cases are present: NULL recorded run rejects, wrong recorded run rejects, wrong recorded thread rejects, exact recorded thread + run accepts and writes one row;
+  - each rejection asserts `PersistenceSqlError` and zero `adaptive_execution_observations` rows;
+  - `AdaptiveRoutingService.ts:148-155` loads the linked attempt and rejects when the attempt is missing, the thread differs, `run_id` is NULL, or the supplied run differs.
+- **Reviewer note:** `appendExecutionObservationReference` has no non-test caller outside its service file. This is not a live Runtime↔V2 bridge exercise. The handoff permits focused executable evidence; no broader V2 runtime behavior is claimed.
+- **Residual risks (low):** the SELECT and INSERT are not in one transaction; `run_id` appears mutable at `RuntimeTaskExecutionService.ts:309`; a theoretical race exists.
+
+### OUTCOME — l2-20261101-d05 — rendered UI and restart/persistence
+
+- **Actual executor:** DeepSeek V4.1 Flash.
+- **State:** PASS.
+- **Distinct-account fixture:** native managed Codex credentials `codex_work` = `work@example.test` and `codex_personal` = `personal@example.test`, both without a native workspace id; hub accounts `acct-work` / `acct-personal` with the same emails, no workspace id. This exercises the unique-email key path, not workspace disambiguation.
+- **Distinct rendered evidence:** Usage showed `Codex Work` 60% session / 90% weekly left and `Codex Personal` 25% session / 70% weekly left. Account popovers reported `Via: Qualification Hub`; provider settings showed both instances enabled and exactly one `Qualification Hub` CLI Proxy source. No duplicate hub-only rows for the bound instances.
+- **Ambiguous fixture:** both native emails changed to `shared@example.test` with no workspace id; hub account `shared` with workspace `ws-shared`, 55% / 20% used.
+- **Ambiguous rendered evidence:** Usage showed one hub-only `SE` row at 45% session / 80% weekly left, no per-instance Codex Work/Personal capacity rows, and the external ChatGPT fallback naming both instances. Neither provider instance received the hub account's capacity.
+- **Restart:** stopped the dev server by its captured process group and restarted it on the same exact SHA; the distinct rows reconstructed unchanged (`25/60`, `70/90`). The second transition to the ambiguous fixture also used a real stop/start. The browser session cookie survived because the worktree signing key persisted; no re-pair was required.
+- **Workspace/Development surfaces:** `/settings/general` rendered the `T3 Fork interface` section with Workspace/Development modes (Development selected); `/settings/development-profiles` rendered; `/home` rendered the Development `Project Runtime home` with Development Profile, Instructions, Sources, Project State, and Tasks & Handoffs sections. The seeded project had Runtime disabled, so those sections showed the disabled state rather than executing Runtime. No crash or obvious reconciliation regression was seen.
+- **Environment noise:** the app showed a `jer-laptop froze for 9s` CPU-load toast during the render; the host load was elevated (~5–10 on 4 cores). This is an environment symptom, not a candidate defect.
+- **Screenshot limitation:** the T3 preview snapshot/screenshot action timed out even on `https://example.com`, while navigation, live DOM evaluation, computed styles, and accessible labels worked. Rendered evidence is therefore live-browser DOM/ARIA/layout evidence, not a PNG capture.
+- **Capacity limits:** "native usable limits win over hub" is covered by the unit test `prefers usable native limits over a matching hub snapshot` (`usageLimits.test.ts:1438`), not by a render. Workspace-disambiguated capacity is covered by unit tests (`usageLimits.test.ts:1385`), not by this fixture. A workspace-less native instance can join the only known workspace for its email (`usageLimits.ts:240-241`), a residual misattribution risk that the unit tests treat as intended.
+
+### OUTCOME — l2-20261101-d06 — real-provider / OAuth / paid-eval
+
+- **Actual executor:** DeepSeek V4.1 Flash, read-only availability check.
+- **State:** `BLOCKED — credentials unavailable`.
+- **Observed facts:** the environment has one real Codex credential file (`~/.codex/auth.json`, one `account_id`, refresh token present); no second real subscription or safe account access was found. No real OAuth refresh, re-auth, paid orchestration eval, or live credential probe was run. The fixture/mock evidence above is not promoted to a real OAuth pass.
+- **Why no live eval:** using the sole live credential could rotate the developer's refresh token and consume real quota. The handoff prohibits inducing risky refresh-token rotation to satisfy a gate.
+
+### OUTCOME — l2-20261101-d07 — independent evidence review
+
+- **Actual executor:** Claude Sonnet 5.5 (`claudeAgent`), effort high, T3 delegated child `thread:delegated-task:...:l2-review-20261101-01`.
+- **Observed timing:** requested 08:25:03Z, completed 08:26:14Z (about 71 seconds).
+- **State:** REVIEW PASS (no blocking code defect).
+- **Findings:** reviewed candidate/worktree, provenance matrix, capacity resolver, and ledger. It confirmed the code matches the handoff, the four cases are isolated, and the rendered ambiguous behavior is consistent with the resolver. It flagged write-up gaps: cite the origin ref not the stale local branch; state the distinct fixture identity path; do not claim a live provenance caller; add the no-second-owner, Workspace render, OAuth blocker, and CI absence; note the rejection-assertion weakness and the non-transactional check; and append a correction for the late d02 record.
+- **Disposition:** all findings are addressed in this outcome record and the durable result. No code repair was required.
+
+### OUTCOME — l2-20261101-d08 — final durable handoff
+
+- **Actual executor:** DeepSeek V4.1 Flash.
+- **State:** COMPLETED.
+- **Result:** written to Overall Dev at `messages/t3-fork/2026-11-01-local-l2-combined-sync-qualification-result.md`.
+- **Integration state:** not merged to `main`; PR #14 remains open/draft at the exact candidate. Browser Overall owns final integration.
+
+### CI / GitHub observation
+
+- Exact `e51c1c5d74aed9824927d391590ddb33026c8d56`:
+  - commit status aggregate: `total_count: 0`, empty statuses;
+  - workflow runs: `total_count: 0`;
+  - check runs: `total_count: 0`.
+- `main` remained `d971327934eeb79bed5b02e4477a5140615eacf0`; PR #14 head remained the exact candidate and was open/draft/mergeable.
+- This is an `OPERATIONAL BLOCKER`, not a CI pass and not a test failure.
+
+### Learning assessment
+
+- **Supported:** DeepSeek self-execution was adequate for deterministic test, fixture, restart, and synthesis work. The local lane already had the fixture context and could maintain one-writer safety. The independent Claude review found no code defect but did catch material evidence-presentation gaps (origin-vs-local ref, fixture identity path, live-caller limit, missing checks) that self-review had not surfaced. That supports retaining a bounded cross-provider review for high-risk qualification even when the executor is confident.
+- **Weakened:** the "record every task before execution" discipline slipped for repo/worktree setup by about four minutes because the worktree was created before the batched decision record. The evidence is still decision-time relative to outcomes, but the process should record earliest setup actions immediately.
+- **Capacity/context:** no precise quota data was available; all unknown values stayed UNKNOWN. No model substitution occurred. The Claude review completed quickly, so capacity-to-completion was sufficient.
+- **Cost/time:** no token or cost data is available from this harness; do not infer it. Wall-clock observations are limited to the recorded timestamps.
+- **Hypotheses (not active policy):** for future L2-style work, a two-stage pattern may be better: record the top-level decision and repo-safety decision immediately, then batch the deterministic subtask records before their execution. Independent review should receive the evidence draft, not only the source, because its highest-value findings were about claims and coverage.
