@@ -9,16 +9,13 @@ import {
   AdaptiveOutcomeReconciliationId,
   AdaptiveRealizedDifficultyId,
   AdaptiveRecommendationReceiptId,
-  ContextTransferId,
-  NodeId,
+  EventId,
+  MessageId,
   OrchestrationEvidenceEvent,
   ProjectId,
   ProjectRuntimeTaskId,
   ProviderDriverKind,
   ProviderInstanceId,
-  ProviderSessionId,
-  ProviderThreadId,
-  RunAttemptId,
   RunId,
   RuntimeExecutionAttemptId,
   ThreadId,
@@ -31,10 +28,14 @@ import {
   type AdaptiveOutcomeReconciliation,
   type AdaptiveRealizedDifficulty,
   type AdaptiveRecommendationReceipt,
+  type OrchestrationEvidenceExport,
+  type OrchestrationEvidenceStagingReference,
+  type OrchestrationV2DomainEvent,
   ProjectRuntimeTask,
   RuntimeExecutionAttempt,
   type RuntimeRouteResolution,
 } from "@t3tools/contracts";
+import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
@@ -43,6 +44,7 @@ import * as SqlClient from "effect/sql/SqlClient";
 import { type SqlError } from "effect/sql/SqlError";
 
 import * as SqlitePersistence from "../persistence/Sqlite.ts";
+import * as EventStore from "../orchestration-v2/EventStore.ts";
 import * as AdaptiveRoutingService from "./AdaptiveRoutingService.ts";
 import * as OrchestrationEvidenceService from "./OrchestrationEvidenceService.ts";
 
@@ -54,11 +56,6 @@ const taskId = ProjectRuntimeTaskId.make("ev0-task");
 const attemptId = RuntimeExecutionAttemptId.make("ev0-attempt");
 const threadId = ThreadId.make("thread:ev0");
 const runId = RunId.make("run:ev0");
-const runAttemptId = RunAttemptId.make("run-attempt:ev0");
-const nodeId = NodeId.make("node:ev0");
-const providerSessionId = ProviderSessionId.make("provider-session:ev0");
-const providerThreadId = ProviderThreadId.make("provider-thread:ev0");
-const contextTransferId = ContextTransferId.make("context-transfer:ev0");
 const predictionId = AdaptiveDifficultyPredictionId.make("ev0-prediction");
 const realizedDifficultyId = AdaptiveRealizedDifficultyId.make("ev0-realized");
 const observationId = AdaptiveExecutionObservationId.make("ev0-observation");
@@ -276,11 +273,6 @@ const observation: AdaptiveExecutionObservationReference = {
   execution: {
     threadId,
     runId,
-    runAttemptId,
-    nodeId,
-    providerSessionId,
-    providerThreadId,
-    contextTransferId,
   },
   configuration: {
     requested: { instanceId: opencode, model: "opencode-go/deepseek-v4.1-flash" },
@@ -355,6 +347,36 @@ const receipt: AdaptiveRecommendationReceipt = {
   createdAt: createdTask,
 };
 
+const secondReceipt: AdaptiveRecommendationReceipt = {
+  ...receipt,
+  recommendationReceiptId: AdaptiveRecommendationReceiptId.make("ev0-receipt-2"),
+  recommendedCandidate: { instanceId: claude, model: "claude-sonnet-5-5" },
+  confidence: 0.3,
+  createdAt: createdTask,
+};
+
+const l2StagingReference: OrchestrationEvidenceStagingReference = {
+  stagingId: "l2-20261101-project-ledger",
+  projectId,
+  taskId,
+  branch: "docs/t3-fork-orchestration-evidence-20261101",
+  commit: "6b143992cbc811cbb2deec8b32d9ebd2a1ac87cd",
+  path: "docs/orchestration-v2/evidence/ORCHESTRATION-EVIDENCE-APPENDIX-V2.md",
+  decisionIds: [
+    "l2-20261101-d01",
+    "l2-20261101-d02",
+    "l2-20261101-d03",
+    "l2-20261101-d04",
+    "l2-20261101-d05",
+    "l2-20261101-d06",
+    "l2-20261101-d07",
+    "l2-20261101-d08",
+  ],
+  evidenceClass: "orchestrator-claim",
+  provenance: "Local L2 durable result plus project-owned orchestration ledger",
+  occurredAt: "2026-11-01T08:05:00.000Z",
+};
+
 const assignment: AdaptiveExperimentAssignment = {
   schemaVersion: 1,
   assignmentId,
@@ -400,10 +422,88 @@ const seedRuntime = Effect.gen(function* () {
       ${pendingAttempt.updatedAt}, ${encodeAttempt(pendingAttempt)})`;
 });
 
+const v2At = DateTime.makeUnsafe(createdAttempt);
+const v2ThreadEventId = EventId.make(`event:${threadId}:created`);
+const v2RunEventId = EventId.make("event:ev0-run-created");
+
+const v2ThreadCreated = (id: ThreadId, title: string): OrchestrationV2DomainEvent => ({
+  id: EventId.make(`event:${id}:created`),
+  type: "thread.created",
+  threadId: id,
+  occurredAt: v2At,
+  payload: {
+    createdBy: "user",
+    creationSource: "web",
+    id,
+    projectId,
+    title,
+    providerInstanceId: opencode,
+    modelSelection: {
+      instanceId: opencode,
+      model: "opencode-go/deepseek-v4.1-flash",
+    },
+    runtimeMode: "full-access",
+    interactionMode: "default",
+    branch: null,
+    worktreePath: null,
+    activeProviderThreadId: null,
+    lineage: { parentThreadId: null, relationshipToParent: null, rootThreadId: id },
+    forkedFrom: null,
+    createdAt: v2At,
+    updatedAt: v2At,
+    archivedAt: null,
+    settledOverride: null,
+    settledAt: null,
+    lastVisitedAt: null,
+    deletedAt: null,
+  },
+});
+
+const v2RunCreated: OrchestrationV2DomainEvent = {
+  id: v2RunEventId,
+  type: "run.created",
+  threadId,
+  runId,
+  occurredAt: v2At,
+  payload: {
+    id: runId,
+    threadId,
+    ordinal: 1,
+    providerInstanceId: opencode,
+    modelSelection: {
+      instanceId: opencode,
+      model: "opencode-go/deepseek-v4.1-flash",
+    },
+    providerThreadId: null,
+    userMessageId: MessageId.make("message:ev0"),
+    rootNodeId: null,
+    activeAttemptId: null,
+    status: "completed",
+    requestedAt: v2At,
+    startedAt: v2At,
+    completedAt: v2At,
+    checkpointId: null,
+    contextHandoffId: null,
+  },
+};
+
+const seedV2 = Effect.gen(function* () {
+  const eventStore = yield* EventStore.EventStoreV2;
+  yield* eventStore.append({
+    events: [v2ThreadCreated(threadId, "Evidence V0 execution"), v2RunCreated],
+  });
+});
+
 const layerTest = Layer.merge(
   OrchestrationEvidenceService.layer,
   AdaptiveRoutingService.layer,
-).pipe(Layer.provideMerge(SqlitePersistence.layerMemory));
+).pipe(Layer.provideMerge(EventStore.layer), Layer.provideMerge(SqlitePersistence.layerMemory));
+
+const seedAll = Effect.gen(function* () {
+  yield* seedRuntime;
+  yield* seedAdaptive;
+  yield* seedV2;
+});
 
 const seedAdaptive = Effect.gen(function* () {
   const adaptive = yield* AdaptiveRoutingService.AdaptiveRoutingService;
@@ -421,8 +521,7 @@ const decodeEvent = Schema.decodeUnknownSync(Schema.fromJsonString(Orchestration
 
 it.effect("exports a versioned envelope and reconstructs task-first chronological history", () =>
   Effect.gen(function* () {
-    yield* seedRuntime;
-    yield* seedAdaptive;
+    yield* seedAll;
     const evidence = yield* OrchestrationEvidenceService.OrchestrationEvidenceService;
 
     const exported = yield* evidence.exportTask(projectId, taskId);
@@ -467,10 +566,9 @@ it.effect("exports a versioned envelope and reconstructs task-first chronologica
   }).pipe(Effect.provide(layerTest)),
 );
 
-it.effect("resolves every canonical reference and creates no evidence table", () =>
+it.effect("resolves canonical references, bounded V2 events, and explicit unresolved V2", () =>
   Effect.gen(function* () {
-    yield* seedRuntime;
-    yield* seedAdaptive;
+    yield* seedAll;
     const evidence = yield* OrchestrationEvidenceService.OrchestrationEvidenceService;
     const sql = yield* SqlClient.SqlClient;
     const exported = yield* evidence.exportTask(projectId, taskId);
@@ -481,11 +579,15 @@ it.effect("resolves every canonical reference and creates no evidence table", ()
     > = {
       "project-runtime-task": (recordId) =>
         sql`SELECT 1 FROM project_runtime_tasks WHERE project_id = ${projectId} AND task_id = ${recordId}`,
+      "project-runtime-verification": (_recordId) =>
+        sql`SELECT 1 FROM project_runtime_tasks WHERE project_id = ${projectId} AND task_id = ${taskId}`,
       "execution-attempt": (recordId) =>
         sql`SELECT 1 FROM project_runtime_execution_attempts WHERE attempt_id = ${recordId}`,
       "execution-attempt-decision": (recordId) =>
         sql`SELECT 1 FROM project_runtime_execution_attempts WHERE attempt_id = ${recordId}`,
       "execution-attempt-outcome": (recordId) =>
+        sql`SELECT 1 FROM project_runtime_execution_attempts WHERE attempt_id = ${recordId}`,
+      "adaptive-recommendation-attempt-link": (recordId) =>
         sql`SELECT 1 FROM project_runtime_execution_attempts WHERE attempt_id = ${recordId}`,
       "adaptive-outcome-reconciliation": (recordId) =>
         sql`SELECT 1 FROM adaptive_outcome_reconciliations WHERE reconciliation_id = ${recordId}`,
@@ -505,40 +607,69 @@ it.effect("resolves every canonical reference and creates no evidence table", ()
         sql`SELECT 1 FROM adaptive_recommendation_receipts WHERE recommendation_receipt_id = ${recordId}`,
       "adaptive-experiment-assignment": (recordId) =>
         sql`SELECT 1 FROM adaptive_experiment_assignments WHERE assignment_id = ${recordId}`,
+      "orchestration-v2-event": (recordId) =>
+        sql`SELECT 1 FROM orchestration_events WHERE event_id = ${recordId}`,
     };
 
+    const unresolvedIds = new Set(
+      exported.events
+        .filter((item) => item.recordType === "orchestration-v2-unresolved")
+        .map((item) => item.recordId),
+    );
+
     for (const item of exported.events) {
+      if (item.recordType === "orchestration-v2-unresolved") {
+        assert.equal(item.recordBasis, "derived-view");
+        assert.equal(item.authority, "orchestration-v2");
+        assert.equal(item.facts.find((fact) => fact.key === "status")?.value, "unresolved");
+        assert.isTrue(item.unknownFields.includes("canonicalRecord"));
+        continue;
+      }
       const resolver = resolvers[item.recordType];
       assert.isDefined(resolver, `missing resolver for ${item.recordType}`);
       assert.isAtLeast((yield* resolver!(item.recordId)).length, 1, `unresolved ${item.recordId}`);
       for (const reference of item.references) {
         const referenceResolver = resolvers[reference.recordType];
-        if (referenceResolver === undefined) continue;
-        assert.isAtLeast(
-          (yield* referenceResolver(reference.recordId)).length,
-          1,
-          `unresolved reference ${reference.recordType}:${reference.recordId}`,
-        );
-      }
-    }
-
-    const v2Ids: ReadonlySet<string> = new Set([
-      threadId,
-      pendingThreadId,
-      runId,
-      runAttemptId,
-      nodeId,
-      providerSessionId,
-      providerThreadId,
-      contextTransferId,
-    ]);
-    for (const item of exported.events) {
-      for (const reference of item.references) {
-        if (reference.recordType.startsWith("orchestration-v2-")) {
-          assert.isTrue(v2Ids.has(reference.recordId));
+        if (referenceResolver !== undefined) {
+          assert.isAtLeast(
+            (yield* referenceResolver(reference.recordId)).length,
+            1,
+            `unresolved reference ${reference.recordType}:${reference.recordId}`,
+          );
+        } else if (reference.recordType.startsWith("orchestration-v2-")) {
+          const resolvedByEvent = exported.events.some(
+            (event) =>
+              event.recordType === "orchestration-v2-event" &&
+              (reference.recordType === "orchestration-v2-thread"
+                ? event.threadId === reference.recordId
+                : reference.recordType === "orchestration-v2-run"
+                  ? event.runId === reference.recordId
+                  : false),
+          );
+          assert.isTrue(
+            resolvedByEvent || unresolvedIds.has(reference.recordId),
+            `V2 reference ${reference.recordType}:${reference.recordId} neither resolves nor is marked unresolved`,
+          );
         }
       }
     }
+
+    const v2Events = exported.events.filter((item) => item.recordType === "orchestration-v2-event");
+    assert.deepEqual(
+      v2Events.map((item) => item.recordId).sort(),
+      [v2ThreadEventId, v2RunEventId].sort(),
+    );
+    assert.deepEqual(
+      v2Events.map((item) => item.facts.find((fact) => fact.key === "sequence")?.value),
+      [1, 2],
+    );
+    for (const item of v2Events) {
+      assert.equal(item.authority, "orchestration-v2");
+      assert.equal(item.occurredAt, createdAttempt);
+      assert.isNull(item.recordedAt);
+      assert.isTrue(item.unknownFields.includes("recordedAt"));
+    }
+    assert.isTrue(unresolvedIds.has(pendingThreadId));
 
     const evidenceTables = yield* sql<{ readonly count: number }>`SELECT COUNT(*) AS count
       FROM sqlite_schema WHERE type = 'table' AND name LIKE '%orchestration_evidence%'`;
@@ -546,12 +677,34 @@ it.effect("resolves every canonical reference and creates no evidence table", ()
   }).pipe(Effect.provide(layerTest)),
 );
 
+it.effect("reads only the referenced V2 thread scope", () =>
+  Effect.gen(function* () {
+    yield* seedAll;
+    const eventStore = yield* EventStore.EventStoreV2;
+    const unrelatedThreadId = ThreadId.make("thread:ev0-unrelated");
+    yield* eventStore.append({
+      events: [v2ThreadCreated(unrelatedThreadId, "Unrelated thread")],
+    });
+    const evidence = yield* OrchestrationEvidenceService.OrchestrationEvidenceService;
+    const exported = yield* evidence.exportTask(projectId, taskId);
+    assert.isFalse(
+      exported.events.some(
+        (item) =>
+          item.threadId === unrelatedThreadId ||
+          item.recordId === `event:${unrelatedThreadId}:created`,
+      ),
+    );
+    assert.isFalse(
+      exported.events.some((item) => item.threadId === null && item.recordId.includes("unrelated")),
+    );
+  }).pipe(Effect.provide(layerTest)),
+);
+
 it.effect(
   "keeps UNKNOWN explicit and never invents executed provenance or capacity recording time",
   () =>
     Effect.gen(function* () {
-      yield* seedRuntime;
-      yield* seedAdaptive;
+      yield* seedAll;
       const evidence = yield* OrchestrationEvidenceService.OrchestrationEvidenceService;
       const exported = yield* evidence.exportTask(projectId, taskId);
 
@@ -584,8 +737,7 @@ it.effect(
 
 it.effect("appends corrections without rewriting the earlier decision export", () =>
   Effect.gen(function* () {
-    yield* seedRuntime;
-    yield* seedAdaptive;
+    yield* seedAll;
     const adaptive = yield* AdaptiveRoutingService.AdaptiveRoutingService;
     const evidence = yield* OrchestrationEvidenceService.OrchestrationEvidenceService;
 
@@ -639,8 +791,7 @@ it.effect("appends corrections without rewriting the earlier decision export", (
 
 it.effect("emits deterministic JSONL that decodes as the exported schema", () =>
   Effect.gen(function* () {
-    yield* seedRuntime;
-    yield* seedAdaptive;
+    yield* seedAll;
     const evidence = yield* OrchestrationEvidenceService.OrchestrationEvidenceService;
 
     const first = yield* evidence.exportTaskJsonl(projectId, taskId);
@@ -658,8 +809,7 @@ it.effect("emits deterministic JSONL that decodes as the exported schema", () =>
 
 it.effect("represents the L2-style sequence without fabricating ledger-only decisions", () =>
   Effect.gen(function* () {
-    yield* seedRuntime;
-    yield* seedAdaptive;
+    yield* seedAll;
     const evidence = yield* OrchestrationEvidenceService.OrchestrationEvidenceService;
     const reconstructed = yield* evidence.reconstructTaskHistory(projectId, taskId);
 
@@ -702,23 +852,58 @@ it.effect("fails cleanly when the task does not exist", () =>
   }).pipe(Effect.provide(layerTest)),
 );
 
-it.effect("keeps JSONL deterministic when export time advances", () =>
+it.effect("records exportedAt without changing stable item identity or source clocks", () =>
   Effect.gen(function* () {
-    yield* seedRuntime;
-    yield* seedAdaptive;
+    yield* seedAll;
     const evidence = yield* OrchestrationEvidenceService.OrchestrationEvidenceService;
 
-    const first = yield* evidence.exportTaskJsonl(projectId, taskId);
+    const first = yield* evidence.exportTask(projectId, taskId);
     yield* TestClock.adjust("1 hour");
-    const second = yield* evidence.exportTaskJsonl(projectId, taskId);
-    assert.strictEqual(first, second);
+    const second = yield* evidence.exportTask(projectId, taskId);
+
+    assert.notEqual(first.generatedAt, second.generatedAt);
+    assert.deepEqual(
+      first.events.map((item) => item.eventId),
+      second.events.map((item) => item.eventId),
+    );
+    assert.deepEqual(
+      first.events.map((item) => item.exportedAt),
+      first.events.map(() => first.generatedAt),
+    );
+    assert.deepEqual(
+      second.events.map((item) => item.exportedAt),
+      second.events.map(() => second.generatedAt),
+    );
+
+    const withoutExportClock = (item: (typeof first.events)[number]) => {
+      const { exportedAt: _exportedAt, ...rest } = item;
+      return rest;
+    };
+    assert.deepEqual(first.events.map(withoutExportClock), second.events.map(withoutExportClock));
+
+    const firstJsonl = yield* evidence.exportTaskJsonl(projectId, taskId);
+    yield* TestClock.adjust("1 hour");
+    const secondJsonl = yield* evidence.exportTaskJsonl(projectId, taskId);
+    assert.notEqual(firstJsonl, secondJsonl);
+    const decodeAll = (jsonl: string) =>
+      jsonl
+        .split("\n")
+        .filter(Boolean)
+        .map((line) => decodeEvent(line));
+    assert.deepEqual(
+      decodeAll(firstJsonl).map(withoutExportClock),
+      decodeAll(secondJsonl).map(withoutExportClock),
+    );
+
+    const capacity = second.events.find((item) => item.recordType === "adaptive-capacity-snapshot");
+    assert.isNull(capacity?.recordedAt);
+    assert.isTrue(capacity?.unknownFields.includes("recordedAt"));
   }).pipe(Effect.provide(layerTest)),
 );
 
 it.effect("does not put post-launch run identity on the decision event", () =>
   Effect.gen(function* () {
-    yield* seedRuntime;
-    yield* seedAdaptive;
+    yield* seedAll;
     const evidence = yield* OrchestrationEvidenceService.OrchestrationEvidenceService;
     const sql = yield* SqlClient.SqlClient;
 
@@ -753,5 +938,223 @@ it.effect("does not put post-launch run identity on the decision event", () =>
 
     const afterLine = lineFor(yield* evidence.exportTaskJsonl(projectId, taskId));
     assert.strictEqual(afterLine, beforeLine);
+  }).pipe(Effect.provide(layerTest)),
+);
+
+it.effect("derives a unique recommendation link and marks multiple receipts AMBIGUOUS", () =>
+  Effect.gen(function* () {
+    yield* seedAll;
+    const adaptive = yield* AdaptiveRoutingService.AdaptiveRoutingService;
+    const evidence = yield* OrchestrationEvidenceService.OrchestrationEvidenceService;
+    const linkFor = (
+      events: OrchestrationEvidenceExport["events"],
+      attempt: RuntimeExecutionAttempt["attemptId"],
+    ) =>
+      events.find(
+        (item) =>
+          item.recordType === "adaptive-recommendation-attempt-link" && item.recordId === attempt,
+      );
+
+    const unique = linkFor((yield* evidence.exportTask(projectId, taskId)).events, attemptId);
+    assert.equal(unique?.facts.find((fact) => fact.key === "status")?.value, "unique");
+    assert.equal(
+      unique?.facts.find((fact) => fact.key === "recommendationReceiptId")?.value,
+      receiptId,
+    );
+    assert.equal(unique?.facts.find((fact) => fact.key === "candidateReceiptCount")?.value, 1);
+    assert.equal(unique?.facts.find((fact) => fact.key === "authorization")?.value, "none");
+
+    yield* adaptive.appendRecommendationReceipt(secondReceipt);
+
+    const ambiguous = linkFor((yield* evidence.exportTask(projectId, taskId)).events, attemptId);
+    assert.equal(ambiguous?.facts.find((fact) => fact.key === "status")?.value, "ambiguous");
+    assert.isUndefined(ambiguous?.facts.find((fact) => fact.key === "recommendationReceiptId"));
+    assert.equal(ambiguous?.facts.find((fact) => fact.key === "candidateReceiptCount")?.value, 2);
+    const candidateIds = ambiguous?.facts.find((fact) => fact.key === "candidateReceiptIds")?.value;
+    assert.isString(candidateIds);
+    assert.deepEqual(
+      (candidateIds as string).split(",").sort(),
+      [receiptId, secondReceipt.recommendationReceiptId].sort(),
+    );
+  }).pipe(Effect.provide(layerTest)),
+);
+
+it.effect("represents real L2 staging references beside canonical synthetic evidence", () =>
+  Effect.gen(function* () {
+    yield* seedAll;
+    const evidence = yield* OrchestrationEvidenceService.OrchestrationEvidenceService;
+    const sql = yield* SqlClient.SqlClient;
+    const reconstructed = yield* evidence.reconstructTaskHistory(projectId, taskId, {
+      stagingReferences: [l2StagingReference],
+    });
+
+    const staging = reconstructed.events.filter(
+      (item) => item.recordType === "project-staging-reference",
+    );
+    assert.equal(staging.length, 1);
+    const item = staging[0]!;
+    assert.equal(item.authority, "project-staging");
+    assert.equal(item.recordBasis, "staging-reference");
+    assert.equal(
+      item.facts.find((fact) => fact.key === "branch")?.value,
+      l2StagingReference.branch,
+    );
+    assert.equal(
+      item.facts.find((fact) => fact.key === "commit")?.value,
+      l2StagingReference.commit,
+    );
+    assert.equal(item.facts.find((fact) => fact.key === "decisionCount")?.value, 8);
+    assert.equal(
+      item.facts.find((fact) => fact.key === "evidenceClass")?.value,
+      "orchestrator-claim",
+    );
+    assert.equal(item.facts.find((fact) => fact.key === "canonical")?.value, false);
+
+    assert.isFalse(
+      reconstructed.events.some(
+        (event) =>
+          event.authority !== "project-staging" &&
+          l2StagingReference.decisionIds.some(
+            (id) => event.recordId.includes(id) || event.eventId.includes(id),
+          ),
+      ),
+      "L2 staging decision ids must not appear as canonical typed evidence",
+    );
+    assert.isTrue(
+      reconstructed.events.some((event) => event.recordType === "project-runtime-task"),
+    );
+    assert.isTrue(
+      reconstructed.events.some((event) => event.recordType === "orchestration-v2-event"),
+    );
+
+    const jsonl = yield* evidence.exportTaskJsonl(projectId, taskId, {
+      stagingReferences: [l2StagingReference],
+    });
+    const decoded = jsonl
+      .split("\n")
+      .filter(Boolean)
+      .map((line) => decodeEvent(line));
+    assert.equal(
+      decoded.filter((event) => event.recordType === "project-staging-reference").length,
+      1,
+    );
+    for (const event of decoded) {
+      assert.equal(event.schemaVersion, "orchestration-evidence/v0");
+      assert.isString(event.exportedAt);
+    }
+
+    const evidenceTables = yield* sql<{ readonly count: number }>`SELECT COUNT(*) AS count
+      FROM sqlite_schema WHERE type = 'table' AND name LIKE '%orchestration_evidence%'`;
+    assert.equal(evidenceTables[0]?.count, 0);
+  }).pipe(Effect.provide(layerTest)),
+);
+
+it.effect("keeps requested, selected, and executed model provenance separate", () =>
+  Effect.gen(function* () {
+    yield* seedAll;
+    const adaptive = yield* AdaptiveRoutingService.AdaptiveRoutingService;
+    const evidence = yield* OrchestrationEvidenceService.OrchestrationEvidenceService;
+    const divergedId = AdaptiveExecutionObservationId.make("ev0-observation-diverged");
+    const { execution: _execution, ...observationBase } = observation;
+    const diverged: AdaptiveExecutionObservationReference = {
+      ...observationBase,
+      observationId: divergedId,
+      attemptId: pendingAttemptId,
+      configuration: {
+        requested: { instanceId: opencode, model: "requested-model" },
+        selected: { instanceId: claude, model: "selected-model" },
+        executed: {
+          quality: "provider_reported",
+          selection: { instanceId: opencode, model: "executed-model" },
+          evidenceRef: "provider:reported-model",
+        },
+        substitutionReason: "provider substituted the requested model",
+      },
+    };
+    yield* adaptive.appendExecutionObservationReference(diverged);
+
+    const exported = yield* evidence.exportTask(projectId, taskId);
+    const fact = (key: string) =>
+      exported.events
+        .find(
+          (item) =>
+            item.recordType === "adaptive-execution-observation" && item.recordId === divergedId,
+        )
+        ?.facts.find((entry) => entry.key === key)?.value;
+
+    assert.equal(fact("configuration.requested.model"), "requested-model");
+    assert.equal(fact("configuration.selected.model"), "selected-model");
+    assert.equal(fact("configuration.executed.model"), "executed-model");
+    assert.equal(fact("configuration.executed.quality"), "provider_reported");
+    assert.equal(
+      fact("configuration.substitutionReason"),
+      "provider substituted the requested model",
+    );
+
+    const unknownObservation = exported.events.find(
+      (item) =>
+        item.recordType === "adaptive-execution-observation" && item.recordId === observationId,
+    );
+    assert.equal(
+      unknownObservation?.facts.find((entry) => entry.key === "configuration.executed.quality")
+        ?.value,
+      "unknown",
+    );
+    assert.isUndefined(
+      unknownObservation?.facts.find((entry) =>
+        entry.key.startsWith("configuration.executed.instanceId"),
+      ),
+    );
+  }).pipe(Effect.provide(layerTest)),
+);
+
+it.effect(
+  "reconstructs Runtime verification references without inferring ARM verification facts",
+  () =>
+    Effect.gen(function* () {
+      yield* seedAll;
+      const evidence = yield* OrchestrationEvidenceService.OrchestrationEvidenceService;
+      const reconstructed = yield* evidence.reconstructTaskHistory(projectId, taskId);
+
+      const runtimeVerification = reconstructed.events.filter(
+        (item) => item.recordType === "project-runtime-verification",
+      );
+      assert.equal(runtimeVerification.length, task.verification.evidence.length);
+      const item = runtimeVerification[0]!;
+      assert.equal(item.authority, "project-runtime");
+      assert.equal(item.recordedAt, completedAttempt);
+      assert.equal(item.facts.find((fact) => fact.key === "result")?.value, "pass");
+      assert.equal(
+        item.facts.find((fact) => fact.key === "command")?.value,
+        "vp test run OrchestrationEvidenceService.test.ts",
+      );
+      assert.isUndefined(item.facts.find((fact) => fact.key === "verification.independence"));
+      assert.isUndefined(item.facts.find((fact) => fact.key === "verification.strength"));
+      assert.isUndefined(item.facts.find((fact) => fact.key === "verification.requiredKinds"));
+
+      const adaptiveObservation = reconstructed.events.find(
+        (event) => event.recordType === "adaptive-execution-observation",
+      );
+      assert.equal(adaptiveObservation?.authority, "arm");
+      assert.equal(
+        adaptiveObservation?.facts.find((fact) => fact.key === "verification.independence")?.value,
+        "cross-provider",
+      );
+    }).pipe(Effect.provide(layerTest)),
+);
+
+it.effect("uses explicit authorities for Runtime, ARM, V2, and staging evidence", () =>
+  Effect.gen(function* () {
+    yield* seedAll;
+    const evidence = yield* OrchestrationEvidenceService.OrchestrationEvidenceService;
+    const reconstructed = yield* evidence.reconstructTaskHistory(projectId, taskId, {
+      stagingReferences: [l2StagingReference],
+    });
+    const authorities = new Set(reconstructed.events.map((item) => item.authority));
+    assert.isTrue(authorities.has("project-runtime"));
+    assert.isTrue(authorities.has("runtime-execution"));
+    assert.isTrue(authorities.has("arm"));
+    assert.isTrue(authorities.has("orchestration-v2"));
+    assert.isTrue(authorities.has("project-staging"));
   }).pipe(Effect.provide(layerTest)),
 );

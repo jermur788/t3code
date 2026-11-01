@@ -13,11 +13,14 @@ import {
   OrchestrationEvidenceTaskNotFoundError,
   ProjectRuntimeTask,
   RuntimeExecutionAttempt,
-  type OrchestrationEvidenceLifecycleClass,
   type OrchestrationEvidenceExport,
+  type OrchestrationEvidenceExportOptions,
   type OrchestrationEvidenceFact,
+  type OrchestrationEvidenceLifecycleClass,
   type OrchestrationEvidenceReconstruction,
   type OrchestrationEvidenceReference,
+  type OrchestrationEvidenceStagingReference,
+  type OrchestrationV2StoredEvent,
   type RuntimeExecutionAttemptStatus,
 } from "@t3tools/contracts";
 import * as Context from "effect/Context";
@@ -26,7 +29,9 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
 import * as SqlClient from "effect/sql/SqlClient";
+import * as Stream from "effect/Stream";
 
+import * as EventStoreV2 from "../orchestration-v2/EventStore.ts";
 import { PersistenceDecodeError, PersistenceSqlError } from "../persistence/Errors.ts";
 
 type EvidenceError =
@@ -39,14 +44,17 @@ export interface OrchestrationEvidenceShape {
   readonly exportTask: (
     projectId: ProjectRuntimeTask["projectId"],
     taskId: ProjectRuntimeTask["taskId"],
+    options?: OrchestrationEvidenceExportOptions,
   ) => Result<OrchestrationEvidenceExport>;
   readonly exportTaskJsonl: (
     projectId: ProjectRuntimeTask["projectId"],
     taskId: ProjectRuntimeTask["taskId"],
+    options?: OrchestrationEvidenceExportOptions,
   ) => Result<string>;
   readonly reconstructTaskHistory: (
     projectId: ProjectRuntimeTask["projectId"],
     taskId: ProjectRuntimeTask["taskId"],
+    options?: OrchestrationEvidenceExportOptions,
   ) => Result<OrchestrationEvidenceReconstruction>;
 }
 
@@ -86,12 +94,16 @@ const encodeEvidenceEventJson = Schema.encodeEffect(EvidenceEventJson);
 
 const CLASS_ORDER: Record<OrchestrationEvidenceLifecycleClass, number> = {
   observation: 0,
-  decision: 1,
-  assessment: 2,
-  outcome: 3,
-  correction: 4,
+  execution: 1,
+  decision: 2,
+  assessment: 3,
+  outcome: 4,
+  correction: 5,
 };
 const UNKNOWN_TIME = Number.POSITIVE_INFINITY;
+const V2_EVENT_READ_LIMIT_PER_THREAD = 1_000;
+
+type DraftEvent = Omit<OrchestrationEvidenceEvent, "exportedAt">;
 
 const sortTime = (value: string | null): number => {
   if (value === null) return UNKNOWN_TIME;
@@ -111,7 +123,7 @@ const references = (
     recordId === null || recordId === undefined ? [] : [{ recordType, recordId }],
   );
 
-const event = (input: OrchestrationEvidenceEvent): OrchestrationEvidenceEvent => input;
+const event = (input: DraftEvent): DraftEvent => input;
 
 const isTerminalAttemptStatus = (status: RuntimeExecutionAttemptStatus): boolean =>
   status === "completed" ||
@@ -119,7 +131,7 @@ const isTerminalAttemptStatus = (status: RuntimeExecutionAttemptStatus): boolean
   status === "cancelled" ||
   status === "interrupted";
 
-const taskEvent = (task: ProjectRuntimeTask): OrchestrationEvidenceEvent =>
+const taskEvent = (task: ProjectRuntimeTask): DraftEvent =>
   event({
     schemaVersion: ORCHESTRATION_EVIDENCE_SCHEMA_VERSION,
     eventId: `oev0:project-runtime-task:${task.taskId}`,
@@ -127,7 +139,7 @@ const taskEvent = (task: ProjectRuntimeTask): OrchestrationEvidenceEvent =>
     recordId: task.taskId,
     lifecycleClass: "observation",
     recordBasis: "derived-view",
-    source: "runtime",
+    authority: "project-runtime",
     projectId: task.projectId,
     taskId: task.taskId,
     attemptId: null,
@@ -149,7 +161,7 @@ const taskEvent = (task: ProjectRuntimeTask): OrchestrationEvidenceEvent =>
     ]),
   });
 
-const attemptDecisionEvent = (attempt: RuntimeExecutionAttempt): OrchestrationEvidenceEvent => {
+const attemptDecisionEvent = (attempt: RuntimeExecutionAttempt): DraftEvent => {
   const selected = attempt.receipt.route.selected;
   const launch = attempt.receipt.launch;
   return event({
@@ -159,7 +171,7 @@ const attemptDecisionEvent = (attempt: RuntimeExecutionAttempt): OrchestrationEv
     recordId: attempt.attemptId,
     lifecycleClass: "decision",
     recordBasis: "derived-view",
-    source: "runtime",
+    authority: "runtime-execution",
     projectId: attempt.projectId,
     taskId: attempt.taskId,
     attemptId: attempt.attemptId,
@@ -205,7 +217,7 @@ const attemptDecisionEvent = (attempt: RuntimeExecutionAttempt): OrchestrationEv
   });
 };
 
-const attemptOutcomeEvent = (attempt: RuntimeExecutionAttempt): OrchestrationEvidenceEvent => {
+const attemptOutcomeEvent = (attempt: RuntimeExecutionAttempt): DraftEvent => {
   const terminal = isTerminalAttemptStatus(attempt.status);
   return event({
     schemaVersion: ORCHESTRATION_EVIDENCE_SCHEMA_VERSION,
@@ -214,7 +226,7 @@ const attemptOutcomeEvent = (attempt: RuntimeExecutionAttempt): OrchestrationEvi
     recordId: attempt.attemptId,
     lifecycleClass: "outcome",
     recordBasis: "derived-view",
-    source: "runtime",
+    authority: "runtime-execution",
     projectId: attempt.projectId,
     taskId: attempt.taskId,
     attemptId: attempt.attemptId,
@@ -240,9 +252,7 @@ const attemptOutcomeEvent = (attempt: RuntimeExecutionAttempt): OrchestrationEvi
   });
 };
 
-const difficultyPredictionEvent = (
-  prediction: AdaptiveDifficultyPrediction,
-): OrchestrationEvidenceEvent =>
+const difficultyPredictionEvent = (prediction: AdaptiveDifficultyPrediction): DraftEvent =>
   event({
     schemaVersion: ORCHESTRATION_EVIDENCE_SCHEMA_VERSION,
     eventId: `oev0:adaptive-difficulty-prediction:${prediction.predictionId}`,
@@ -250,7 +260,7 @@ const difficultyPredictionEvent = (
     recordId: prediction.predictionId,
     lifecycleClass: "decision",
     recordBasis: "canonical-record",
-    source: "adaptive-routing",
+    authority: "arm",
     projectId: prediction.projectId,
     taskId: prediction.taskId,
     attemptId: null,
@@ -277,9 +287,7 @@ const difficultyPredictionEvent = (
     ]),
   });
 
-const realizedDifficultyEvent = (
-  realized: AdaptiveRealizedDifficulty,
-): OrchestrationEvidenceEvent =>
+const realizedDifficultyEvent = (realized: AdaptiveRealizedDifficulty): DraftEvent =>
   event({
     schemaVersion: ORCHESTRATION_EVIDENCE_SCHEMA_VERSION,
     eventId: `oev0:adaptive-realized-difficulty:${realized.realizedDifficultyId}`,
@@ -287,7 +295,7 @@ const realizedDifficultyEvent = (
     recordId: realized.realizedDifficultyId,
     lifecycleClass: "assessment",
     recordBasis: "canonical-record",
-    source: "adaptive-routing",
+    authority: "arm",
     projectId: realized.projectId,
     taskId: realized.taskId,
     attemptId: null,
@@ -308,7 +316,7 @@ const realizedDifficultyEvent = (
 
 const executionObservationEvent = (
   observation: AdaptiveExecutionObservationReference,
-): OrchestrationEvidenceEvent => {
+): DraftEvent => {
   const configuration = observation.configuration;
   const executed = configuration?.executed;
   const verification = observation.verification;
@@ -319,7 +327,7 @@ const executionObservationEvent = (
     recordId: observation.observationId,
     lifecycleClass: "outcome",
     recordBasis: "canonical-record",
-    source: "adaptive-routing",
+    authority: "arm",
     projectId: observation.projectId,
     taskId: observation.taskId,
     attemptId: observation.attemptId,
@@ -375,7 +383,7 @@ const executionObservationEvent = (
   });
 };
 
-const acceptedOutcomeEvent = (outcome: AdaptiveAcceptedOutcome): OrchestrationEvidenceEvent =>
+const acceptedOutcomeEvent = (outcome: AdaptiveAcceptedOutcome): DraftEvent =>
   event({
     schemaVersion: ORCHESTRATION_EVIDENCE_SCHEMA_VERSION,
     eventId: `oev0:adaptive-accepted-outcome:${outcome.outcomeId}:r${outcome.revision}`,
@@ -383,7 +391,7 @@ const acceptedOutcomeEvent = (outcome: AdaptiveAcceptedOutcome): OrchestrationEv
     recordId: outcome.outcomeId,
     lifecycleClass: "outcome",
     recordBasis: "derived-view",
-    source: "adaptive-routing",
+    authority: "arm",
     projectId: outcome.projectId,
     taskId: outcome.taskId,
     attemptId: null,
@@ -403,9 +411,7 @@ const acceptedOutcomeEvent = (outcome: AdaptiveAcceptedOutcome): OrchestrationEv
     ]),
   });
 
-const outcomeReconciliationEvent = (
-  reconciliation: AdaptiveOutcomeReconciliation,
-): OrchestrationEvidenceEvent =>
+const outcomeReconciliationEvent = (reconciliation: AdaptiveOutcomeReconciliation): DraftEvent =>
   event({
     schemaVersion: ORCHESTRATION_EVIDENCE_SCHEMA_VERSION,
     eventId: `oev0:adaptive-outcome-reconciliation:${reconciliation.reconciliationId}`,
@@ -413,7 +419,7 @@ const outcomeReconciliationEvent = (
     recordId: reconciliation.reconciliationId,
     lifecycleClass: "correction",
     recordBasis: "canonical-record",
-    source: "adaptive-routing",
+    authority: "arm",
     projectId: reconciliation.projectId,
     taskId: reconciliation.taskId,
     attemptId: null,
@@ -439,9 +445,7 @@ const outcomeReconciliationEvent = (
     ]),
   });
 
-const recommendationReceiptEvent = (
-  receipt: AdaptiveRecommendationReceipt,
-): OrchestrationEvidenceEvent =>
+const recommendationReceiptEvent = (receipt: AdaptiveRecommendationReceipt): DraftEvent =>
   event({
     schemaVersion: ORCHESTRATION_EVIDENCE_SCHEMA_VERSION,
     eventId: `oev0:adaptive-recommendation-receipt:${receipt.recommendationReceiptId}`,
@@ -449,7 +453,7 @@ const recommendationReceiptEvent = (
     recordId: receipt.recommendationReceiptId,
     lifecycleClass: "decision",
     recordBasis: "canonical-record",
-    source: "adaptive-routing",
+    authority: "arm",
     projectId: receipt.projectId,
     taskId: receipt.taskId,
     attemptId: null,
@@ -482,9 +486,7 @@ const recommendationReceiptEvent = (
     ]),
   });
 
-const experimentAssignmentEvent = (
-  assignment: AdaptiveExperimentAssignment,
-): OrchestrationEvidenceEvent =>
+const experimentAssignmentEvent = (assignment: AdaptiveExperimentAssignment): DraftEvent =>
   event({
     schemaVersion: ORCHESTRATION_EVIDENCE_SCHEMA_VERSION,
     eventId: `oev0:adaptive-experiment-assignment:${assignment.assignmentId}`,
@@ -492,7 +494,7 @@ const experimentAssignmentEvent = (
     recordId: assignment.assignmentId,
     lifecycleClass: "decision",
     recordBasis: "canonical-record",
-    source: "adaptive-routing",
+    authority: "arm",
     projectId: assignment.projectId,
     taskId: assignment.taskId,
     attemptId: null,
@@ -522,7 +524,7 @@ const experimentAssignmentEvent = (
 const capacityPoolEvent = (
   projectId: ProjectRuntimeTask["projectId"],
   pool: AdaptiveCapacityPool,
-): OrchestrationEvidenceEvent =>
+): DraftEvent =>
   event({
     schemaVersion: ORCHESTRATION_EVIDENCE_SCHEMA_VERSION,
     eventId: `oev0:adaptive-capacity-pool:${pool.capacityPoolId}`,
@@ -530,7 +532,7 @@ const capacityPoolEvent = (
     recordId: pool.capacityPoolId,
     lifecycleClass: "observation",
     recordBasis: "canonical-record",
-    source: "adaptive-routing",
+    authority: "arm",
     projectId,
     taskId: null,
     attemptId: null,
@@ -552,7 +554,7 @@ const capacityPoolEvent = (
 const capacitySnapshotEvent = (
   projectId: ProjectRuntimeTask["projectId"],
   snapshot: AdaptiveCapacitySnapshot,
-): OrchestrationEvidenceEvent =>
+): DraftEvent =>
   event({
     schemaVersion: ORCHESTRATION_EVIDENCE_SCHEMA_VERSION,
     eventId: `oev0:adaptive-capacity-snapshot:${snapshot.snapshotId}`,
@@ -560,7 +562,7 @@ const capacitySnapshotEvent = (
     recordId: snapshot.snapshotId,
     lifecycleClass: "observation",
     recordBasis: "canonical-record",
-    source: "adaptive-routing",
+    authority: "arm",
     projectId,
     taskId: null,
     attemptId: null,
@@ -600,9 +602,7 @@ const capacitySnapshotEvent = (
     ]),
   });
 
-const supersededOutcomeEvent = (
-  reconciliation: AdaptiveOutcomeReconciliation,
-): OrchestrationEvidenceEvent =>
+const supersededOutcomeEvent = (reconciliation: AdaptiveOutcomeReconciliation): DraftEvent =>
   event({
     schemaVersion: ORCHESTRATION_EVIDENCE_SCHEMA_VERSION,
     eventId: `oev0:adaptive-accepted-outcome:${reconciliation.outcomeId}:from-r${reconciliation.fromRevision}`,
@@ -610,7 +610,7 @@ const supersededOutcomeEvent = (
     recordId: reconciliation.outcomeId,
     lifecycleClass: "outcome",
     recordBasis: "derived-view",
-    source: "adaptive-routing",
+    authority: "arm",
     projectId: reconciliation.projectId,
     taskId: reconciliation.taskId,
     attemptId: null,
@@ -633,10 +633,222 @@ const supersededOutcomeEvent = (
     ]),
   });
 
-const compareEvents = (left: OrchestrationEvidenceEvent, right: OrchestrationEvidenceEvent) => {
+const runtimeVerificationEvent = (
+  task: ProjectRuntimeTask,
+  evidence: ProjectRuntimeTask["verification"]["evidence"][number],
+): DraftEvent =>
+  event({
+    schemaVersion: ORCHESTRATION_EVIDENCE_SCHEMA_VERSION,
+    eventId: `oev0:project-runtime-verification:${task.taskId}:${evidence.evidenceId}`,
+    recordType: "project-runtime-verification",
+    recordId: evidence.evidenceId,
+    lifecycleClass: "outcome",
+    recordBasis: "canonical-record",
+    authority: "project-runtime",
+    projectId: task.projectId,
+    taskId: task.taskId,
+    attemptId: null,
+    threadId: null,
+    runId: null,
+    occurredAt: null,
+    recordedAt: evidence.recordedAt,
+    summary: `Runtime verification ${evidence.result}: ${evidence.summary}`,
+    unknownFields: ["occurredAt"],
+    references: references([["project-runtime-task", task.taskId]]),
+    facts: facts([
+      ["result", evidence.result],
+      ["command", evidence.command],
+      ["summary", evidence.summary],
+      ["criterionIds", evidence.criterionIds?.join(",")],
+    ]),
+  });
+
+const runtimeHandoffEvent = (task: ProjectRuntimeTask): DraftEvent | null =>
+  task.latestHandoffId === null
+    ? null
+    : event({
+        schemaVersion: ORCHESTRATION_EVIDENCE_SCHEMA_VERSION,
+        eventId: `oev0:project-runtime-handoff:${task.taskId}:${task.latestHandoffId}`,
+        recordType: "project-runtime-handoff",
+        recordId: task.latestHandoffId,
+        lifecycleClass: "observation",
+        recordBasis: "canonical-record",
+        authority: "project-runtime",
+        projectId: task.projectId,
+        taskId: task.taskId,
+        attemptId: null,
+        threadId: null,
+        runId: null,
+        occurredAt: null,
+        recordedAt: null,
+        summary: "Latest Runtime task handoff reference; handoff body not copied.",
+        unknownFields: ["occurredAt", "recordedAt"],
+        references: references([["project-runtime-task", task.taskId]]),
+        facts: facts([["handoffId", task.latestHandoffId]]),
+      });
+
+const recommendationAttemptLinkEvent = (
+  attempt: RuntimeExecutionAttempt,
+  candidateReceiptIds: ReadonlyArray<string>,
+): DraftEvent => {
+  const status =
+    candidateReceiptIds.length === 0
+      ? "none"
+      : candidateReceiptIds.length === 1
+        ? "unique"
+        : "ambiguous";
+  return event({
+    schemaVersion: ORCHESTRATION_EVIDENCE_SCHEMA_VERSION,
+    eventId: `oev0:adaptive-recommendation-attempt-link:${attempt.attemptId}`,
+    recordType: "adaptive-recommendation-attempt-link",
+    recordId: attempt.attemptId,
+    lifecycleClass: "assessment",
+    recordBasis: "derived-view",
+    authority: "arm",
+    projectId: attempt.projectId,
+    taskId: attempt.taskId,
+    attemptId: attempt.attemptId,
+    threadId: null,
+    runId: null,
+    occurredAt: null,
+    recordedAt: null,
+    summary:
+      status === "ambiguous"
+        ? `Recommendation-to-attempt relationship AMBIGUOUS across ${candidateReceiptIds.length} receipts`
+        : status === "unique"
+          ? "Recommendation-to-attempt relationship uniquely derived"
+          : "No admissible recommendation receipt for this attempt",
+    unknownFields: ["occurredAt", "recordedAt"],
+    references: references([
+      ["execution-attempt", attempt.attemptId],
+      ...candidateReceiptIds.map(
+        (receiptId) => ["adaptive-recommendation-receipt", receiptId] as const,
+      ),
+    ]),
+    facts: facts([
+      ["status", status],
+      ["candidateReceiptIds", candidateReceiptIds.join(",")],
+      ["candidateReceiptCount", candidateReceiptIds.length],
+      ["recommendationReceiptId", status === "unique" ? candidateReceiptIds[0] : undefined],
+      ["derivation", "task-or-prediction-before-attempt"],
+      ["authorization", "none"],
+    ]),
+  });
+};
+
+const v2Event = (
+  projectId: ProjectRuntimeTask["projectId"],
+  taskId: ProjectRuntimeTask["taskId"],
+  attemptId: RuntimeExecutionAttempt["attemptId"] | null,
+  stored: OrchestrationV2StoredEvent,
+): DraftEvent => {
+  const occurredAt = DateTime.formatIso(stored.event.occurredAt);
+  const sequenceKey = String(stored.sequence).padStart(12, "0");
+  return event({
+    schemaVersion: ORCHESTRATION_EVIDENCE_SCHEMA_VERSION,
+    eventId: `oev0:orchestration-v2-event:${sequenceKey}:${stored.event.id}`,
+    recordType: "orchestration-v2-event",
+    recordId: stored.event.id,
+    lifecycleClass: "execution",
+    recordBasis: "canonical-record",
+    authority: "orchestration-v2",
+    projectId,
+    taskId,
+    attemptId,
+    threadId: stored.event.threadId,
+    runId: stored.event.runId ?? null,
+    occurredAt,
+    recordedAt: null,
+    summary: `Orchestration V2 ${stored.event.type} at sequence ${stored.sequence}`,
+    unknownFields: ["recordedAt"],
+    references: references([
+      ["orchestration-v2-event", stored.event.id],
+      ["orchestration-v2-thread", stored.event.threadId],
+      ["orchestration-v2-run", stored.event.runId],
+    ]),
+    facts: facts([
+      ["sequence", stored.sequence],
+      ["event.type", stored.event.type],
+      ["source.occurredAt", occurredAt],
+      ["source.recordedAt", null],
+    ]),
+  });
+};
+
+const v2UnresolvedEvent = (
+  projectId: ProjectRuntimeTask["projectId"],
+  taskId: ProjectRuntimeTask["taskId"],
+  referenceType: string,
+  referenceId: string,
+): DraftEvent =>
+  event({
+    schemaVersion: ORCHESTRATION_EVIDENCE_SCHEMA_VERSION,
+    eventId: `oev0:orchestration-v2-unresolved:${referenceType}:${referenceId}`,
+    recordType: "orchestration-v2-unresolved",
+    recordId: referenceId,
+    lifecycleClass: "observation",
+    recordBasis: "derived-view",
+    authority: "orchestration-v2",
+    projectId,
+    taskId,
+    attemptId: null,
+    threadId: referenceType === "orchestration-v2-thread" ? referenceId : null,
+    runId: referenceType === "orchestration-v2-run" ? referenceId : null,
+    occurredAt: null,
+    recordedAt: null,
+    summary: `Referenced ${referenceType} ${referenceId} did not resolve in bounded V2 event reads`,
+    unknownFields: ["occurredAt", "recordedAt", "canonicalRecord"],
+    references: [],
+    facts: facts([
+      ["status", "unresolved"],
+      ["referenceType", referenceType],
+      ["referenceId", referenceId],
+    ]),
+  });
+
+const stagingEvent = (reference: OrchestrationEvidenceStagingReference): DraftEvent =>
+  event({
+    schemaVersion: ORCHESTRATION_EVIDENCE_SCHEMA_VERSION,
+    eventId: `oev0:project-staging-reference:${reference.stagingId}`,
+    recordType: "project-staging-reference",
+    recordId: reference.stagingId,
+    lifecycleClass: "observation",
+    recordBasis: "staging-reference",
+    authority: "project-staging",
+    projectId: reference.projectId,
+    taskId: reference.taskId,
+    attemptId: null,
+    threadId: null,
+    runId: null,
+    occurredAt: reference.occurredAt,
+    recordedAt: null,
+    summary: `Project-owned staging evidence reference (${reference.evidenceClass}); not canonical typed state`,
+    unknownFields: reference.occurredAt === null ? ["occurredAt", "recordedAt"] : ["recordedAt"],
+    references: references([["project-staging-reference", reference.stagingId]]),
+    facts: facts([
+      ["stagingId", reference.stagingId],
+      ["branch", reference.branch],
+      ["commit", reference.commit],
+      ["path", reference.path],
+      ["evidenceClass", reference.evidenceClass],
+      ["provenance", reference.provenance],
+      ["decisionIds", reference.decisionIds.join(",")],
+      ["decisionCount", reference.decisionIds.length],
+      ["canonical", false],
+    ]),
+  });
+
+const compareEvents = (left: DraftEvent, right: DraftEvent) => {
   const leftTask = left.recordType === "project-runtime-task";
   const rightTask = right.recordType === "project-runtime-task";
   if (leftTask !== rightTask) return leftTask ? -1 : 1;
+
+  if (
+    left.recordType === "orchestration-v2-event" &&
+    right.recordType === "orchestration-v2-event"
+  ) {
+    return left.eventId < right.eventId ? -1 : left.eventId > right.eventId ? 1 : 0;
+  }
 
   const leftTime = sortTime(left.occurredAt ?? left.recordedAt);
   const rightTime = sortTime(right.occurredAt ?? right.recordedAt);
@@ -648,12 +860,12 @@ const compareEvents = (left: OrchestrationEvidenceEvent, right: OrchestrationEvi
   return left.eventId < right.eventId ? -1 : left.eventId > right.eventId ? 1 : 0;
 };
 
-const sortEvents = (
-  events: ReadonlyArray<OrchestrationEvidenceEvent>,
-): ReadonlyArray<OrchestrationEvidenceEvent> => [...events].sort(compareEvents);
+const sortEvents = (events: ReadonlyArray<DraftEvent>): ReadonlyArray<DraftEvent> =>
+  [...events].sort(compareEvents);
 
 const make = Effect.gen(function* () {
   const sql = yield* SqlClient.SqlClient;
+  const eventStore = yield* EventStoreV2.EventStoreV2;
   const now = DateTime.now.pipe(Effect.map(DateTime.formatIso));
 
   const sqlError = (operation: string) => (cause: unknown) =>
@@ -706,9 +918,80 @@ const make = Effect.gen(function* () {
     },
   );
 
+  const loadBoundedV2Evidence = Effect.fn("OrchestrationEvidenceService.loadBoundedV2Evidence")(
+    function* (
+      threadIds: ReadonlyArray<RuntimeExecutionAttempt["threadId"] | null>,
+      runIdsByThread: ReadonlyMap<string, ReadonlySet<string>>,
+    ) {
+      const uniqueThreadIds = [
+        ...new Set(threadIds.filter((id): id is NonNullable<typeof id> => id !== null)),
+      ].sort();
+      const perThread = yield* Effect.forEach(
+        uniqueThreadIds,
+        (threadId) =>
+          eventStore.read({ threadId, limit: V2_EVENT_READ_LIMIT_PER_THREAD }).pipe(
+            Stream.runCollect,
+            Effect.mapError(
+              (cause) =>
+                new PersistenceSqlError({
+                  operation: "OrchestrationEvidenceService.loadBoundedV2Evidence",
+                  cause,
+                }),
+            ),
+          ),
+        { concurrency: 1 },
+      );
+      const referencedRuns = (threadId: string): ReadonlySet<string> =>
+        runIdsByThread.get(threadId) ?? new Set<string>();
+      return perThread.flat().filter((stored) => {
+        const relevantRuns = referencedRuns(stored.event.threadId);
+        return stored.event.runId === undefined || relevantRuns.has(stored.event.runId);
+      });
+    },
+  );
+
+  const resolvedV2References = (
+    storedEvents: ReadonlyArray<OrchestrationV2StoredEvent>,
+  ): ReadonlyMap<string, ReadonlySet<string>> => {
+    const resolved = new Map<string, Set<string>>([
+      ["orchestration-v2-thread", new Set()],
+      ["orchestration-v2-run", new Set()],
+      ["orchestration-v2-run-attempt", new Set()],
+      ["orchestration-v2-node", new Set()],
+      ["orchestration-v2-provider-session", new Set()],
+      ["orchestration-v2-provider-thread", new Set()],
+      ["orchestration-v2-context-transfer", new Set()],
+    ]);
+    for (const stored of storedEvents) {
+      const event = stored.event;
+      resolved.get("orchestration-v2-thread")!.add(event.threadId);
+      if (event.runId !== undefined) resolved.get("orchestration-v2-run")!.add(event.runId);
+      if (event.nodeId !== undefined) resolved.get("orchestration-v2-node")!.add(event.nodeId);
+      const payload = event.payload as { readonly id?: string };
+      if (typeof payload.id !== "string") continue;
+      if (event.type.startsWith("thread.")) {
+        resolved.get("orchestration-v2-thread")!.add(payload.id);
+      } else if (event.type === "run.created" || event.type === "run.updated") {
+        resolved.get("orchestration-v2-run")!.add(payload.id);
+      } else if (event.type.startsWith("run-attempt.")) {
+        resolved.get("orchestration-v2-run-attempt")!.add(payload.id);
+      } else if (event.type === "node.updated") {
+        resolved.get("orchestration-v2-node")!.add(payload.id);
+      } else if (event.type.startsWith("provider-session.")) {
+        resolved.get("orchestration-v2-provider-session")!.add(payload.id);
+      } else if (event.type === "provider-thread.updated") {
+        resolved.get("orchestration-v2-provider-thread")!.add(payload.id);
+      } else if (event.type.startsWith("context-transfer.")) {
+        resolved.get("orchestration-v2-context-transfer")!.add(payload.id);
+      }
+    }
+    return resolved;
+  };
+
   const exportTaskImpl = Effect.fn("OrchestrationEvidenceService.exportTask")(function* (
     projectId: ProjectRuntimeTask["projectId"],
     taskId: ProjectRuntimeTask["taskId"],
+    options?: OrchestrationEvidenceExportOptions,
   ) {
     const operation = "OrchestrationEvidenceService.exportTask";
     const taskRows = yield* sql<PayloadRow>`SELECT payload_json
@@ -815,12 +1098,106 @@ const make = Effect.gen(function* () {
     ];
     const capacity = yield* loadCapacityEvidence(referencedSnapshotIds);
 
+    const runIdsByThread = new Map<string, Set<string>>();
+    const attemptIdsByThread = new Map<string, Set<RuntimeExecutionAttempt["attemptId"]>>();
+    for (const attempt of attempts) {
+      if (attempt.threadId === null) continue;
+      const runs = runIdsByThread.get(attempt.threadId) ?? new Set<string>();
+      if (attempt.runId !== null) runs.add(attempt.runId);
+      runIdsByThread.set(attempt.threadId, runs);
+      const attemptIds = attemptIdsByThread.get(attempt.threadId) ?? new Set();
+      attemptIds.add(attempt.attemptId);
+      attemptIdsByThread.set(attempt.threadId, attemptIds);
+    }
+    for (const observation of observations) {
+      const execution = observation.execution;
+      if (execution === undefined) continue;
+      const runs = runIdsByThread.get(execution.threadId) ?? new Set<string>();
+      runs.add(execution.runId);
+      runIdsByThread.set(execution.threadId, runs);
+      const attemptIds = attemptIdsByThread.get(execution.threadId) ?? new Set();
+      attemptIds.add(observation.attemptId);
+      attemptIdsByThread.set(execution.threadId, attemptIds);
+    }
+
+    const v2StoredEvents = yield* loadBoundedV2Evidence(
+      [
+        ...attempts.map((attempt) => attempt.threadId),
+        ...observations.map((observation) => observation.execution?.threadId ?? null),
+      ],
+      runIdsByThread,
+    );
+    const resolvedV2 = resolvedV2References(v2StoredEvents);
+
+    const v2References = new Map<string, readonly [type: string, id: string]>();
+    const addV2Reference = (type: string, id: string | null | undefined) => {
+      if (id === null || id === undefined) return;
+      v2References.set(`${type}\u0000${id}`, [type, id]);
+    };
+    for (const attempt of attempts) {
+      addV2Reference("orchestration-v2-thread", attempt.threadId);
+      addV2Reference("orchestration-v2-run", attempt.runId);
+    }
+    for (const observation of observations) {
+      const execution = observation.execution;
+      if (execution === undefined) continue;
+      addV2Reference("orchestration-v2-thread", execution.threadId);
+      addV2Reference("orchestration-v2-run", execution.runId);
+      addV2Reference("orchestration-v2-run-attempt", execution.runAttemptId);
+      addV2Reference("orchestration-v2-node", execution.nodeId);
+      addV2Reference("orchestration-v2-provider-session", execution.providerSessionId);
+      addV2Reference("orchestration-v2-provider-thread", execution.providerThreadId);
+      addV2Reference("orchestration-v2-context-transfer", execution.contextTransferId);
+    }
+    const unresolvedV2 = [...v2References.entries()]
+      .sort(([left], [right]) => (left < right ? -1 : left > right ? 1 : 0))
+      .flatMap(([, [type, id]]) =>
+        resolvedV2.get(type)?.has(id) === true ? [] : [[type, id] as const],
+      );
+
+    const predictionIdsByAttempt = new Map<string, Set<string>>();
+    for (const observation of observations) {
+      const predictionIds = predictionIdsByAttempt.get(observation.attemptId) ?? new Set<string>();
+      predictionIds.add(observation.predictionId);
+      predictionIdsByAttempt.set(observation.attemptId, predictionIds);
+    }
+    const recommendationCandidatesFor = (
+      attempt: RuntimeExecutionAttempt,
+    ): ReadonlyArray<string> => {
+      const predictionIds = predictionIdsByAttempt.get(attempt.attemptId);
+      const attemptCreatedAt = Date.parse(attempt.createdAt);
+      return receipts
+        .filter(
+          (receipt) =>
+            receipt.taskId === attempt.taskId &&
+            (predictionIds === undefined ||
+              predictionIds.size === 0 ||
+              predictionIds.has(receipt.predictionId)) &&
+            Date.parse(receipt.createdAt) <= attemptCreatedAt,
+        )
+        .map((receipt) => receipt.recommendationReceiptId)
+        .sort();
+    };
+
+    const attemptIdForThread = (threadId: string): RuntimeExecutionAttempt["attemptId"] | null => {
+      const attemptIds = attemptIdsByThread.get(threadId);
+      return attemptIds?.size === 1 ? ([...attemptIds][0] ?? null) : null;
+    };
+
+    const stagingReferences = (options?.stagingReferences ?? []).filter(
+      (reference) => reference.projectId === projectId && reference.taskId === taskId,
+    );
+
+    const handoffEvent = runtimeHandoffEvent(task);
     const generatedAt = yield* now;
-    const events = sortEvents([
+    const drafts = sortEvents([
       taskEvent(task),
+      ...task.verification.evidence.map((evidence) => runtimeVerificationEvent(task, evidence)),
+      ...(handoffEvent === null ? [] : [handoffEvent]),
       ...attempts.flatMap((attempt) => [
         attemptDecisionEvent(attempt),
         attemptOutcomeEvent(attempt),
+        recommendationAttemptLinkEvent(attempt, recommendationCandidatesFor(attempt)),
       ]),
       ...predictions.map(difficultyPredictionEvent),
       ...realized.map(realizedDifficultyEvent),
@@ -832,7 +1209,13 @@ const make = Effect.gen(function* () {
       ...assignments.map(experimentAssignmentEvent),
       ...capacity.pools.map((pool) => capacityPoolEvent(projectId, pool)),
       ...capacity.snapshots.map((snapshot) => capacitySnapshotEvent(projectId, snapshot)),
+      ...v2StoredEvents.map((stored) =>
+        v2Event(projectId, taskId, attemptIdForThread(stored.event.threadId), stored),
+      ),
+      ...unresolvedV2.map(([type, id]) => v2UnresolvedEvent(projectId, taskId, type, id)),
+      ...stagingReferences.map(stagingEvent),
     ]);
+    const events = drafts.map((draft) => ({ ...draft, exportedAt: generatedAt }));
 
     return {
       schemaVersion: ORCHESTRATION_EVIDENCE_SCHEMA_VERSION,
@@ -844,8 +1227,8 @@ const make = Effect.gen(function* () {
     };
   }, sql.withTransaction);
 
-  const exportTask: OrchestrationEvidenceShape["exportTask"] = (projectId, taskId) =>
-    exportTaskImpl(projectId, taskId).pipe(
+  const exportTask: OrchestrationEvidenceShape["exportTask"] = (projectId, taskId, options) =>
+    exportTaskImpl(projectId, taskId, options).pipe(
       Effect.catchTags({
         SqlError: (cause) =>
           Effect.fail(
@@ -859,8 +1242,8 @@ const make = Effect.gen(function* () {
 
   const exportTaskJsonl: OrchestrationEvidenceShape["exportTaskJsonl"] = Effect.fn(
     "OrchestrationEvidenceService.exportTaskJsonl",
-  )(function* (projectId, taskId) {
-    const exported = yield* exportTask(projectId, taskId);
+  )(function* (projectId, taskId, options) {
+    const exported = yield* exportTask(projectId, taskId, options);
     const lines = yield* Effect.forEach(
       exported.events,
       (item) =>
@@ -879,8 +1262,8 @@ const make = Effect.gen(function* () {
 
   const reconstructTaskHistory: OrchestrationEvidenceShape["reconstructTaskHistory"] = Effect.fn(
     "OrchestrationEvidenceService.reconstructTaskHistory",
-  )(function* (projectId, taskId) {
-    const exported = yield* exportTask(projectId, taskId);
+  )(function* (projectId, taskId, options) {
+    const exported = yield* exportTask(projectId, taskId, options);
     return {
       schemaVersion: ORCHESTRATION_EVIDENCE_SCHEMA_VERSION,
       projectId,

@@ -38,6 +38,8 @@ export const OrchestrationEvidenceSchemaVersion = Schema.Literal(
 
 export const OrchestrationEvidenceRecordType = Schema.Literals([
   "project-runtime-task",
+  "project-runtime-verification",
+  "project-runtime-handoff",
   "execution-attempt-decision",
   "execution-attempt-outcome",
   "adaptive-difficulty-prediction",
@@ -49,6 +51,10 @@ export const OrchestrationEvidenceRecordType = Schema.Literals([
   "adaptive-experiment-assignment",
   "adaptive-capacity-pool",
   "adaptive-capacity-snapshot",
+  "adaptive-recommendation-attempt-link",
+  "orchestration-v2-event",
+  "orchestration-v2-unresolved",
+  "project-staging-reference",
 ]);
 export type OrchestrationEvidenceRecordType = typeof OrchestrationEvidenceRecordType.Type;
 
@@ -60,18 +66,38 @@ export type OrchestrationEvidenceRecordType = typeof OrchestrationEvidenceRecord
 export const OrchestrationEvidenceLifecycleClass = Schema.Literals([
   "decision",
   "assessment",
+  "execution",
   "outcome",
   "correction",
   "observation",
 ]);
 export type OrchestrationEvidenceLifecycleClass = typeof OrchestrationEvidenceLifecycleClass.Type;
 
-/** A canonical insert-only record versus a view over mutable or aggregated state. */
-export const OrchestrationEvidenceBasis = Schema.Literals(["canonical-record", "derived-view"]);
+/**
+ * A canonical insert-only record, a view over mutable/aggregated state, or a
+ * weaker project-owned staging reference that is not canonical typed state.
+ */
+export const OrchestrationEvidenceBasis = Schema.Literals([
+  "canonical-record",
+  "derived-view",
+  "staging-reference",
+]);
 export type OrchestrationEvidenceBasis = typeof OrchestrationEvidenceBasis.Type;
 
-export const OrchestrationEvidenceSource = Schema.Literals(["runtime", "adaptive-routing"]);
-export type OrchestrationEvidenceSource = typeof OrchestrationEvidenceSource.Type;
+/**
+ * Who owns the represented fact. These mirror the governing source-of-truth map
+ * and deliberately keep Project Runtime, Runtime Execution, Runtime Routing, ARM,
+ * Orchestration V2, and project-owned staging distinct.
+ */
+export const OrchestrationEvidenceAuthority = Schema.Literals([
+  "project-runtime",
+  "runtime-execution",
+  "runtime-routing",
+  "arm",
+  "orchestration-v2",
+  "project-staging",
+]);
+export type OrchestrationEvidenceAuthority = typeof OrchestrationEvidenceAuthority.Type;
 
 export const OrchestrationEvidenceFact = Schema.Struct({
   key: EvidenceFieldName,
@@ -93,7 +119,7 @@ export const OrchestrationEvidenceEvent = Schema.Struct({
   recordId: EvidenceId,
   lifecycleClass: OrchestrationEvidenceLifecycleClass,
   recordBasis: OrchestrationEvidenceBasis,
-  source: OrchestrationEvidenceSource,
+  authority: OrchestrationEvidenceAuthority,
   projectId: ProjectId,
   taskId: Schema.NullOr(ProjectRuntimeTaskId),
   attemptId: Schema.NullOr(RuntimeExecutionAttemptId),
@@ -101,6 +127,7 @@ export const OrchestrationEvidenceEvent = Schema.Struct({
   runId: Schema.NullOr(EvidenceId),
   occurredAt: Schema.NullOr(IsoDateTime),
   recordedAt: Schema.NullOr(IsoDateTime),
+  exportedAt: IsoDateTime,
   summary: EvidenceSummary,
   unknownFields: Schema.Array(EvidenceFieldName).check(
     Schema.isMaxLength(ORCHESTRATION_EVIDENCE_BOUNDS.unknownFieldsMaxCount),
@@ -113,6 +140,49 @@ export const OrchestrationEvidenceEvent = Schema.Struct({
   ),
 });
 export type OrchestrationEvidenceEvent = typeof OrchestrationEvidenceEvent.Type;
+
+/**
+ * How a project-owned staging reference was known at capture time. These mirror
+ * the ledger's evidence classes; they are not canonical Runtime/ARM/V2 state.
+ */
+export const OrchestrationEvidenceStagingEvidenceClass = Schema.Literals([
+  "observed-fact",
+  "orchestrator-claim",
+  "retrospective-inference",
+]);
+export type OrchestrationEvidenceStagingEvidenceClass =
+  typeof OrchestrationEvidenceStagingEvidenceClass.Type;
+
+/**
+ * Caller-supplied stable reference to project-owned evidence that has not been
+ * promoted into typed canonical state. The service never persists this reference
+ * and never fabricates Runtime/ARM/V2 rows from it.
+ */
+export const OrchestrationEvidenceStagingReference = Schema.Struct({
+  stagingId: EvidenceId,
+  projectId: ProjectId,
+  taskId: ProjectRuntimeTaskId,
+  branch: EvidenceId,
+  commit: EvidenceId,
+  path: Schema.optionalKey(EvidenceId),
+  decisionIds: Schema.Array(EvidenceId).check(
+    Schema.isMaxLength(ORCHESTRATION_EVIDENCE_BOUNDS.referencesMaxCount),
+  ),
+  evidenceClass: OrchestrationEvidenceStagingEvidenceClass,
+  provenance: EvidenceSummary,
+  occurredAt: Schema.NullOr(IsoDateTime),
+});
+export type OrchestrationEvidenceStagingReference =
+  typeof OrchestrationEvidenceStagingReference.Type;
+
+export const OrchestrationEvidenceExportOptions = Schema.Struct({
+  stagingReferences: Schema.optionalKey(
+    Schema.Array(OrchestrationEvidenceStagingReference).check(
+      Schema.isMaxLength(ORCHESTRATION_EVIDENCE_BOUNDS.referencesMaxCount),
+    ),
+  ),
+});
+export type OrchestrationEvidenceExportOptions = typeof OrchestrationEvidenceExportOptions.Type;
 
 export const OrchestrationEvidenceExport = Schema.Struct({
   schemaVersion: OrchestrationEvidenceSchemaVersion,
