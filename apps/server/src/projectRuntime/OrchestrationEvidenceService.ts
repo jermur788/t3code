@@ -676,10 +676,7 @@ const runtimeVerificationEvent = (
     ]),
   });
 
-const runtimeHandoffEvent = (
-  task: ProjectRuntimeTask,
-  handoff: ProjectRuntimeHandoff,
-): DraftEvent =>
+const runtimeHandoffEvent = (handoff: ProjectRuntimeHandoff): DraftEvent =>
   event({
     schemaVersion: ORCHESTRATION_EVIDENCE_SCHEMA_VERSION,
     eventId: `oev0:project-runtime-handoff:${handoff.handoffId}`,
@@ -715,7 +712,6 @@ const runtimeHandoffEvent = (
       ["providerInstanceId", handoff.providerInstanceId],
       ["model", handoff.model],
       ["createdBy", handoff.createdBy],
-      ["snapshotSourceTaskId", task.taskId],
     ]),
   });
 
@@ -744,7 +740,6 @@ const runtimeHandoffUnresolvedEvent = (
     facts: facts([
       ["status", "unresolved"],
       ["handoffId", handoffId],
-      ["canonicalRecord", false],
     ]),
   });
 
@@ -1204,12 +1199,21 @@ const make = Effect.gen(function* () {
             WHERE project_id = ${projectId} AND task_id = ${taskId}
               AND handoff_id = ${task.latestHandoffId}
             LIMIT 1`.pipe(Effect.mapError(sqlError(operation)));
-    const handoff =
+    const handoffRow =
       handoffRows[0] === undefined
         ? null
         : yield* decodeHandoff(handoffRows[0].payload_json).pipe(
             Effect.mapError((cause) => PersistenceDecodeError.fromSchemaError(operation, cause)),
           );
+    // The row keys are authoritative; a payload whose identity disagrees is not
+    // a safe canonical handoff, so treat it like an unresolved pointer.
+    const handoff =
+      handoffRow !== null &&
+      handoffRow.projectId === projectId &&
+      handoffRow.taskId === taskId &&
+      handoffRow.handoffId === task.latestHandoffId
+        ? handoffRow
+        : null;
 
     const [
       attemptRows,
@@ -1398,7 +1402,7 @@ const make = Effect.gen(function* () {
         ? null
         : handoff === null
           ? runtimeHandoffUnresolvedEvent(task, task.latestHandoffId)
-          : runtimeHandoffEvent(task, handoff);
+          : runtimeHandoffEvent(handoff);
     const generatedAt = yield* now;
     const drafts = sortEvents([
       taskEvent(task),

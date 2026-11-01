@@ -1351,7 +1351,7 @@ it.effect("does not claim a canonical handoff when the pointer cannot resolve", 
     assert.isNull(unresolved?.recordedAt ?? null);
     assert.isTrue(unresolved?.unknownFields.includes("canonicalRecord"));
     assert.equal(unresolved?.facts.find((fact) => fact.key === "status")?.value, "unresolved");
-    assert.equal(unresolved?.facts.find((fact) => fact.key === "canonicalRecord")?.value, false);
+    assert.isUndefined(unresolved?.facts.find((fact) => fact.key === "canonicalRecord"));
 
     const jsonl = yield* evidence.exportTaskJsonl(projectId, taskId);
     const decoded = jsonl
@@ -1362,6 +1362,41 @@ it.effect("does not claim a canonical handoff when the pointer cannot resolve", 
     assert.isTrue(
       decoded.some((event) => event.recordType === "project-runtime-handoff-unresolved"),
     );
+  }).pipe(Effect.provide(layerTest)),
+);
+
+it.effect("does not claim a canonical handoff when payload identity disagrees with the row", () =>
+  Effect.gen(function* () {
+    yield* seedAll;
+    const sql = yield* SqlClient.SqlClient;
+    const evidence = yield* OrchestrationEvidenceService.OrchestrationEvidenceService;
+    const taskWithHandoff: ProjectRuntimeTask = {
+      ...task,
+      latestHandoffId: handoffId,
+      revision: 4,
+      updatedAt: handoff.createdAt,
+    };
+    yield* sql`UPDATE project_runtime_tasks
+      SET status = ${taskWithHandoff.status}, revision = ${taskWithHandoff.revision},
+        payload_json = ${encodeTask(taskWithHandoff)}
+      WHERE task_id = ${taskId} AND project_id = ${projectId}`;
+    const mismatched: ProjectRuntimeHandoff = {
+      ...handoff,
+      handoffId: ProjectRuntimeHandoffId.make("ev0-handoff-payload-only"),
+    };
+    yield* sql`INSERT INTO project_runtime_handoffs
+      (handoff_id, project_id, task_id, created_at, payload_json)
+      VALUES (${handoffId}, ${projectId}, ${taskId}, ${handoff.createdAt},
+        ${encodeHandoff(mismatched)})`;
+
+    const exported = yield* evidence.exportTask(projectId, taskId);
+    assert.isFalse(exported.events.some((item) => item.recordType === "project-runtime-handoff"));
+    const unresolved = exported.events.find(
+      (item) => item.recordType === "project-runtime-handoff-unresolved",
+    );
+    assert.isDefined(unresolved);
+    assert.equal(unresolved?.recordId, handoffId);
+    assert.equal(unresolved?.facts.find((fact) => fact.key === "status")?.value, "unresolved");
   }).pipe(Effect.provide(layerTest)),
 );
 
