@@ -646,3 +646,26 @@ Work unit 3 (archaeology) and unit 4 (classification) were kept separate because
 - **Alternatives rejected:** retrying Claude A immediately (same capacity failure likely; wastes a route); Claude B (same vendor limit class; no additional evidence); staying with self-review (not independent).
 - **Selection mechanism:** `forced_capacity_substitution`.
 - `machine`: `{"schema":"t3-orchestration-evidence-v2","event_id":"ev0-20261101-d03a","event_type":"routing_decision","occurred_at":"2026-11-01T16:43Z","recorded_at":"2026-11-01T16:43Z","project":"t3-fork","task":"evidence-v0-archaeology-crosscheck-substitute","orchestrator":{"provider":"opencode","model":"opencode-go/deepseek-v4.1-flash"},"selected":{"provider":"codex","model":"gpt-6.1-sol"},"difficulty":{"ambiguity":0.35,"scope_breadth":0.80,"reasoning_complexity":0.45,"integration_tool_complexity":0.55,"risk":0.25,"verification_burden":0.40,"band":"MEDIUM-HIGH","confidence":0.82},"selection":"forced_capacity_substitution","prior_attempt":"ev0-20261101-d03","outcome":"PENDING"}`
+
+## Appended outcome — D-EV0-03a Codex cross-check
+
+- `decision_id`: `ev0-20261101-d03a`
+- `recorded_at`: 2026-11-01T16:52Z
+- **State:** `COMPLETED` — read-only archaeology cross-check returned.
+- **Actual executor:** Codex `codex` / `gpt-6.1-sol`, effort `high`, no substitution during the task.
+- **Observed evidence (summary):** confirmed the canonical identity/tables map; confirmed the Runtime receipt holds selected launch intent only, not executed-model attestation; confirmed ARM has persistence APIs but no active production producer path; confirmed the V2 event log is authoritative over projections and that Runtime attempts join by threadId/runId, not RunAttemptId; confirmed no unified exporter exists; classified choice set/rationale/executed provenance as `AMBIGUOUS` or `MISSING`; flagged event compaction as a threat to permanently complete history.
+- **Effect on primary work:** used as an independent cross-check. No material conflict with DeepSeek's primary map; it added the "no active ARM producer" and "event compaction" findings, both carried into the result.
+- **Learning:** the capacity substitution preserved independence and produced a useful cross-vendor check. Claude remains unavailable for review unless a later attempt succeeds.
+
+### D-EV0-11a — Independent review capacity substitution
+
+- `decision_id`: `ev0-20261101-d11a`
+- `recorded_at`: 2026-11-01T17:30Z
+- `work_unit`: independent architecture/evidence review of commit `30b20c12cc` over base `e51c1c5d74`.
+- **Difficulty:** unchanged from d11 (`HIGH`, confidence 0.70).
+- **Candidates considered:** Claude A Opus 5.5 (planned; rate-limited at 16:42Z), Claude B — Pro Opus 5.5 (separate listed instance, untested), Codex gpt-6.1-sol (available; already used for the archaeology cross-check), DeepSeek self (not independent).
+- **Selected executor (pre-dispatch):** Claude B — Pro (`claudeAgent_claude_b_pro`) / `claude-opus-5-5`, effort `high`, read-only.
+- **Rationale (ORCHESTRATOR CLAIM):** the planned reviewer family is retained while switching instances to avoid the observed Claude A capacity failure. Claude B is a separate listed instance. Codex remains the planned fallback if Claude B fails for the same reason.
+- **Alternatives rejected:** Claude A retry (same observed limit; likely repeat); Codex as first choice (already used for the d03a cross-check, so a same-model review would be less independent); self-review (not independent).
+- **Selection mechanism:** `forced_capacity_substitution`.
+- `machine`: `{"schema":"t3-orchestration-evidence-v2","event_id":"ev0-20261101-d11a","event_type":"routing_decision","occurred_at":"2026-11-01T17:30Z","recorded_at":"2026-11-01T17:30Z","project":"t3-fork","task":"evidence-v0-independent-review-substitute","orchestrator":{"provider":"opencode","model":"opencode-go/deepseek-v4.1-flash"},"selected":{"provider":"claudeAgent_claude_b_pro","model":"claude-opus-5-5"},"difficulty":{"ambiguity":0.30,"scope_breadth":0.50,"reasoning_complexity":0.70,"integration_tool_complexity":0.40,"risk":0.60,"verification_burden":0.60,"band":"HIGH","confidence":0.70},"selection":"forced_capacity_substitution","prior_attempt":"ev0-20261101-d11","outcome":"PENDING"}`
