@@ -641,3 +641,14 @@ it.effect("represents the L2-style sequence without fabricating ledger-only deci
     );
   }).pipe(Effect.provide(layerTest)),
 );
+
+it.effect("fails cleanly when the task does not exist", () =>
+  Effect.gen(function* () {
+    yield* seedRuntime;
+    const evidence = yield* OrchestrationEvidenceService.OrchestrationEvidenceService;
+    const error = yield* Effect.flip(
+      evidence.exportTask(projectId, ProjectRuntimeTaskId.make("missing-task")),
+    );
+    assert.equal(error._tag, "OrchestrationEvidenceTaskNotFoundError");
+  }).pipe(Effect.provide(layerTest)),
+);
