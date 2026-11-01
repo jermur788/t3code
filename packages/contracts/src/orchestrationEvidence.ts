@@ -16,7 +16,7 @@ const ORCHESTRATION_EVIDENCE_BOUNDS = {
   summaryMaxLength: 512,
   fieldNameMaxLength: 128,
   factsMaxCount: 2_000,
-  referencesMaxCount: 100,
+  referencesMaxCount: 2_000,
   unknownFieldsMaxCount: 100,
   eventsMaxCount: 10_000,
 } as const;

@@ -17,6 +17,7 @@ import {
   ProjectRuntimeTaskId,
   ProviderDriverKind,
   ProviderInstanceId,
+  ProviderSessionId,
   ProviderThreadId,
   RunAttemptId,
   RunId,
@@ -61,6 +62,7 @@ const threadId = ThreadId.make("thread:ev0");
 const runId = RunId.make("run:ev0");
 const runAttemptId = RunAttemptId.make("run-attempt:ev0");
 const providerThreadId = ProviderThreadId.make("provider-thread:ev0");
+const providerSessionId = ProviderSessionId.make("provider-session:ev0");
 const nodeId = NodeId.make("node:ev0");
 const predictionId = AdaptiveDifficultyPredictionId.make("ev0-prediction");
 const realizedDifficultyId = AdaptiveRealizedDifficultyId.make("ev0-realized");
@@ -1446,6 +1448,13 @@ it.effect("orders ARM outcome reconciliations by revision when clocks tie", () =
       corrections.map((event) => event.recordId),
       ["z-first-reconciliation", "a-second-reconciliation"],
     );
+    const outcomeHeads = exported.events.filter(
+      (event) => event.recordType === "adaptive-accepted-outcome",
+    );
+    assert.deepEqual(
+      outcomeHeads.map((event) => event.facts.find((fact) => fact.key === "revision")?.value),
+      [1, 2, 3],
+    );
   }).pipe(Effect.provide(layerTest)),
 );
 
@@ -1485,5 +1494,72 @@ it.effect("keeps wide capacity snapshots decodable within bounds", () =>
     assert.isDefined(wide);
     assert.isAtLeast(wide!.facts.length, 100);
     assert.equal(wide!.facts.find((fact) => fact.key === "windows.count")?.value, 50);
+  }).pipe(Effect.provide(layerTest)),
+);
+
+it.effect("resolves provider-session.detached without a false unresolved marker", () =>
+  Effect.gen(function* () {
+    yield* seedAll;
+    const eventStore = yield* EventStore.EventStoreV2;
+    const detachedEventId = EventId.make("event:ev0-provider-session-detached");
+    yield* eventStore.append({
+      events: [
+        {
+          id: detachedEventId,
+          type: "provider-session.detached",
+          threadId,
+          occurredAt: v2At,
+          payload: {
+            providerSessionId,
+            detachedAt: v2At,
+            reason: "test",
+          },
+        },
+      ],
+    });
+    const evidence = yield* OrchestrationEvidenceService.OrchestrationEvidenceService;
+    const exported = yield* evidence.exportTask(projectId, taskId);
+    const item = exported.events.find((event) => event.recordId === detachedEventId);
+    assert.isDefined(item);
+    assert.isTrue(
+      item?.references.some(
+        (reference) =>
+          reference.recordType === "orchestration-v2-provider-session" &&
+          reference.recordId === providerSessionId,
+      ),
+    );
+    assert.isFalse(
+      exported.events.some(
+        (event) =>
+          event.recordType === "orchestration-v2-unresolved" &&
+          event.recordId === providerSessionId,
+      ),
+    );
+  }).pipe(Effect.provide(layerTest)),
+);
+
+it.effect("keeps large recommendation candidate sets decodable within reference bounds", () =>
+  Effect.gen(function* () {
+    yield* seedAll;
+    const adaptive = yield* AdaptiveRoutingService.AdaptiveRoutingService;
+    const evidence = yield* OrchestrationEvidenceService.OrchestrationEvidenceService;
+    for (let index = 0; index < 101; index += 1) {
+      yield* adaptive.appendRecommendationReceipt({
+        ...receipt,
+        recommendationReceiptId: AdaptiveRecommendationReceiptId.make(`ev0-receipt-bulk-${index}`),
+      });
+    }
+    const jsonl = yield* evidence.exportTaskJsonl(projectId, taskId);
+    const decoded = jsonl
+      .split("\n")
+      .filter(Boolean)
+      .map((line) => decodeEvent(line));
+    const link = decoded.find(
+      (event) =>
+        event.recordType === "adaptive-recommendation-attempt-link" && event.recordId === attemptId,
+    );
+    assert.equal(link?.facts.find((fact) => fact.key === "candidateReceiptCount")?.value, 102);
+    assert.equal(link?.facts.find((fact) => fact.key === "status")?.value, "ambiguous");
+    assert.isAtLeast(link?.references.length ?? 0, 103);
   }).pipe(Effect.provide(layerTest)),
 );

@@ -907,51 +907,68 @@ const stagingEvent = (reference: OrchestrationEvidenceStagingReference): DraftEv
     ]),
   });
 
-const makeEventComparator = (v2BlockTime: number) => (left: DraftEvent, right: DraftEvent) => {
-  const leftTask = left.recordType === "project-runtime-task";
-  const rightTask = right.recordType === "project-runtime-task";
-  if (leftTask !== rightTask) return leftTask ? -1 : 1;
+type EventBlock = "orchestration-v2" | "outcome-correction" | "outcome-head";
 
-  const leftV2 = left.recordType === "orchestration-v2-event";
-  const rightV2 = right.recordType === "orchestration-v2-event";
-  if (leftV2 && rightV2) {
-    return left.eventId < right.eventId ? -1 : left.eventId > right.eventId ? 1 : 0;
-  }
+const eventBlock = (event: DraftEvent): EventBlock | null =>
+  event.recordType === "orchestration-v2-event"
+    ? "orchestration-v2"
+    : event.recordType === "adaptive-outcome-reconciliation"
+      ? "outcome-correction"
+      : event.recordType === "adaptive-accepted-outcome"
+        ? "outcome-head"
+        : null;
 
-  if (left.recordType === right.recordType) {
-    const revisionKey =
-      left.recordType === "adaptive-outcome-reconciliation"
-        ? "fromRevision"
-        : left.recordType === "adaptive-accepted-outcome"
-          ? "revision"
-          : undefined;
-    if (revisionKey !== undefined) {
-      const leftRevision = left.facts.find((fact) => fact.key === revisionKey)?.value;
-      const rightRevision = right.facts.find((fact) => fact.key === revisionKey)?.value;
-      if (typeof leftRevision === "number" && typeof rightRevision === "number") {
-        if (leftRevision !== rightRevision) return leftRevision < rightRevision ? -1 : 1;
+const revisionFact = (event: DraftEvent, key: string): number | null => {
+  const value = event.facts.find((fact) => fact.key === key)?.value;
+  return typeof value === "number" ? value : null;
+};
+
+const makeEventComparator = (blockTimes: Record<EventBlock, number>) => {
+  const crossTime = (event: DraftEvent, block: EventBlock | null): number =>
+    block === null ? sortTime(event.occurredAt ?? event.recordedAt) : blockTimes[block];
+  return (left: DraftEvent, right: DraftEvent) => {
+    const leftTask = left.recordType === "project-runtime-task";
+    const rightTask = right.recordType === "project-runtime-task";
+    if (leftTask !== rightTask) return leftTask ? -1 : 1;
+
+    const leftBlock = eventBlock(left);
+    const rightBlock = eventBlock(right);
+    if (leftBlock !== null && leftBlock === rightBlock) {
+      if (leftBlock === "orchestration-v2") {
+        return left.eventId < right.eventId ? -1 : left.eventId > right.eventId ? 1 : 0;
       }
+      const revisionKey = leftBlock === "outcome-correction" ? "fromRevision" : "revision";
+      const leftRevision = revisionFact(left, revisionKey);
+      const rightRevision = revisionFact(right, revisionKey);
+      if (leftRevision !== null && rightRevision !== null && leftRevision !== rightRevision) {
+        return leftRevision < rightRevision ? -1 : 1;
+      }
+      return left.eventId < right.eventId ? -1 : left.eventId > right.eventId ? 1 : 0;
     }
-  }
 
-  // V2 events stay in one contiguous block so canonical event-store sequence is a
-  // total order. The block is positioned by its earliest V2 occurrence time.
-  const leftTime = leftV2 ? v2BlockTime : sortTime(left.occurredAt ?? left.recordedAt);
-  const rightTime = rightV2 ? v2BlockTime : sortTime(right.occurredAt ?? right.recordedAt);
-  if (leftTime !== rightTime) return leftTime < rightTime ? -1 : 1;
+    const leftTime = crossTime(left, leftBlock);
+    const rightTime = crossTime(right, rightBlock);
+    if (leftTime !== rightTime) return leftTime < rightTime ? -1 : 1;
 
-  const classDifference = CLASS_ORDER[left.lifecycleClass] - CLASS_ORDER[right.lifecycleClass];
-  if (classDifference !== 0) return classDifference;
+    const classDifference = CLASS_ORDER[left.lifecycleClass] - CLASS_ORDER[right.lifecycleClass];
+    if (classDifference !== 0) return classDifference;
 
-  return left.eventId < right.eventId ? -1 : left.eventId > right.eventId ? 1 : 0;
+    return left.eventId < right.eventId ? -1 : left.eventId > right.eventId ? 1 : 0;
+  };
 };
 
 const sortEvents = (events: ReadonlyArray<DraftEvent>): ReadonlyArray<DraftEvent> => {
-  const v2Times = events
-    .filter((event) => event.recordType === "orchestration-v2-event")
-    .map((event) => sortTime(event.occurredAt ?? event.recordedAt));
-  const v2BlockTime = v2Times.length === 0 ? UNKNOWN_TIME : Math.min(...v2Times);
-  return [...events].sort(makeEventComparator(v2BlockTime));
+  const blockTimes: Record<EventBlock, number> = {
+    "orchestration-v2": UNKNOWN_TIME,
+    "outcome-correction": UNKNOWN_TIME,
+    "outcome-head": UNKNOWN_TIME,
+  };
+  for (const event of events) {
+    const block = eventBlock(event);
+    if (block === null) continue;
+    blockTimes[block] = Math.min(blockTimes[block], sortTime(event.occurredAt ?? event.recordedAt));
+  }
+  return [...events].sort(makeEventComparator(blockTimes));
 };
 
 const make = Effect.gen(function* () {
@@ -1072,6 +1089,10 @@ const make = Effect.gen(function* () {
       const add = (recordType: string, recordId: string | null | undefined) => {
         if (typeof recordId === "string") resolved.get(recordType)!.add(recordId);
       };
+      if (event.type === "provider-session.detached") {
+        add("orchestration-v2-provider-session", payload.providerSessionId);
+        continue;
+      }
       if (typeof payload.id !== "string") continue;
       if (event.type.startsWith("thread.")) {
         add("orchestration-v2-thread", payload.id);
@@ -1088,8 +1109,6 @@ const make = Effect.gen(function* () {
         add("orchestration-v2-node", payload.id);
         add("orchestration-v2-node", payload.rootNodeId);
         add("orchestration-v2-provider-thread", payload.providerThreadId);
-      } else if (event.type === "provider-session.detached") {
-        add("orchestration-v2-provider-session", payload.providerSessionId);
       } else if (event.type.startsWith("provider-session.")) {
         add("orchestration-v2-provider-session", payload.id);
       } else if (event.type === "provider-thread.updated") {
