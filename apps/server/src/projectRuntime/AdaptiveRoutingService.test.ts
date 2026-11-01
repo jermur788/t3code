@@ -215,6 +215,13 @@ const seedTwoTasksWithAttempts = Effect.gen(function* () {
   }
 });
 
+const recordAttemptRun = (task: ProjectRuntimeTaskId, runId: RunId) =>
+  Effect.gen(function* () {
+    const sql = yield* SqlClient.SqlClient;
+    yield* sql`UPDATE project_runtime_execution_attempts
+      SET run_id = ${runId} WHERE attempt_id = ${attemptOf(task)}`;
+  });
+
 const prediction = (task: ProjectRuntimeTaskId): AdaptiveDifficultyPrediction => ({
   schemaVersion: 1,
   predictionId: predictionOf(task),
@@ -300,31 +307,91 @@ it.effect("rejects an observation that pairs one task with another task's attemp
   }).pipe(Effect.provide(layerTest)),
 );
 
-it.effect("rejects execution references that contradict the linked attempt", () =>
+it.effect("rejects a supplied execution when the linked attempt recorded no run", () =>
   Effect.gen(function* () {
     yield* seedTwoTasksWithAttempts;
     yield* seedPredictions;
     const service = yield* AdaptiveRoutingService.AdaptiveRoutingService;
     const sql = yield* SqlClient.SqlClient;
-    const base = observation({
-      task: taskId,
-      attempt: attemptOf(taskId),
-      prediction: predictionOf(taskId),
-    });
 
     const rejected = yield* service
       .appendExecutionObservationReference({
-        ...base,
-        execution: { threadId: ThreadId.make("other-thread"), runId: RunId.make("run-1") },
+        ...observation({
+          task: taskId,
+          attempt: attemptOf(taskId),
+          prediction: predictionOf(taskId),
+        }),
+        execution: { threadId: ThreadId.make(`thread-${taskId}`), runId: RunId.make("run-1") },
       })
       .pipe(Effect.flip);
     assert.equal(rejected._tag, "PersistenceSqlError");
     assert.lengthOf(yield* sql`SELECT 1 FROM adaptive_execution_observations`, 0);
+  }).pipe(Effect.provide(layerTest)),
+);
 
-    yield* service.appendExecutionObservationReference({
-      ...base,
-      execution: { threadId: ThreadId.make(`thread-${taskId}`), runId: RunId.make("run-1") },
-    });
+it.effect("rejects a supplied execution that contradicts the attempt's recorded run", () =>
+  Effect.gen(function* () {
+    yield* seedTwoTasksWithAttempts;
+    yield* seedPredictions;
+    yield* recordAttemptRun(taskId, RunId.make("recorded-run"));
+    const service = yield* AdaptiveRoutingService.AdaptiveRoutingService;
+    const sql = yield* SqlClient.SqlClient;
+
+    const rejected = yield* service
+      .appendExecutionObservationReference({
+        ...observation({
+          task: taskId,
+          attempt: attemptOf(taskId),
+          prediction: predictionOf(taskId),
+        }),
+        execution: { threadId: ThreadId.make(`thread-${taskId}`), runId: RunId.make("other-run") },
+      })
+      .pipe(Effect.flip);
+    assert.equal(rejected._tag, "PersistenceSqlError");
+    assert.lengthOf(yield* sql`SELECT 1 FROM adaptive_execution_observations`, 0);
+  }).pipe(Effect.provide(layerTest)),
+);
+
+it.effect("rejects a supplied execution that contradicts the attempt's recorded thread", () =>
+  Effect.gen(function* () {
+    yield* seedTwoTasksWithAttempts;
+    yield* seedPredictions;
+    yield* recordAttemptRun(taskId, RunId.make("recorded-run"));
+    const service = yield* AdaptiveRoutingService.AdaptiveRoutingService;
+    const sql = yield* SqlClient.SqlClient;
+
+    const rejected = yield* service
+      .appendExecutionObservationReference({
+        ...observation({
+          task: taskId,
+          attempt: attemptOf(taskId),
+          prediction: predictionOf(taskId),
+        }),
+        execution: { threadId: ThreadId.make("other-thread"), runId: RunId.make("recorded-run") },
+      })
+      .pipe(Effect.flip);
+    assert.equal(rejected._tag, "PersistenceSqlError");
+    assert.lengthOf(yield* sql`SELECT 1 FROM adaptive_execution_observations`, 0);
+  }).pipe(Effect.provide(layerTest)),
+);
+
+it.effect("persists a supplied execution only at the attempt's exact recorded identity", () =>
+  Effect.gen(function* () {
+    yield* seedTwoTasksWithAttempts;
+    yield* seedPredictions;
+    yield* recordAttemptRun(taskId, RunId.make("recorded-run"));
+    const service = yield* AdaptiveRoutingService.AdaptiveRoutingService;
+    const sql = yield* SqlClient.SqlClient;
+
+    const matched = {
+      ...observation({
+        task: taskId,
+        attempt: attemptOf(taskId),
+        prediction: predictionOf(taskId),
+      }),
+      execution: { threadId: ThreadId.make(`thread-${taskId}`), runId: RunId.make("recorded-run") },
+    };
+    assert.deepStrictEqual(yield* service.appendExecutionObservationReference(matched), matched);
     assert.lengthOf(yield* sql`SELECT 1 FROM adaptive_execution_observations`, 1);
   }).pipe(Effect.provide(layerTest)),
 );

@@ -149,9 +149,10 @@ const make = Effect.gen(function* () {
           SELECT thread_id, run_id FROM project_runtime_execution_attempts
           WHERE attempt_id = ${data.attemptId} AND project_id = ${data.projectId}`;
         if (
-          attempt !== undefined &&
-          (attempt.thread_id !== data.execution.threadId ||
-            (attempt.run_id !== null && attempt.run_id !== data.execution.runId))
+          attempt === undefined ||
+          attempt.thread_id !== data.execution.threadId ||
+          attempt.run_id === null ||
+          attempt.run_id !== data.execution.runId
         ) {
           return yield* new PersistenceSqlError({
             operation: "AdaptiveRoutingService.appendExecutionObservationReference",
