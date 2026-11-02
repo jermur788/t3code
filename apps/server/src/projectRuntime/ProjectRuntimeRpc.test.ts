@@ -17,6 +17,7 @@ import * as SqlClient from "effect/sql/SqlClient";
 import { RpcGroup, RpcTest } from "effect/rpc";
 import * as RpcAuthorization from "../auth/RpcAuthorization.ts";
 import * as ServerConfig from "../config.ts";
+import * as EventStoreV2 from "../orchestration-v2/EventStore.ts";
 import * as ProjectStore from "../orchestration-v2/ProjectStore.ts";
 import * as Sqlite from "../persistence/Sqlite.ts";
 import * as KnownWorkspaces from "../workspace/KnownWorkspaces.ts";
@@ -25,6 +26,7 @@ import * as WorkspaceFileSystem from "../workspace/WorkspaceFileSystem.ts";
 import * as WorkspacePaths from "../workspace/WorkspacePaths.ts";
 import * as Runtime from "./ProjectRuntimeService.ts";
 import * as Sources from "./ProjectRuntimeSourceAccess.ts";
+import * as OrchestrationEvidenceService from "./OrchestrationEvidenceService.ts";
 import * as RuntimeRoutingService from "../runtimeRouting/RuntimeRoutingService.ts";
 import * as RuntimeRoutingProviderView from "../runtimeRouting/RuntimeRoutingProviderView.ts";
 import * as RuntimeTaskExecutionService from "./RuntimeTaskExecutionService.ts";
@@ -49,12 +51,17 @@ const routingProviderView = Layer.succeed(RuntimeRoutingProviderView.RuntimeRout
     capacityByInstanceId: new Map(),
   }),
 });
-const layer = Sources.layer.pipe(
-  Layer.provideMerge(Runtime.layer.pipe(Layer.provide(DevelopmentProfileService.layer))),
-  Layer.provideMerge(RuntimeRoutingService.layer.pipe(Layer.provide(routingProviderView))),
-  Layer.provideMerge(Layer.mock(RuntimeTaskExecutionService.RuntimeTaskExecutionService)({})),
-  Layer.provideMerge(ProjectStore.layer),
-  Layer.provideMerge(workspace),
+const layer = Layer.merge(
+  Sources.layer.pipe(
+    Layer.provideMerge(Runtime.layer.pipe(Layer.provide(DevelopmentProfileService.layer))),
+    Layer.provideMerge(RuntimeRoutingService.layer.pipe(Layer.provide(routingProviderView))),
+    Layer.provideMerge(Layer.mock(RuntimeTaskExecutionService.RuntimeTaskExecutionService)({})),
+    Layer.provideMerge(ProjectStore.layer),
+    Layer.provideMerge(workspace),
+  ),
+  OrchestrationEvidenceService.layer,
+).pipe(
+  Layer.provideMerge(EventStoreV2.layer),
   Layer.provideMerge(Sqlite.layerMemory),
   Layer.provide(ServerConfig.ServerConfig.layerTest(process.cwd(), { prefix: "runtime-ui-rpc-" })),
   Layer.provideMerge(NodeServices.layer),
@@ -269,7 +276,7 @@ it.effect(
         (yield* client[M.status]({ projectId: ProjectId.make("absent") }).pipe(Effect.flip))._tag,
         "ProjectRuntimeRequestError",
       );
-    }).pipe(Effect.scoped, Effect.provide(layer)),
+    }).pipe(Effect.provide(layer)),
 );
 
 it.effect(
@@ -317,7 +324,70 @@ it.effect(
       assert.isNull(yield* client[M.readInstructions]({ projectId: a }));
       assert.isEmpty((yield* client[M.listSources]({ projectId: a })).sources);
       assert.isEmpty((yield* client[M.listTasks]({ projectId: a })).tasks);
-    }).pipe(Effect.scoped, Effect.provide(layer)),
+    }).pipe(Effect.provide(layer)),
+);
+
+it.effect("exports Evidence V0 over RPC and rejects cross-task staging requests", () =>
+  Effect.gen(function* () {
+    const { client } = yield* setup;
+    yield* client[M.setEnabled]({ projectId: a, enabled: true });
+    const task = yield* client[M.createTask]({
+      projectId: a,
+      title: "Evidence",
+      scope: "Export evidence",
+      acceptanceCriteria: [],
+    });
+    const staging = {
+      stagingId: "staging:evidence",
+      projectId: a,
+      taskId: task.taskId,
+      branch: "main",
+      commit: "abc123",
+      decisionIds: [],
+      evidenceClass: "observed-fact" as const,
+      provenance: "transport test",
+      occurredAt: null,
+    };
+    const reconstruction = yield* client[M.exportEvidence]({
+      projectId: a,
+      taskId: task.taskId,
+      stagingReferences: [staging],
+    });
+    assert.equal(reconstruction.schemaVersion, "orchestration-evidence/v0");
+    assert.equal(reconstruction.ordering, "task-first-then-chronological");
+    assert.equal(reconstruction.events[0]?.recordType, "project-runtime-task");
+    assert.isTrue(
+      reconstruction.events.some((item) => item.recordType === "project-staging-reference"),
+    );
+
+    const crossProject = yield* client[M.exportEvidence]({
+      projectId: a,
+      taskId: task.taskId,
+      stagingReferences: [{ ...staging, projectId: b }],
+    }).pipe(Effect.flip);
+    assert.equal(crossProject._tag, "ProjectRuntimeRequestError");
+    assert.equal(
+      crossProject._tag === "ProjectRuntimeRequestError" ? crossProject.reason : null,
+      "invalid_request",
+    );
+
+    const otherTask = yield* client[M.createTask]({
+      projectId: a,
+      title: "Other evidence target",
+      scope: "A different task in the same project",
+      acceptanceCriteria: [],
+    });
+    const crossTask = yield* client[M.exportEvidence]({
+      projectId: a,
+      taskId: task.taskId,
+      stagingReferences: [{ ...staging, taskId: otherTask.taskId }],
+    }).pipe(Effect.flip);
+    assert.equal(crossTask._tag, "ProjectRuntimeRequestError");
+    assert.equal(
+      crossTask._tag === "ProjectRuntimeRequestError" ? crossTask.reason : null,
+      "invalid_request",
+    );
+  }).pipe(Effect.provide(layer)),
 );
 
 it.effect("redacts persistence details at the user transport boundary", () =>
@@ -338,6 +408,7 @@ it.effect("redacts persistence details at the user transport boundary", () =>
           Layer.mock(Sources.ProjectRuntimeSourceAccess)({}),
           Layer.mock(RuntimeRoutingService.RuntimeRoutingService)({}),
           Layer.mock(RuntimeTaskExecutionService.RuntimeTaskExecutionService)({}),
+          Layer.mock(OrchestrationEvidenceService.OrchestrationEvidenceService)({}),
         ),
       ),
     );
@@ -398,5 +469,5 @@ it.effect("round-trips project routing and resolves it without launching work", 
     });
     assert.equal(reset.revision, 2);
     assert.isNull(reset.routing);
-  }).pipe(Effect.scoped, Effect.provide(layer)),
+  }).pipe(Effect.provide(layer)),
 );

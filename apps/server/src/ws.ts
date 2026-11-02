@@ -1,5 +1,6 @@
 import * as DevelopmentProfileService from "./developmentProfiles/DevelopmentProfileService.ts";
 import * as DevelopmentProfileRpc from "./developmentProfiles/DevelopmentProfileRpc.ts";
+import * as OrchestrationEvidenceService from "./projectRuntime/OrchestrationEvidenceService.ts";
 import * as ProjectRuntimeService from "./projectRuntime/ProjectRuntimeService.ts";
 import * as ProjectRuntimeSourceAccess from "./projectRuntime/ProjectRuntimeSourceAccess.ts";
 import * as RuntimeRoutingService from "./runtimeRouting/RuntimeRoutingService.ts";
@@ -3290,6 +3291,7 @@ export const layer = Layer.unwrap(
     const runtimeSources = yield* ProjectRuntimeSourceAccess.ProjectRuntimeSourceAccess;
     const runtimeRouting = yield* RuntimeRoutingService.RuntimeRoutingService;
     const runtimeExecution = yield* RuntimeTaskExecutionService.RuntimeTaskExecutionService;
+    const orchestrationEvidence = yield* OrchestrationEvidenceService.OrchestrationEvidenceService;
     const serverBrowser = yield* ServerBrowser.ServerBrowser;
     const serverSelfUpdate = yield* ServerSelfUpdate.ServerSelfUpdate;
     const npmRelease = yield* NpmRelease.NpmRelease;
@@ -3378,6 +3380,12 @@ export const layer = Layer.unwrap(
                 Layer.succeed(
                   RuntimeTaskExecutionService.RuntimeTaskExecutionService,
                   runtimeExecution,
+                ),
+              ),
+              Layer.provide(
+                Layer.succeed(
+                  OrchestrationEvidenceService.OrchestrationEvidenceService,
+                  orchestrationEvidence,
                 ),
               ),
               Layer.provide(
