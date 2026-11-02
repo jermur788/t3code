@@ -1738,6 +1738,33 @@ it.effect("preserves run-attempt execution identities in V2 evidence", () =>
   }).pipe(Effect.provide(layerTest)),
 );
 
+it.effect("keeps canonical V2 identifiers that outgrow a display-sized bound", () =>
+  Effect.gen(function* () {
+    yield* seedAll;
+    const eventStore = yield* EventStore.EventStoreV2;
+    // Real V2 event ids encode thread, run, and command layers; a short thread
+    // already produces ids well past the old 256-character Evidence bound.
+    const longNodeId = NodeId.make(`node:${"n".repeat(320)}`);
+    const longEventId = EventId.make(`event:${longNodeId}:updated`);
+    yield* eventStore.append({ events: [v2NodeUpdated(longNodeId, createdAttempt)] });
+    const evidence = yield* OrchestrationEvidenceService.OrchestrationEvidenceService;
+
+    const exported = yield* evidence.exportTask(projectId, taskId);
+    const item = exported.events.find((event) => event.recordId === longEventId);
+    assert.isDefined(item);
+    assert.equal(item?.recordId, longEventId);
+    assert.isAbove(item!.recordId.length, 256);
+    assert.isAbove(item!.eventId.length, 256);
+
+    const jsonl = yield* evidence.exportTaskJsonl(projectId, taskId);
+    const decoded = jsonl
+      .split("\n")
+      .filter(Boolean)
+      .map((line) => decodeEvent(line));
+    assert.isTrue(decoded.some((event) => event.recordId === longEventId));
+  }).pipe(Effect.provide(layerTest)),
+);
+
 it.effect("orders V2 evidence by canonical sequence even when source times disagree", () =>
   Effect.gen(function* () {
     yield* seedAll;

@@ -12,7 +12,9 @@ import { RuntimeExecutionAttemptId } from "./runtimeExecution.ts";
 export const ORCHESTRATION_EVIDENCE_SCHEMA_VERSION = "orchestration-evidence/v0" as const;
 
 const ORCHESTRATION_EVIDENCE_BOUNDS = {
-  idMaxLength: 256,
+  // Canonical V2 ids encode thread, run, and event layers, so they outgrow a
+  // short display bound. Evidence carries them whole instead of truncating.
+  idMaxLength: 4_096,
   summaryMaxLength: 512,
   fieldNameMaxLength: 128,
   factsMaxCount: 2_000,
