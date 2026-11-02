@@ -32,6 +32,7 @@ import * as Schema from "effect/Schema";
 import * as SqlClient from "effect/sql/SqlClient";
 import * as Stream from "effect/Stream";
 
+import * as NodeSqliteClient from "@t3tools/shared/nodeSqliteClient";
 import * as EventStoreV2 from "../orchestration-v2/EventStore.ts";
 import { PersistenceDecodeError, PersistenceSqlError } from "../persistence/Errors.ts";
 
@@ -982,6 +983,43 @@ const v2UnresolvedEvent = (
     ]),
   });
 
+/**
+ * The bounded V2 read cannot prove a thread was read in full once it reaches the
+ * per-thread limit, so the export states that explicitly instead of letting the
+ * prefix read as a complete history.
+ */
+const v2TruncationEvent = (
+  projectId: ProjectRuntimeTask["projectId"],
+  taskId: ProjectRuntimeTask["taskId"],
+  threadId: string,
+): DraftEvent =>
+  event({
+    schemaVersion: ORCHESTRATION_EVIDENCE_SCHEMA_VERSION,
+    eventId: `oev0:orchestration-v2-truncation:${threadId}`,
+    recordType: "orchestration-v2-truncation",
+    recordId: threadId,
+    lifecycleClass: "observation",
+    recordBasis: "derived-view",
+    authority: "orchestration-v2",
+    projectId,
+    taskId,
+    attemptId: null,
+    threadId,
+    runId: null,
+    occurredAt: null,
+    recordedAt: null,
+    summary: `V2 thread ${threadId} reached the ${V2_EVENT_READ_LIMIT_PER_THREAD}-event read limit; completeness is UNKNOWN`,
+    unknownFields: ["occurredAt", "recordedAt", "completeness"],
+    references: [{ recordType: "orchestration-v2-thread", recordId: threadId }],
+    facts: facts([
+      ["status", "incomplete"],
+      ["completeness", "unknown"],
+      ["reason", "per-thread-read-limit-reached"],
+      ["threadId", threadId],
+      ["readLimit", V2_EVENT_READ_LIMIT_PER_THREAD],
+    ]),
+  });
+
 const stagingEvent = (reference: OrchestrationEvidenceStagingReference): DraftEvent =>
   event({
     schemaVersion: ORCHESTRATION_EVIDENCE_SCHEMA_VERSION,
@@ -1030,6 +1068,23 @@ const revisionFact = (event: DraftEvent, key: string): number | null => {
   return typeof value === "number" ? value : null;
 };
 
+/**
+ * Route resolution is the decision a launch decision consumes, so it precedes it
+ * for the same attempt. Both items share one scalar key so the comparator stays a
+ * total order even when several attempts share a clock; other ties keep event-id
+ * order exactly as before.
+ */
+const decisionTieKey = (event: DraftEvent): string =>
+  event.lifecycleClass === "decision" &&
+  event.attemptId !== null &&
+  (event.recordType === "runtime-route-resolution" ||
+    event.recordType === "execution-attempt-decision")
+    ? `oev0:execution-attempt-decision:${event.attemptId}\u0000${event.recordType === "runtime-route-resolution" ? "0" : "1"}`
+    : event.eventId;
+
+const compareStrings = (left: string, right: string): number =>
+  left < right ? -1 : left > right ? 1 : 0;
+
 const makeEventComparator = (blockTimes: Record<EventBlock, number>) => {
   const crossTime = (event: DraftEvent, block: EventBlock | null): number =>
     block === null ? sortTime(event.occurredAt ?? event.recordedAt) : blockTimes[block];
@@ -1042,7 +1097,7 @@ const makeEventComparator = (blockTimes: Record<EventBlock, number>) => {
     const rightBlock = eventBlock(right);
     if (leftBlock !== null && leftBlock === rightBlock) {
       if (leftBlock === "orchestration-v2") {
-        return left.eventId < right.eventId ? -1 : left.eventId > right.eventId ? 1 : 0;
+        return compareStrings(decisionTieKey(left), decisionTieKey(right));
       }
       const revisionKey = leftBlock === "outcome-correction" ? "fromRevision" : "revision";
       const leftRevision = revisionFact(left, revisionKey);
@@ -1050,7 +1105,7 @@ const makeEventComparator = (blockTimes: Record<EventBlock, number>) => {
       if (leftRevision !== null && rightRevision !== null && leftRevision !== rightRevision) {
         return leftRevision < rightRevision ? -1 : 1;
       }
-      return left.eventId < right.eventId ? -1 : left.eventId > right.eventId ? 1 : 0;
+      return compareStrings(decisionTieKey(left), decisionTieKey(right));
     }
 
     const leftTime = crossTime(left, leftBlock);
@@ -1060,7 +1115,7 @@ const makeEventComparator = (blockTimes: Record<EventBlock, number>) => {
     const classDifference = CLASS_ORDER[left.lifecycleClass] - CLASS_ORDER[right.lifecycleClass];
     if (classDifference !== 0) return classDifference;
 
-    return left.eventId < right.eventId ? -1 : left.eventId > right.eventId ? 1 : 0;
+    return compareStrings(decisionTieKey(left), decisionTieKey(right));
   };
 };
 
@@ -1158,11 +1213,17 @@ const make = Effect.gen(function* () {
       );
       const referencedRuns = (threadId: string): ReadonlySet<string> =>
         runIdsByThread.get(threadId) ?? new Set<string>();
-      return perThread.flat().filter((stored) => {
+      // A read that returns exactly the limit cannot prove the thread was fully read,
+      // because later events may exist beyond the bounded prefix.
+      const truncatedThreadIds = uniqueThreadIds.filter(
+        (threadId, index) => perThread[index]!.length >= V2_EVENT_READ_LIMIT_PER_THREAD,
+      );
+      const events = perThread.flat().filter((stored) => {
         const relevantRuns = referencedRuns(stored.event.threadId);
         const runId = v2EffectiveRunId(stored);
         return runId === undefined || relevantRuns.has(runId);
       });
+      return { events, truncatedThreadIds };
     },
   );
 
@@ -1388,13 +1449,14 @@ const make = Effect.gen(function* () {
       attemptIdsByThread.set(execution.threadId, attemptIds);
     }
 
-    const v2StoredEvents = yield* loadBoundedV2Evidence(
+    const boundedV2 = yield* loadBoundedV2Evidence(
       [
         ...attempts.map((attempt) => attempt.threadId),
         ...observations.map((observation) => observation.execution?.threadId ?? null),
       ],
       runIdsByThread,
     );
+    const v2StoredEvents = boundedV2.events;
     const resolvedV2 = resolvedV2References(v2StoredEvents);
 
     const v2References = new Map<string, readonly [type: string, id: string]>();
@@ -1487,6 +1549,9 @@ const make = Effect.gen(function* () {
         v2Event(projectId, taskId, attemptIdForThread(stored.event.threadId), stored),
       ),
       ...unresolvedV2.map(([type, id]) => v2UnresolvedEvent(projectId, taskId, type, id)),
+      ...boundedV2.truncatedThreadIds.map((threadId) =>
+        v2TruncationEvent(projectId, taskId, threadId),
+      ),
       ...stagingReferences.map(stagingEvent),
     ]);
     const events = drafts.map((draft) => ({ ...draft, exportedAt: generatedAt }));
@@ -1502,7 +1567,7 @@ const make = Effect.gen(function* () {
   }, sql.withTransaction);
 
   const exportTask: OrchestrationEvidenceShape["exportTask"] = (projectId, taskId, options) =>
-    exportTaskImpl(projectId, taskId, options).pipe(
+    NodeSqliteClient.readOnly(exportTaskImpl(projectId, taskId, options)).pipe(
       Effect.catchTags({
         SqlError: (cause) =>
           Effect.fail(

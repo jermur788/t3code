@@ -32,6 +32,10 @@ import {
 } from "./runtimeRouting.ts";
 import { RuntimeRouteResolution, RuntimeRouteResolutionInput } from "./runtimeRoutingResolution.ts";
 import {
+  OrchestrationEvidenceExportOptions,
+  OrchestrationEvidenceReconstruction,
+} from "./orchestrationEvidence.ts";
+import {
   ExecuteProjectRuntimeTaskInput,
   ListRuntimeExecutionAttemptsInput,
   ReadRuntimeExecutionAttemptInput,
@@ -65,6 +69,7 @@ export const PROJECT_RUNTIME_RPC_METHODS = {
   readExecutionAttempt: "projectRuntime.readExecutionAttempt",
   cancelExecutionAttempt: "projectRuntime.cancelExecutionAttempt",
   reconcileExecutionAttempt: "projectRuntime.reconcileExecutionAttempt",
+  exportEvidence: "projectRuntime.exportEvidence",
 } as const;
 
 export class ProjectRuntimeRequestError extends Schema.TaggedError<ProjectRuntimeRequestError>()(
@@ -204,6 +209,15 @@ export const PROJECT_RUNTIME_RPCS = [
       ...ReconcileRuntimeExecutionAttemptInput.fields,
     }),
     success: RuntimeExecutionAttempt,
+    error,
+  }),
+  Rpc.make(PROJECT_RUNTIME_RPC_METHODS.exportEvidence, {
+    payload: Schema.Struct({
+      projectId: ProjectId,
+      ...ProjectRuntimeTaskReadInput.fields,
+      ...OrchestrationEvidenceExportOptions.fields,
+    }),
+    success: OrchestrationEvidenceReconstruction,
     error,
   }),
 ] as const;

@@ -1100,6 +1100,121 @@ it.effect("does not put post-launch run identity on the decision event", () =>
   }).pipe(Effect.provide(layerTest)),
 );
 
+it.effect("orders route resolution before the launch decision when decision clocks tie", () =>
+  Effect.gen(function* () {
+    yield* seedAll;
+    const evidence = yield* OrchestrationEvidenceService.OrchestrationEvidenceService;
+
+    const reconstructed = yield* evidence.reconstructTaskHistory(projectId, taskId);
+    for (const candidate of [attemptId, pendingAttemptId]) {
+      const route = reconstructed.events.find(
+        (item) => item.recordType === "runtime-route-resolution" && item.attemptId === candidate,
+      );
+      const decision = reconstructed.events.find(
+        (item) => item.recordType === "execution-attempt-decision" && item.attemptId === candidate,
+      );
+      assert.isDefined(route, `missing route resolution for ${candidate}`);
+      assert.isDefined(decision, `missing launch decision for ${candidate}`);
+      assert.equal(route?.recordedAt, decision?.recordedAt);
+      assert.isBelow(
+        reconstructed.events.indexOf(route!),
+        reconstructed.events.indexOf(decision!),
+        `route resolution must precede the launch decision for ${candidate}`,
+      );
+    }
+
+    const second = yield* evidence.reconstructTaskHistory(projectId, taskId);
+    assert.deepEqual(
+      reconstructed.events.map((item) => item.eventId),
+      second.events.map((item) => item.eventId),
+    );
+  }).pipe(Effect.provide(layerTest)),
+);
+
+it.effect("keeps a total route-before-decision order when many attempts share one clock", () =>
+  Effect.gen(function* () {
+    yield* seedAll;
+    const sql = yield* SqlClient.SqlClient;
+    const evidence = yield* OrchestrationEvidenceService.OrchestrationEvidenceService;
+
+    const tiedAttemptIds = Array.from({ length: 20 }, (_, index) =>
+      RuntimeExecutionAttemptId.make(`ev0-attempt-tie-${String(index).padStart(2, "0")}`),
+    );
+    for (const [index, tiedAttemptId] of tiedAttemptIds.entries()) {
+      const tied: RuntimeExecutionAttempt = {
+        ...pendingAttempt,
+        attemptId: tiedAttemptId,
+        threadId: ThreadId.make(`thread:ev0-tie-${index}`),
+        status: "completed",
+        revision: 2,
+        runId: RunId.make(`run:ev0-tie-${index}`),
+      };
+      yield* sql`INSERT INTO project_runtime_execution_attempts
+        (attempt_id, project_id, task_id, status, revision, thread_id, run_id, request_key,
+          created_at, updated_at, payload_json)
+        VALUES (${tied.attemptId}, ${projectId}, ${taskId}, ${tied.status}, ${tied.revision},
+          ${tied.threadId}, ${tied.runId}, NULL, ${tied.createdAt}, ${tied.updatedAt},
+          ${encodeAttempt(tied)})`;
+    }
+
+    const first = yield* evidence.reconstructTaskHistory(projectId, taskId);
+    for (const tiedAttemptId of tiedAttemptIds) {
+      const routeIndex = first.events.findIndex(
+        (item) =>
+          item.recordType === "runtime-route-resolution" && item.attemptId === tiedAttemptId,
+      );
+      const decisionIndex = first.events.findIndex(
+        (item) =>
+          item.recordType === "execution-attempt-decision" && item.attemptId === tiedAttemptId,
+      );
+      assert.isAtLeast(routeIndex, 0, `missing route for ${tiedAttemptId}`);
+      assert.isAtLeast(decisionIndex, 0, `missing decision for ${tiedAttemptId}`);
+      assert.isBelow(routeIndex, decisionIndex, `route after decision for ${tiedAttemptId}`);
+    }
+
+    const second = yield* evidence.reconstructTaskHistory(projectId, taskId);
+    assert.deepEqual(
+      first.events.map((item) => item.eventId),
+      second.events.map((item) => item.eventId),
+    );
+  }).pipe(Effect.provide(layerTest)),
+);
+
+it.effect("keeps the decision-time route projection stable after the attempt completes", () =>
+  Effect.gen(function* () {
+    yield* seedAll;
+    const evidence = yield* OrchestrationEvidenceService.OrchestrationEvidenceService;
+    const sql = yield* SqlClient.SqlClient;
+
+    const eventId = `oev0:runtime-route-resolution:${pendingAttemptId}`;
+    const lineFor = (jsonl: string) => {
+      const line = jsonl
+        .split("\n")
+        .find((candidate) => decodeEvent(candidate).eventId === eventId);
+      assert.isDefined(line);
+      return line!;
+    };
+
+    const beforeLine = lineFor(yield* evidence.exportTaskJsonl(projectId, taskId));
+
+    const completedPending: RuntimeExecutionAttempt = {
+      ...pendingAttempt,
+      status: "completed",
+      revision: 2,
+      runId: pendingRunId,
+      updatedAt: "2026-11-01T08:25:00.000Z",
+    };
+    yield* sql`UPDATE project_runtime_execution_attempts
+      SET status = ${completedPending.status}, revision = ${completedPending.revision},
+        run_id = ${pendingRunId}, updated_at = ${completedPending.updatedAt},
+        payload_json = ${encodeAttempt(completedPending)}
+      WHERE attempt_id = ${pendingAttemptId}`;
+
+    const afterLine = lineFor(yield* evidence.exportTaskJsonl(projectId, taskId));
+    assert.strictEqual(afterLine, beforeLine);
+  }).pipe(Effect.provide(layerTest)),
+);
+
 it.effect("derives a unique recommendation link and marks multiple receipts AMBIGUOUS", () =>
   Effect.gen(function* () {
     yield* seedAll;
@@ -1134,6 +1249,50 @@ it.effect("derives a unique recommendation link and marks multiple receipts AMBI
     assert.deepEqual(
       (candidateIds as string).split(",").sort(),
       [receiptId, secondReceipt.recommendationReceiptId].sort(),
+    );
+  }).pipe(Effect.provide(layerTest)),
+);
+
+it.effect("marks a bounded V2 thread read as incomplete instead of complete", () =>
+  Effect.gen(function* () {
+    yield* seedAll;
+    const eventStore = yield* EventStore.EventStoreV2;
+    const evidence = yield* OrchestrationEvidenceService.OrchestrationEvidenceService;
+    const belowLimit = yield* evidence.exportTask(projectId, taskId);
+    assert.isFalse(
+      belowLimit.events.some((item) => item.recordType === "orchestration-v2-truncation"),
+      "a read under the limit carries no truncation marker",
+    );
+    yield* eventStore.append({
+      events: Array.from({ length: 1_001 }, (_, index) =>
+        v2NodeUpdated(NodeId.make(`node:ev0-fill-${index}`), createdAttempt),
+      ),
+    });
+    const exported = yield* evidence.exportTask(projectId, taskId);
+
+    const truncation = exported.events.find(
+      (item) => item.recordType === "orchestration-v2-truncation",
+    );
+    assert.isDefined(truncation);
+    assert.equal(truncation?.authority, "orchestration-v2");
+    assert.equal(truncation?.recordBasis, "derived-view");
+    assert.equal(truncation?.threadId, threadId);
+    assert.equal(truncation?.facts.find((fact) => fact.key === "status")?.value, "incomplete");
+    assert.equal(truncation?.facts.find((fact) => fact.key === "completeness")?.value, "unknown");
+    assert.equal(truncation?.facts.find((fact) => fact.key === "readLimit")?.value, 1_000);
+    assert.isTrue(truncation?.unknownFields.includes("completeness"));
+
+    const readCount = exported.events.filter(
+      (item) => item.recordType === "orchestration-v2-event" && item.threadId === threadId,
+    ).length;
+    assert.equal(readCount, 1_000, "the read stays bounded to the per-thread limit");
+    assert.isFalse(
+      exported.events.some(
+        (item) =>
+          item.recordType === "orchestration-v2-event" &&
+          item.recordId === `event:node:ev0-fill-1000:updated`,
+      ),
+      "events beyond the bounded prefix are not read",
     );
   }).pipe(Effect.provide(layerTest)),
 );

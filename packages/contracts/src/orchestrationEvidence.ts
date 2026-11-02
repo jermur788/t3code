@@ -56,6 +56,7 @@ export const OrchestrationEvidenceRecordType = Schema.Literals([
   "adaptive-recommendation-attempt-link",
   "orchestration-v2-event",
   "orchestration-v2-unresolved",
+  "orchestration-v2-truncation",
   "project-staging-reference",
 ]);
 export type OrchestrationEvidenceRecordType = typeof OrchestrationEvidenceRecordType.Type;
