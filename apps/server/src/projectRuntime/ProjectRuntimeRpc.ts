@@ -10,23 +10,30 @@ import * as Schema from "effect/Schema";
 import * as Predicate from "effect/Predicate";
 import type { RpcGroup } from "effect/rpc";
 import { WsRpcGroup } from "@t3tools/contracts";
+import * as OrchestrationEvidenceService from "./OrchestrationEvidenceService.ts";
 import * as ProjectRuntimeService from "./ProjectRuntimeService.ts";
 import * as ProjectRuntimeSourceAccess from "./ProjectRuntimeSourceAccess.ts";
 import * as RuntimeRoutingService from "../runtimeRouting/RuntimeRoutingService.ts";
 import * as RuntimeTaskExecutionService from "./RuntimeTaskExecutionService.ts";
 
 const isRuntimeError = Schema.is(ProjectRuntimeError);
+const isRuntimeRequestError = Schema.is(ProjectRuntimeRequestError);
 const isRuntimeRoutingError = Schema.is(RuntimeRoutingError);
 const isRuntimeExecutionError = Schema.is(RuntimeExecutionError);
 const toRpcError = (error: unknown) =>
-  isRuntimeError(error) || isRuntimeRoutingError(error) || isRuntimeExecutionError(error)
+  isRuntimeError(error) ||
+  isRuntimeRequestError(error) ||
+  isRuntimeRoutingError(error) ||
+  isRuntimeExecutionError(error)
     ? error
     : new ProjectRuntimeRequestError({
-        reason: Predicate.isTagged(error, "ProjectNotFoundError")
-          ? "not_found"
-          : Schema.isSchemaError(error)
-            ? "invalid_request"
-            : "server_error",
+        reason:
+          Predicate.isTagged(error, "ProjectNotFoundError") ||
+          Predicate.isTagged(error, "OrchestrationEvidenceTaskNotFoundError")
+            ? "not_found"
+            : Schema.isSchemaError(error)
+              ? "invalid_request"
+              : "server_error",
       });
 
 export const makeHandlers = Effect.fn("ProjectRuntimeRpc.makeHandlers")(function* (
@@ -36,6 +43,7 @@ export const makeHandlers = Effect.fn("ProjectRuntimeRpc.makeHandlers")(function
   const sources = yield* ProjectRuntimeSourceAccess.ProjectRuntimeSourceAccess;
   const routing = yield* RuntimeRoutingService.RuntimeRoutingService;
   const execution = yield* RuntimeTaskExecutionService.RuntimeTaskExecutionService;
+  const evidence = yield* OrchestrationEvidenceService.OrchestrationEvidenceService;
   const actor = { actor: `user:${sessionId}` };
   return {
     [PROJECT_RUNTIME_RPC_METHODS.status]: ({ projectId }) =>
@@ -84,5 +92,19 @@ export const makeHandlers = Effect.fn("ProjectRuntimeRpc.makeHandlers")(function
         .pipe(Effect.mapError(toRpcError)),
     [PROJECT_RUNTIME_RPC_METHODS.reconcileExecutionAttempt]: ({ projectId, ...input }) =>
       execution.reconcileAttempt(projectId, input.attemptId).pipe(Effect.mapError(toRpcError)),
+    [PROJECT_RUNTIME_RPC_METHODS.exportEvidence]: ({ projectId, taskId, stagingReferences }) =>
+      (stagingReferences ?? []).some(
+        // Cross-task staging references are rejected at the request boundary
+        // instead of being silently dropped by the evidence projection.
+        (reference) => reference.projectId !== projectId || reference.taskId !== taskId,
+      )
+        ? Effect.fail(new ProjectRuntimeRequestError({ reason: "invalid_request" }))
+        : Effect.flatMap(runtime.getStatus(projectId), () =>
+            evidence.reconstructTaskHistory(
+              projectId,
+              taskId,
+              stagingReferences === undefined ? undefined : { stagingReferences },
+            ),
+          ).pipe(Effect.mapError(toRpcError)),
   } satisfies Partial<RpcGroup.HandlersFrom<RpcGroup.Rpcs<typeof WsRpcGroup>>>;
 });
