@@ -2,7 +2,7 @@
 
 Updated: 2026-11-02
 
-Status: `INTEGRATED / POST-MERGE REPOSITORY PASS / CI EXCEPTION ACCEPTED / POST-MERGE RUNTIME RE-RUN PENDING`
+Status: `VERIFIED / CI EXCEPTION RETAINED / NEXT FORWARD-SYNC TRIAGE READY`
 
 Governing spec: `docs/internals/arm-v2-compatibility-evidence-gap-spec.md`
 
@@ -10,101 +10,48 @@ Governing spec: `docs/internals/arm-v2-compatibility-evidence-gap-spec.md`
 
 Fork repository: `jermur788/t3code`
 
-Qualified sync candidate:
+PR #14 integrated the previously qualified upstream reconciliation candidate into fork `main` on 2026-11-02. A documentation-only state update followed the merge.
 
-`sync/upstream-20261031 @ e51c1c5d74aed9824927d391590ddb33026c8d56`
+The integrated content was already pre-qualified before merge and has now also received executable post-merge verification on the integrated fork lineage.
 
-Pinned upstream incorporated by that candidate:
+## Post-merge verification — accepted
 
-`80a2351fcb909034e65a512dfabeb3cdfd367762`
+Local durable evidence:
 
-PR #14 merged the exact qualified candidate into fork `main` on 2026-11-02.
+`/home/jer/dev/qual-evidence/post-merge-local-verification-result-20261102.md`
 
-Integration merge commit:
+The user reported the integrated head as `VERIFIED` with the following evidence:
 
-`19b128fec7be89ffe5689f4d7234121992479710`
+- 186/186 focused tests passed;
+- 4/4 provenance cases passed;
+- 3/3 affected typechecks passed;
+- only documentation differed from the previously qualified candidate;
+- fresh migration succeeded with upstream migration count 75 and fork migration count 7;
+- migration integrity passed with no id collision;
+- two real Runtime executions were exercised, one through Codex and one through OpenCode;
+- both executions were attempt-first, reconciled, handoff-linked, and survived two application restarts;
+- Workspace, Development, and Usage rendered checks passed;
+- no implementation defects were found;
+- no repair commits were required;
+- no stronger-model escalation was required.
 
-Merge parents:
-
-- prior fork `main`: `d971327934eeb79bed5b02e4477a5140615eacf0`
-- exact qualified candidate: `e51c1c5d74aed9824927d391590ddb33026c8d56`
-
-GitHub reports the merge commit tree as:
-
-`ce4a3cf31214b52d374a942beb832640f3373dc6`
-
-This is the same tree recorded for the exact qualified sync candidate. No content drift was introduced by the merge commit.
-
-A documentation-only canonical-state update may advance `main` beyond the integration merge; the integration anchor remains `19b128fe` and the qualified content tree remains `ce4a3cf`.
-
-## Qualification carried into integration
-
-PR #14 recorded `LOCAL L2 RUNTIME PASS` plus independent review on exact candidate `e51c1c5d...` before integration.
-
-Accepted evidence included:
-
-- 186/186 focused tests across 10 files;
-- 3/3 affected typechecks;
-- ARM provenance four-case matrix pass;
-- rendered distinct-Codex-capacity and ambiguous same-email safe-unbound behavior;
-- real application stop/start persistence;
-- rendered Workspace/Development reconciliation checks;
-- provider/capacity boundary checks confirming no second poller, launcher, or proxy route owner;
-- independent Claude Sonnet 5.5 review with no blocking defect after evidence-gap repairs.
-
-The provenance bridge evidence is service-level executable evidence. It does not establish a broader live Runtime-to-Orchestration-V2 execution claim.
-
-## CI exception and integration authority
-
-GitHub Actions did not dispatch for the qualified candidate. Before integration the exact candidate had:
-
-- pull-request workflow runs: 0;
-- commit statuses: 0;
-- observed check runs: 0.
-
-This was classified as an `OPERATIONAL BLOCKER`, not a test failure, because no CI job existed.
-
-On 2026-11-02 the user explicitly chose the recorded `accept the operational CI exception and merge` path. Browser Overall then:
-
-1. re-read PR #14 and confirmed it was still open, mergeable, draft, and pinned to exact head `e51c1c5d...`;
-2. marked PR #14 ready for review;
-3. merged with `expected_head_sha = e51c1c5d74aed9824927d391590ddb33026c8d56`;
-4. received GitHub merge success at `19b128fec7be89ffe5689f4d7234121992479710`;
-5. re-read fork `main` and confirmed the expected two-parent merge lineage and qualified candidate tree;
-6. rechecked Actions for the merge commit and still observed no workflow run.
-
-The absence of CI is therefore an accepted operational exception for this integration, not evidence that CI passed.
+This closes the governing requirement that integration be proven on the integrated head rather than only on component or pre-merge branches.
 
 ## Status precision
 
-The upstream reconciliation is now `INTEGRATED`.
+The upstream reconciliation / ARM compatibility gate is now `VERIFIED` at the strongest supported scope.
 
-Repository-level post-merge evidence establishes:
+Residual evidence limits remain explicit:
 
-- correct merge parents;
-- exact qualified candidate as the second parent;
-- no merge-time content drift;
-- fork `main` advanced to the intended integration commit before this state update.
+- executed-model attribution remains `UNKNOWN`; do not infer executed model identity when authoritative runtime/provider evidence does not expose it;
+- only one real Codex credential was available, so no real two-subscription OAuth/refresh claim is made;
+- GitHub-hosted CI did not dispatch for the qualified candidate/integration and remains an accepted operational exception rather than a CI pass.
 
-Do **not** promote the integrated head to a stronger `VERIFIED` runtime verdict solely from the Git merge. No executable post-merge runtime re-run was performed by Browser Overall after the merge.
-
-The exact candidate itself had already reached `RUNTIME PASS` before integration, and the merge tree is content-identical, but project status vocabulary keeps integrated-head execution evidence distinct from candidate qualification.
-
-## Residual evidence limits
-
-The following remain explicit rather than silently promoted:
-
-- real two-subscription Codex/ChatGPT OAuth/refresh qualification was not run because only one safe real credential was available;
-- no live non-test caller was demonstrated for the ARM execution-observation bridge during L2;
-- workspace-disambiguation and native-limits-win paths were unit-tested rather than rendered;
-- PR #14's rendered evidence used live browser DOM/ARIA/layout where screenshot capture was unavailable;
-- GitHub-hosted CI did not dispatch for the candidate or integration merge.
-
-None of these was classified as a blocking implementation defect in the accepted L2 result.
+These residuals do not overturn the verified integrated-head runtime result.
 
 ## Architectural boundaries preserved
 
-The integrated reconciliation preserves the governing boundaries:
+Verification did not report any breach of the governing boundaries:
 
 - Project Runtime Task remains durable project-work identity;
 - upstream Orchestration V2 owns execution lifecycle semantics/identities where available;
@@ -114,28 +61,28 @@ The integrated reconciliation preserves the governing boundaries:
 - no second provider launcher, orchestration graph, model catalog, or capacity polling engine;
 - fork migration history remains separate from upstream migration history.
 
+## CI exception
+
+GitHub Actions non-dispatch remains recorded as an accepted `OPERATIONAL BLOCKER` for CI evidence only. It is not a test pass and is not evidence of a product defect.
+
+Browser-side diagnosis may continue read-only to determine the cause, but the completed merge/verification gate should not be reopened solely because CI remains absent.
+
 ## Upstream movement after the qualified pin
 
-The integration intentionally incorporated the reproducible pinned upstream snapshot `80a2351f...` rather than silently chasing moving upstream `main` during qualification.
+The completed integration intentionally incorporated a reproducible pinned upstream snapshot rather than chasing moving upstream `main` during qualification.
 
-At the final pre-merge refresh, upstream `pingdotgg/t3code main` had advanced to:
+At the latest browser refresh on 2026-11-02, upstream `pingdotgg/t3code main` had advanced again beyond the earlier post-merge observation. Treat all upstream movement after the incorporated pin as a new forward-sync delta.
 
-`fa31b66bbb2ae5234205a8628a78e038d917202f`
-
-with commit `fix(server): Codex sessions get T3CODE_THREAD_ID like Claude sessions (#28604)`.
-
-Treat changes after `80a2351f...` as a new forward-sync delta. They do not invalidate the completed qualification of the pinned candidate, and they must not be folded retrospectively into this integration record.
+Do not retroactively fold that moving delta into this completed verification record.
 
 ## Exact next action
 
-1. In a runnable checkout, fetch current fork `main` and confirm the integration/state-update lineage is clean.
-2. Run the focused post-merge verification required to promote the integrated state beyond `INTEGRATED`, prioritizing Runtime/ARM persistence, routing/execution reconciliation, affected provider/capacity paths, and any rendered Workspace/Development surfaces touched by the sync.
-3. Record the exact tested integrated SHA and evidence; if it passes, mark the sync gate `VERIFIED` at the strongest supported scope.
-4. Refresh the upstream delta from pinned `80a2351f...` to current upstream before starting another forward-sync; treat it as a separate bounded sync task.
-5. Only after the compatibility/sync gate has the required verification should the Adaptive Orchestration sequence proceed to bounded paired/shadow evidence pilots under the governing spec.
-
-No learned/autonomous routing is authorized by this integration.
+1. Browser lane: reconcile PR #14/review-thread state, continue read-only CI non-dispatch archaeology, and triage the current upstream delta by the governing compatibility hotspots.
+2. Browser lane: produce a compact next-sync risk map and bounded task packet; do not start another merge blindly.
+3. Manager: reconcile that browser result with this verified state and select the next bounded implementation/sync task.
+4. T3 Code/local lane: only after browser triage, create the next isolated forward-sync lane from current fork `main`, pin the then-current upstream head, and perform normal upstream-compatible reconciliation under the governing spec.
+5. Adaptive Orchestration paired/shadow evidence pilots are now eligible to be prepared because the compatibility/sync gate is `VERIFIED`, but learned/autonomous routing remains unauthorized.
 
 ## User action
 
-No further product decision is required for the completed merge. The remaining post-merge runtime verification is technical work. A new user decision is required only if later reconciliation exposes a material product/architecture trade-off or another explicit integration exception.
+No user decision is required at this point. Stop only if browser triage or the next sync exposes a material product/architecture trade-off, destructive/admin change, unresolved security/integration conflict, material paid-infrastructure cost, or conflict with accepted direction.
