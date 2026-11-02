@@ -1,233 +1,141 @@
 # Upstream Forward-Sync Handoff — 2026-10-31
 
-Status: `BLOCKED / INTEGRATION CONFLICT`
+Updated: 2026-11-02
+
+Status: `INTEGRATED / POST-MERGE REPOSITORY PASS / CI EXCEPTION ACCEPTED / POST-MERGE RUNTIME RE-RUN PENDING`
 
 Governing spec: `docs/internals/arm-v2-compatibility-evidence-gap-spec.md`
 
-## Repository state
+## Authoritative repository state
 
 Fork repository: `jermur788/t3code`
 
-Current fork `main` after governing-spec integration:
+Qualified sync candidate:
 
-`d971327934eeb79bed5b02e4477a5140615eacf0`
+`sync/upstream-20261031 @ e51c1c5d74aed9824927d391590ddb33026c8d56`
 
-Isolated sync branch:
+Pinned upstream incorporated by that candidate:
 
-`sync/upstream-20261031`
+`80a2351fcb909034e65a512dfabeb3cdfd367762`
 
-Pinned upstream branch in the fork:
+PR #14 merged the exact qualified candidate into fork `main` on 2026-11-02.
 
-`sync/upstream-pin-80a2351f @ 80a2351fcb909034e65a512dfabeb3cdfd367762`
+Integration merge commit:
 
-Original upstream source:
+`19b128fec7be89ffe5689f4d7234121992479710`
 
-`pingdotgg/t3code main @ 80a2351fcb909034e65a512dfabeb3cdfd367762`
+Merge parents:
 
-Historical merge base:
+- prior fork `main`: `d971327934eeb79bed5b02e4477a5140615eacf0`
+- exact qualified candidate: `e51c1c5d74aed9824927d391590ddb33026c8d56`
 
-`e9236274a3a6e0c731a7df4092db1e686f039068`
+GitHub reports the merge commit tree as:
 
-At archaeology time the fork was 84 commits ahead and 636 commits behind upstream.
+`ce4a3cf31214b52d374a942beb832640f3373dc6`
 
-## Browser integration probes
+This is the same tree recorded for the exact qualified sync candidate. No content drift was introduced by the merge commit.
 
-### Moving-head probe — superseded
+A documentation-only canonical-state update may advance `main` beyond the integration merge; the integration anchor remains `19b128fe` and the qualified content tree remains `ce4a3cf`.
 
-Draft PR #11 was opened from `pingdotgg:main` into `sync/upstream-20261031` to establish whether GitHub could merge the histories directly.
+## Qualification carried into integration
 
-GitHub reported:
+PR #14 recorded `LOCAL L2 RUNTIME PASS` plus independent review on exact candidate `e51c1c5d...` before integration.
 
-- `mergeable: false`
-- `rebaseable: false`
-- `mergeable_state: dirty`
-- 636 upstream commits
-- 2,564 changed files
-- 140,284 additions
-- 43,977 deletions
+Accepted evidence included:
 
-This proved a real integration conflict. Because PR #11 tracked moving upstream `main`, it was closed without merging after the exact inspected upstream commit was pinned inside the fork.
+- 186/186 focused tests across 10 files;
+- 3/3 affected typechecks;
+- ARM provenance four-case matrix pass;
+- rendered distinct-Codex-capacity and ambiguous same-email safe-unbound behavior;
+- real application stop/start persistence;
+- rendered Workspace/Development reconciliation checks;
+- provider/capacity boundary checks confirming no second poller, launcher, or proxy route owner;
+- independent Claude Sonnet 5.5 review with no blocking defect after evidence-gap repairs.
 
-### Canonical pinned integration PR
+The provenance bridge evidence is service-level executable evidence. It does not establish a broader live Runtime-to-Orchestration-V2 execution claim.
 
-Draft PR #13 is the reproducible integration lane:
+## CI exception and integration authority
 
-- base: `sync/upstream-20261031`
-- head: `sync/upstream-pin-80a2351f`
-- pinned upstream commit: `80a2351fcb909034e65a512dfabeb3cdfd367762`
+GitHub Actions did not dispatch for the qualified candidate. Before integration the exact candidate had:
 
-GitHub also reports PR #13 as not mergeable. This is the canonical PR to use while resolving the pinned upstream snapshot.
+- pull-request workflow runs: 0;
+- commit statuses: 0;
+- observed check runs: 0.
 
-The sync branch was fast-forwarded to the post-spec fork main before final conflict classification.
+This was classified as an `OPERATIONAL BLOCKER`, not a test failure, because no CI job existed.
 
-## Confirmed overlapping moving surfaces
+On 2026-11-02 the user explicitly chose the recorded `accept the operational CI exception and merge` path. Browser Overall then:
 
-The following fork-modified files also changed upstream after the merge base. The SHA pairs below are merge-base -> pinned-upstream blob SHAs and prove concurrent movement.
+1. re-read PR #14 and confirmed it was still open, mergeable, draft, and pinned to exact head `e51c1c5d...`;
+2. marked PR #14 ready for review;
+3. merged with `expected_head_sha = e51c1c5d74aed9824927d391590ddb33026c8d56`;
+4. received GitHub merge success at `19b128fec7be89ffe5689f4d7234121992479710`;
+5. re-read fork `main` and confirmed the expected two-parent merge lineage and qualified candidate tree;
+6. rechecked Actions for the merge commit and still observed no workflow run.
 
-### Orchestration instructions
+The absence of CI is therefore an accepted operational exception for this integration, not evidence that CI passed.
 
-`packages/provider-core/src/server/orchestrationInstructions.ts`
+## Status precision
 
-- merge base: `d78776eb7843939f000220dcf382c7d4e290b7dd`
-- upstream: `70b3fff064f3bcab2202a26feecfeccebb3e6a38`
+The upstream reconciliation is now `INTEGRATED`.
 
-Fork adds Project Runtime behavior here, while upstream continues evolving orchestration policy. Resolve semantically; do not take either side wholesale.
+Repository-level post-merge evidence establishes:
 
-### MCP orchestration service
+- correct merge parents;
+- exact qualified candidate as the second parent;
+- no merge-time content drift;
+- fork `main` advanced to the intended integration commit before this state update.
 
-`apps/server/src/mcp/OrchestratorMcpService.ts`
+Do **not** promote the integrated head to a stronger `VERIFIED` runtime verdict solely from the Git merge. No executable post-merge runtime re-run was performed by Browser Overall after the merge.
 
-- merge base: `54c9717671087321b0244e0e2b5152b89346b452`
-- upstream: `403d625d7e9b1db453cb80c7e911d1d3d356566e`
+The exact candidate itself had already reached `RUNTIME PASS` before integration, and the merge tree is content-identical, but project status vocabulary keeps integrated-head execution evidence distinct from candidate qualification.
 
-Fork changed this surface and upstream continues changing delegation/completion behavior. This is a high-risk conflict lane.
+## Residual evidence limits
 
-### Migration wiring
+The following remain explicit rather than silently promoted:
 
-`apps/server/src/persistence/Migrations.ts`
+- real two-subscription Codex/ChatGPT OAuth/refresh qualification was not run because only one safe real credential was available;
+- no live non-test caller was demonstrated for the ARM execution-observation bridge during L2;
+- workspace-disambiguation and native-limits-win paths were unit-tested rather than rendered;
+- PR #14's rendered evidence used live browser DOM/ARIA/layout where screenshot capture was unavailable;
+- GitHub-hosted CI did not dispatch for the candidate or integration merge.
 
-- merge base: `f85cb14e309b13b7f5b3873747839a107feffb80`
-- upstream: `1f3fb4bc6b8bca176bffd93ba3346996c780421b`
+None of these was classified as a blocking implementation defect in the accepted L2 result.
 
-Preserve upstream migration evolution and the fork's separate migration ledger. Do not renumber or rewrite upstream migration history.
+## Architectural boundaries preserved
 
-### Server composition
+The integrated reconciliation preserves the governing boundaries:
 
-`apps/server/src/server.ts`
+- Project Runtime Task remains durable project-work identity;
+- upstream Orchestration V2 owns execution lifecycle semantics/identities where available;
+- Project Runtime, Development Profiles, Runtime Routing, ARM, and Workspace/Development remain additive fork layers;
+- `recommendation != authorization`;
+- `eligibility != authorization`;
+- no second provider launcher, orchestration graph, model catalog, or capacity polling engine;
+- fork migration history remains separate from upstream migration history.
 
-- merge base: `f461a99186b3172ea0eae963e61dc1cfadb1e320`
-- upstream: `452addfb4a66792d04b30cf4763f0cbf3ca8ed4b`
+## Upstream movement after the qualified pin
 
-Fork wires Project Runtime/Development Profiles/Runtime Routing services here. Upstream has changed server wiring since divergence.
+The integration intentionally incorporated the reproducible pinned upstream snapshot `80a2351f...` rather than silently chasing moving upstream `main` during qualification.
 
-### Contract export surface
+At the final pre-merge refresh, upstream `pingdotgg/t3code main` had advanced to:
 
-`packages/contracts/src/index.ts`
+`fa31b66bbb2ae5234205a8628a78e038d917202f`
 
-- merge base: `38c28ab65a2bafa51945d656aa261b248fc9c934`
-- upstream: `f00976d243b37d470fe9399aad6e6f11db858375`
+with commit `fix(server): Codex sessions get T3CODE_THREAD_ID like Claude sessions (#28604)`.
 
-Fork exports Project Runtime/Development Profiles/Runtime Routing/ARM contracts here. Preserve upstream exports and additive fork exports.
+Treat changes after `80a2351f...` as a new forward-sync delta. They do not invalidate the completed qualification of the pinned candidate, and they must not be folded retrospectively into this integration record.
 
-### RPC contract surface
+## Exact next action
 
-`packages/contracts/src/rpc.ts`
+1. In a runnable checkout, fetch current fork `main` and confirm the integration/state-update lineage is clean.
+2. Run the focused post-merge verification required to promote the integrated state beyond `INTEGRATED`, prioritizing Runtime/ARM persistence, routing/execution reconciliation, affected provider/capacity paths, and any rendered Workspace/Development surfaces touched by the sync.
+3. Record the exact tested integrated SHA and evidence; if it passes, mark the sync gate `VERIFIED` at the strongest supported scope.
+4. Refresh the upstream delta from pinned `80a2351f...` to current upstream before starting another forward-sync; treat it as a separate bounded sync task.
+5. Only after the compatibility/sync gate has the required verification should the Adaptive Orchestration sequence proceed to bounded paired/shadow evidence pilots under the governing spec.
 
-- merge base: `1e191ec9ccbf9b9fc0fd5b667220a900aa368986`
-- upstream: `37ea5866ae7337dad51ed12375fd59b0d0d253f0`
+No learned/autonomous routing is authorized by this integration.
 
-Fork adds Runtime/Profile RPCs. Reconcile against current upstream RPC composition rather than restoring the old base structure.
+## User action
 
-### Provider adapter contract
-
-`packages/provider-core/src/server/ProviderAdapter.ts`
-
-- merge base: `7c77b7bb0ac6fc17618eb1f068cee7966f160443`
-- upstream: `cadf4173a60b17714ebdc0b1bc66006195a3326a`
-
-Fork changed provider-context behavior while upstream continues evolving provider/orchestration capability surfaces.
-
-## Other expected overlap lanes
-
-Fork compare data also shows changes in:
-
-- Orchestration V2 Claude/Codex/OpenCode adapters and tests;
-- ProviderTurnStartService / RunExecutionService / runtime layer;
-- workspace filesystem/search;
-- provider eligibility/context budget/developer instructions;
-- web Project settings/navigation/route tree;
-- CI/release workflows;
-- package/client-runtime contract and state wiring.
-
-These must be classified during the real three-way merge rather than assumed safe.
-
-## Fork-owned additive areas to preserve
-
-The following architecture remains fork-owned unless a direct upstream replacement is proven:
-
-- Project Runtime domain services and contracts;
-- Development Profiles;
-- Runtime Routing policy/resolver;
-- Runtime task execution bridge and project-owned execution receipts;
-- fork migration ledger and migrations 001–007;
-- Adaptive Routing contracts/service;
-- Workspace/Development presentation;
-- fork operator documentation.
-
-Their implementation may need adaptation to current upstream APIs, but the product behavior should not be discarded merely to resolve a merge.
-
-## Upstream-owned facilities to adopt/reuse
-
-During resolution prefer the pinned current upstream implementation for:
-
-- Orchestration V2 execution lifecycle and identities;
-- provider sessions/threads/context transfer infrastructure;
-- provider capability/model metadata facilities;
-- usage-limit sources and recovery;
-- current delegation lifecycle semantics;
-- current upstream tests/evals for those surfaces.
-
-ARM should adapt to these rather than create competing infrastructure.
-
-## Browser/environment limitation
-
-The available GitHub API can:
-
-- create branches/files/PRs;
-- inspect commits/trees/files;
-- report mergeability;
-- merge conflict-free PRs.
-
-It does not expose a safe multi-file conflict-resolution operation or the exact conflict-file set.
-
-The execution container also cannot resolve `github.com`, so a local clone/`git merge` cannot be performed in this manager environment.
-
-This is an `OPERATIONAL BLOCKER` to completing the three-way merge here, layered on top of the repository's real `INTEGRATION CONFLICT`.
-
-No destructive/force update was performed.
-
-## Exact next action in a runnable checkout
-
-Use one writer on `sync/upstream-20261031`.
-
-1. Confirm clean checkout/worktree and current branch ownership.
-2. Fetch `origin`; fetch `upstream` if configured.
-3. Verify:
-   - fork `main` / sync base is at or descended from `d971327934eeb79bed5b02e4477a5140615eacf0`;
-   - `sync/upstream-pin-80a2351f` still points to `80a2351fcb909034e65a512dfabeb3cdfd367762`.
-4. Merge `sync/upstream-pin-80a2351f` (or the exact SHA `80a2351fcb909034e65a512dfabeb3cdfd367762`) into `sync/upstream-20261031` with a normal merge commit; do not rebase or rewrite shared fork history.
-5. Resolve conflicts by authority:
-   - upstream lifecycle/contracts/provider capabilities are the starting point;
-   - reapply/adapt fork Project Runtime behavior additively;
-   - preserve fork migration ledger;
-   - preserve Runtime Task identity as project work identity;
-   - map execution to current V2 rather than restoring stale V2 internals;
-   - keep adaptive recommendation non-authoritative.
-6. Run focused checks after each conflict lane rather than waiting for one giant final test.
-7. Then run the full verification required by the governing compatibility spec.
-8. Push only the resolved sync branch.
-9. Re-evaluate pinned PR #13 after the merge result is pushed. Once the sync branch contains and verifies the upstream merge, close/supersede #13 as appropriate and open a separate sync-branch-to-`main` integration PR.
-10. Do not merge to `main` until the integrated sync head reaches the required verification state.
-
-## Verification required after merge resolution
-
-At minimum:
-
-- changed-package format/lint/typecheck;
-- upstream orchestration tests affected by conflict resolutions;
-- fork Project Runtime tests;
-- Runtime Routing tests;
-- Runtime Task execution/reconciliation tests;
-- fork migration tests including 001–007;
-- ARM contracts/migration/service tests;
-- fresh database migration;
-- restart/reload persistence proof;
-- provider routing/eligibility checks;
-- rendered Workspace/Development UI inspection where affected;
-- multiple-provider qualification where practical.
-
-## User decision
-
-None currently required.
-
-The conflict is technical and the accepted strategy already says to reconcile toward current upstream infrastructure while preserving the fork's product-owned layers. Stop for the user only if a concrete conflict proves those two goals cannot both be satisfied without a material product/architecture trade-off.
+No further product decision is required for the completed merge. The remaining post-merge runtime verification is technical work. A new user decision is required only if later reconciliation exposes a material product/architecture trade-off or another explicit integration exception.
