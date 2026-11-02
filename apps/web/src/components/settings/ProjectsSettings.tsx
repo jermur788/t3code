@@ -38,7 +38,7 @@ export function ProjectsSettings() {
       setRevealTarget(hash);
     }
   }
-  // oxlint-disable-next-line t3code/react-effect-budget -- A direct deep link mounts the target while Advanced is still hidden, so the scroll must wait for the browser to lay out the opened section.
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- A direct deep link mounts the target while Advanced is still hidden, so the scroll must wait for the browser to lay out the opened section.
   useEffect(() => {
     if (!advancedOpen || revealTarget === null) return;
     requestAnimationFrame(() => {

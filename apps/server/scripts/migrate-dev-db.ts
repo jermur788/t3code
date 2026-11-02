@@ -240,6 +240,7 @@ const CLEARED_TABLES: ReadonlyArray<string> = [
   "provider_session_runtime",
   "auth_sessions",
   "auth_pairing_links",
+  "peer_environment_links",
 ];
 
 const PROVIDER_SESSIONS_TABLE = "orchestration_v2_projection_provider_sessions";
@@ -290,9 +291,14 @@ const copySourceSlice = Effect.fn("copyDevDbSourceSlice")(function* (sourcePath:
     }
   }
 
+  const uniqueIndexes = schema.filter(
+    (entry) => entry.type === "index" && /^CREATE UNIQUE INDEX/i.test(entry.sql),
+  );
   yield* sql.withTransaction(
     Effect.gen(function* () {
       for (const table of tables) yield* sql.unsafe(table.sql).unprepared;
+      // Composite foreign keys need their parent unique indexes even while copying rows.
+      for (const index of uniqueIndexes) yield* sql.unsafe(index.sql).unprepared;
       if (filtered) {
         yield* sql`CREATE TEMP TABLE copied_threads (thread_id TEXT PRIMARY KEY)`;
         yield* sql`INSERT OR IGNORE INTO copied_threads
@@ -319,7 +325,8 @@ const copySourceSlice = Effect.fn("copyDevDbSourceSlice")(function* (sourcePath:
       yield* sql`DELETE FROM main.sqlite_sequence`;
       yield* sql`INSERT INTO main.sqlite_sequence SELECT name, seq FROM src.sqlite_sequence`;
       for (const entry of schema) {
-        if (entry.type !== "table") yield* sql.unsafe(entry.sql).unprepared;
+        if (entry.type !== "table" && !uniqueIndexes.includes(entry))
+          yield* sql.unsafe(entry.sql).unprepared;
       }
       yield* rebuildMessageSearch(sql);
     }),

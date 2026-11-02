@@ -80,7 +80,7 @@ export function WorkspaceForkHome({
           selected.member.physicalProjectKey,
         ].join(OPTION_SEPARATOR);
 
-  // oxlint-disable-next-line t3code/react-effect-budget -- Writes the default project into the URL once so reloads keep the same project.
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Writes the default project into the URL once so reloads keep the same project.
   useEffect(() => {
     if (search.project === undefined && defaultSelection !== null) onSearchChange(defaultSelection);
   }, [defaultSelection, onSearchChange, search.project]);

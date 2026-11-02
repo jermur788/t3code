@@ -106,7 +106,7 @@ function ProjectWorkerPreferences({ member }: { member: SidebarProjectGroupMembe
     await loadEffective(isActive);
   });
 
-  // oxlint-disable-next-line t3code/react-effect-budget -- Loads worker routing over RPC and cancels stale results on unmount.
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Loads worker routing over RPC and cancels stale results on unmount.
   useEffect(() => {
     mounted.current = true;
     if (api.ready && !initialized.current) {

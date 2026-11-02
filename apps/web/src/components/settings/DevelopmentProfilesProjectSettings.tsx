@@ -91,7 +91,7 @@ function ProjectDevelopmentProfileAssignment({ member }: { member: SidebarProjec
     await loadEffective(isActive);
   });
 
-  // oxlint-disable-next-line t3code/react-effect-budget -- Loads the project's effective profile over RPC and cancels stale results on unmount.
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Loads the project's effective profile over RPC and cancels stale results on unmount.
   useEffect(() => {
     if (!api.ready) return;
     let active = true;

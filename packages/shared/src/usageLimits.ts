@@ -1,5 +1,9 @@
 import {
   type EnvironmentId,
+  type ModelSelection,
+  type ServerSettings,
+  type ProjectId,
+  resolveProjectProviderInstanceEnabled,
   type UsageLimitsReport,
   type ProviderInstanceId,
   type ProviderConsumeResetCreditInput,
@@ -8,6 +12,8 @@ import {
   type ServerProvider,
   type ServerProviderUsageLimits,
   type ServerProviderUsageWindow,
+  type UsageLimitSourceId,
+  type UsageLimitSourceSnapshot,
   type UsageLimitSourceSnapshots,
 } from "@t3tools/contracts";
 
@@ -16,6 +22,85 @@ import * as DateTime from "effect/DateTime";
 const MINUTE = 60_000;
 const HOUR = 60 * MINUTE;
 const DAY = 24 * HOUR;
+
+export function exhaustedUsageWindow(
+  provider: ServerProvider | undefined,
+  now: number,
+  model?: string,
+) {
+  const exhausted = (provider?.usageLimits?.windows ?? []).filter(
+    (window) =>
+      (window.usedPercent ?? 0) >= 100 &&
+      (!window.resetsAt ||
+        !Number.isFinite(Date.parse(window.resetsAt)) ||
+        Date.parse(window.resetsAt) > now),
+  );
+  if (model === undefined) return exhausted[0];
+  switch (provider?.driver) {
+    case "cursor": {
+      const api = exhausted.find((window) => window.id === "apiPercentUsed");
+      const auto = exhausted.find((window) => window.id === "autoPercentUsed");
+      return /^(auto|default|grok|composer)/.test(model) ? auto && api : api;
+    }
+    case "antigravity": {
+      const family = model.match(/^(gemini|claude|gpt)-/)?.[1];
+      return exhausted.find((window) => {
+        const pool = window.id.match(/^(gemini|claude|gpt|3p)-/)?.[1];
+        return (
+          pool === undefined ||
+          family === undefined ||
+          pool === family ||
+          (pool === "3p" && (family === "claude" || family === "gpt"))
+        );
+      });
+    }
+    case "opencode":
+      return exhausted.find(
+        (window) => !window.id.startsWith("go_") || model.startsWith("opencode-go/"),
+      );
+    default:
+      return exhausted[0];
+  }
+}
+
+export function resolveNewThreadModelSelection(input: {
+  readonly defaultSelection: ModelSelection | null;
+  readonly explicitSelection?: ModelSelection | null;
+  readonly fallbackSelection: ModelSelection | null;
+  readonly providers: readonly ServerProvider[];
+  readonly now: number;
+  readonly settings?: ServerSettings;
+  readonly projectId?: ProjectId | null;
+}) {
+  const selection = input.explicitSelection ?? input.defaultSelection;
+  const unchanged = { selection, fallback: null };
+  if (input.explicitSelection || !selection || !input.fallbackSelection) return unchanged;
+  const provider = input.providers.find((entry) => entry.instanceId === selection.instanceId);
+  const window = exhaustedUsageWindow(provider, input.now, selection.model);
+  const fallback = input.providers.find(
+    (entry) => entry.instanceId === input.fallbackSelection?.instanceId,
+  );
+  if (
+    !provider ||
+    !window ||
+    !fallback?.enabled ||
+    !fallback.installed ||
+    fallback.auth.status === "unauthenticated" ||
+    !isProviderAvailable(fallback) ||
+    exhaustedUsageWindow(fallback, input.now, input.fallbackSelection.model) ||
+    (input.settings &&
+      !resolveProjectProviderInstanceEnabled(
+        input.settings,
+        input.projectId ?? null,
+        fallback.instanceId,
+      ))
+  )
+    return unchanged;
+  return {
+    selection: input.fallbackSelection,
+    fallback: { provider, resetsAt: window.resetsAt ?? null },
+  };
+}
 
 export const CHATGPT_USAGE_URL = "https://chatgpt.com/#settings/Usage";
 export const CHATGPT_USAGE_LIMIT_CODE = "subscription_sharing_usage_limit_exceeded";
@@ -89,7 +174,14 @@ export function collectExternalUsageLinks(presentations: LimitPresentations) {
     }
   >();
   for (const presentation of presentations.values()) {
-    for (const provider of providersWithLimits(presentation.serverConfig?.providers ?? [])) {
+    const providers = presentation.serverConfig?.providers ?? [];
+    const boundInstanceIds = new Set(
+      resolveProviderInstanceCapacity(providers, presentation.serverConfig?.usageLimitSources ?? [])
+        .filter((capacity) => capacity.source === "cliproxy")
+        .map((capacity) => capacity.instanceId),
+    );
+    for (const provider of providersWithLimits(providers)) {
+      if (boundInstanceIds.has(provider.instanceId)) continue;
       const external = provider.usageLimits?.externalUsage;
       if (external && provider.auth.status === "authenticated") {
         const account = `${provider.displayName ?? provider.instanceId} on ${presentation.entry.target.label}`;
@@ -147,6 +239,99 @@ function accountKeyResolver(reports: Iterable<AccountReport>) {
     if (!known) return key;
     return known.size === 1 ? `${key}:${[...known][0]}` : null;
   };
+}
+
+export interface ProviderInstanceCapacity {
+  readonly instanceId: ProviderInstanceId;
+  readonly driver: ServerProvider["driver"];
+  readonly limits: ServerProviderUsageLimits;
+  readonly source: "native" | "cliproxy";
+  readonly sourceId?: UsageLimitSourceId;
+  readonly sourceAccountId?: string;
+  readonly sourceWorkspaceId?: string;
+}
+
+interface UsageSourceAccount {
+  readonly source: UsageLimitSourceSnapshot;
+  readonly account: UsageLimitSourceSnapshot["accounts"][number];
+}
+
+function fresherHubObservation(left: UsageSourceAccount, right: UsageSourceAccount): number {
+  return (
+    Date.parse(right.account.usageLimits.checkedAt) -
+      Date.parse(left.account.usageLimits.checkedAt) ||
+    left.source.id.localeCompare(right.source.id) ||
+    left.account.id.localeCompare(right.account.id)
+  );
+}
+
+/**
+ * Read-only capacity evidence for concrete provider instances. A hub account can supply
+ * capacity for an instance only when the existing account identity resolver proves the match;
+ * ambiguous identities stay unbound.
+ */
+export function resolveProviderInstanceCapacity(
+  providers: readonly ServerProvider[],
+  sources: UsageLimitSourceSnapshots,
+): readonly ProviderInstanceCapacity[] {
+  const enabled = providers.filter((provider) => provider.enabled);
+  const resolveKey = accountKeyResolver([
+    ...enabled.map(nativeReport),
+    ...sources.flatMap((source) => source.accounts),
+  ]);
+  const nativeTargetsByKey = new Map<string, number>();
+  for (const provider of enabled) {
+    const key = resolveKey(nativeReport(provider));
+    if (key) nativeTargetsByKey.set(key, (nativeTargetsByKey.get(key) ?? 0) + 1);
+  }
+  const hubByKey = new Map<string, UsageSourceAccount[]>();
+  for (const source of sources) {
+    for (const account of source.accounts) {
+      if (limitsNotice(account.usageLimits) !== null) continue;
+      const key = resolveKey(account);
+      if (!key) continue;
+      const list = hubByKey.get(key);
+      if (list) list.push({ source, account });
+      else hubByKey.set(key, [{ source, account }]);
+    }
+  }
+  const capacity: ProviderInstanceCapacity[] = [];
+  for (const provider of enabled) {
+    if (!provider.usageLimits) continue;
+    if (limitsNotice(provider.usageLimits) === null) {
+      capacity.push({
+        instanceId: provider.instanceId,
+        driver: provider.driver,
+        limits: provider.usageLimits,
+        source: "native",
+      });
+      continue;
+    }
+    const key = resolveKey(nativeReport(provider));
+    const match =
+      key && nativeTargetsByKey.get(key) === 1
+        ? [...(hubByKey.get(key) ?? [])].sort(fresherHubObservation)[0]
+        : undefined;
+    capacity.push(
+      match
+        ? {
+            instanceId: provider.instanceId,
+            driver: provider.driver,
+            limits: match.account.usageLimits,
+            source: "cliproxy",
+            sourceId: match.source.id,
+            sourceAccountId: match.account.id,
+            ...(match.account.workspaceId ? { sourceWorkspaceId: match.account.workspaceId } : {}),
+          }
+        : {
+            instanceId: provider.instanceId,
+            driver: provider.driver,
+            limits: provider.usageLimits,
+            source: "native",
+          },
+    );
+  }
+  return capacity;
 }
 
 export interface LimitAccount {
@@ -231,6 +416,42 @@ export function collectLimitAccounts(presentations: LimitPresentations): readonl
       ...(presentation.serverConfig?.usageLimitSources ?? []).flatMap((source) => source.accounts),
     ]),
   );
+  const bindingKey = (
+    environmentId: EnvironmentId,
+    sourceId: UsageLimitSourceId,
+    accountId: string,
+    workspaceId: string | undefined,
+  ) => `${environmentId}\u0000${sourceId}\u0000${accountId}\u0000${workspaceId ?? ""}`;
+  const boundAccounts = new Map<
+    string,
+    { readonly provider: ServerProvider; readonly capacity: ProviderInstanceCapacity }
+  >();
+  for (const [environmentId, presentation] of presentations) {
+    const providers = presentation.serverConfig?.providers ?? [];
+    const byInstanceId = new Map(providers.map((provider) => [provider.instanceId, provider]));
+    for (const capacity of resolveProviderInstanceCapacity(
+      providers,
+      presentation.serverConfig?.usageLimitSources ?? [],
+    )) {
+      if (
+        capacity.source !== "cliproxy" ||
+        capacity.sourceId === undefined ||
+        capacity.sourceAccountId === undefined
+      )
+        continue;
+      const provider = byInstanceId.get(capacity.instanceId);
+      if (!provider) continue;
+      boundAccounts.set(
+        bindingKey(
+          environmentId,
+          capacity.sourceId,
+          capacity.sourceAccountId,
+          capacity.sourceWorkspaceId,
+        ),
+        { provider, capacity },
+      );
+    }
+  }
   for (const [environmentId, presentation] of presentations) {
     const label = presentation.entry.target.label;
     for (const provider of providersWithLimits(presentation.serverConfig?.providers ?? [])) {
@@ -258,13 +479,18 @@ export function collectLimitAccounts(presentations: LimitPresentations): readonl
       for (const account of source.accounts) {
         if (limitsNotice(account.usageLimits) !== null) continue;
         const key = `${source.id}:${account.id}${account.workspaceId ? `:${account.workspaceId}` : ""}`;
+        const bound = boundAccounts.get(
+          bindingKey(environmentId, source.id, account.id, account.workspaceId),
+        );
         merge(resolveKey(account) ?? key, {
           key,
           driver: account.driver,
-          displayName: account.email ? null : account.id.replace(/\.json$/i, ""),
+          displayName:
+            bound?.provider.displayName?.trim() ||
+            (account.email ? null : account.id.replace(/\.json$/i, "")),
           email: account.email,
           plan: account.plan,
-          accentColor: undefined,
+          accentColor: bound?.provider.accentColor,
           environments: [],
           sourceLabel,
           redeem: account.usageLimits.resetCredits?.nextCreditId
@@ -658,6 +884,12 @@ export function collectProviderUsageLimits(
     ...providers.filter((provider) => provider.enabled).map(nativeReport),
     ...sources.flatMap((source) => source.accounts),
   ]);
+  const capacityByInstanceId = new Map(
+    resolveProviderInstanceCapacity(providers, sources).map((capacity) => [
+      capacity.instanceId,
+      capacity,
+    ]),
+  );
   type NativeSnapshot = { provider: ServerProvider; limits: ServerProviderUsageLimits };
   const nativeByAccount = new Map<
     string,
@@ -694,6 +926,14 @@ export function collectProviderUsageLimits(
       return key && limits.windows.length && !limits.unavailable ? [key] : [];
     }),
   );
+  const boundAccountKeys = new Set(
+    native.flatMap(({ usage: { provider } }) => {
+      const key = resolveKey(nativeReport(provider));
+      return key && capacityByInstanceId.get(provider.instanceId)?.source === "cliproxy"
+        ? [key]
+        : [];
+    }),
+  );
   const accounts: Array<UsageLimitsReport["accounts"][number]> = [];
   const notices: string[] = [];
   for (const {
@@ -720,15 +960,27 @@ export function collectProviderUsageLimits(
       (!credits ||
         Date.parse(hubCredits.account.usageLimits.checkedAt) >
           Date.parse(credits.limits.checkedAt));
-    const shownCredits = showHubCredits
-      ? hubCredits.account.usageLimits.resetCredits
-      : credits?.limits.resetCredits;
+    const capacity = capacityByInstanceId.get(provider.instanceId);
+    const bound = capacity?.source === "cliproxy" ? capacity : undefined;
+    const shownCredits = bound
+      ? (hubCredits?.account.usageLimits.resetCredits ?? bound.limits.resetCredits)
+      : showHubCredits
+        ? hubCredits.account.usageLimits.resetCredits
+        : credits?.limits.resetCredits;
+    const shownLimits = bound
+      ? shownCredits
+        ? { ...bound.limits, resetCredits: shownCredits }
+        : bound.limits
+      : shownCredits
+        ? { ...limits, resetCredits: shownCredits }
+        : limits;
     accounts.push({
       id: provider.instanceId,
       driver: provider.driver,
       label: `${provider.displayName?.trim() || String(provider.driver)} [${provider.instanceId}]`,
       ...(provider.auth.label ? { plan: provider.auth.label } : {}),
       instanceId: provider.instanceId,
+      ...(bound ? { sourceLabel: "CLI Proxy" } : {}),
       resetCreditInput:
         hubCreditId && hubCredits
           ? {
@@ -740,14 +992,14 @@ export function collectProviderUsageLimits(
       ...(provider.displayName ? { displayName: provider.displayName } : {}),
       ...(provider.accentColor ? { accentColor: provider.accentColor } : {}),
       ...(provider.auth.email ? { email: provider.auth.email } : {}),
-      limits: shownCredits ? { ...limits, resetCredits: shownCredits } : limits,
+      limits: shownLimits,
     });
   }
   for (const source of sources) {
     const matching = source.accounts.filter((account) => account.driver === selected.driver);
     for (const account of matching) {
       const key = resolveKey(account);
-      if (key && nativeAccountKeys.has(key)) continue;
+      if (key && (nativeAccountKeys.has(key) || boundAccountKeys.has(key))) continue;
       accounts.push({
         id: `${source.id}:${account.id}`,
         driver: account.driver,

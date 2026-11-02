@@ -1,3 +1,4 @@
+import { runtimeErrorMessage } from "./ProjectRuntimeErrors";
 import * as Equal from "effect/Equal";
 import { Link } from "@tanstack/react-router";
 import { randomUUID } from "../../lib/utils";
@@ -824,7 +825,7 @@ function TaskWorkerEffectiveChoice({
     if (isActive()) setResult(next);
   });
 
-  // oxlint-disable-next-line t3code/react-effect-budget -- Resolves the saved task's effective worker over RPC and cancels stale results when the task revision changes.
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Resolves the saved task's effective worker over RPC and cancels stale results when the task revision changes.
   useEffect(() => {
     let active = true;
     void load(() => active);
@@ -937,14 +938,15 @@ function TaskExecutionControl({
       if (!response.ok) {
         setError(response.message);
         setConflict(response.conflict);
-        await reload();
-        return;
+      } else {
+        setConflict(false);
       }
-      setConflict(false);
       await reload();
-    } finally {
-      setBusy(false);
+    } catch (cause) {
+      setError(runtimeErrorMessage(cause));
+      setConflict(false);
     }
+    setBusy(false);
   };
 
   const reconcile = async () => {
@@ -956,14 +958,15 @@ function TaskExecutionControl({
       if (!response.ok) {
         setError(response.message);
         setConflict(response.conflict);
-        await reload();
-        return;
+      } else {
+        setConflict(false);
       }
-      setConflict(false);
       await reload();
-    } finally {
-      setBusy(false);
+    } catch (cause) {
+      setError(runtimeErrorMessage(cause));
+      setConflict(false);
     }
+    setBusy(false);
   };
 
   const execute = async () => {
@@ -979,13 +982,15 @@ function TaskExecutionControl({
       if (!response.ok) {
         setError(response.message);
         setConflict(response.conflict);
-        return;
+      } else {
+        setConflict(false);
+        await reload();
       }
+    } catch (cause) {
+      setError(runtimeErrorMessage(cause));
       setConflict(false);
-      await reload();
-    } finally {
-      setBusy(false);
     }
+    setBusy(false);
   };
 
   return (

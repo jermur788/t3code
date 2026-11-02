@@ -3,7 +3,7 @@ import * as NodeSqliteClient from "@t3tools/shared/nodeSqliteClient";
 import * as Effect from "effect/Effect";
 import * as SqlClient from "effect/sql/SqlClient";
 
-import { runMigrations } from "../../Migrations.ts";
+import { migrationManifest, runMigrations } from "../../Migrations.ts";
 
 it.effect(
   "restricts assigned profile deletion, drops assignments on soft deletion, and cascades hard deletion",
@@ -11,7 +11,7 @@ it.effect(
     Effect.gen(function* () {
       const sql = yield* SqlClient.SqlClient;
       yield* sql`PRAGMA foreign_keys = ON`;
-      yield* runMigrations({ toMigrationInclusive: 69 });
+      yield* runMigrations({ toMigrationInclusive: migrationManifest.at(-1)![0] });
       yield* sql`INSERT INTO projection_projects (project_id, title, workspace_root, scripts_json, created_at, updated_at)
         VALUES ('soft', 'Soft project', '/soft', '[]', '2026-10-24T00:00:00.000Z', '2026-10-24T00:00:00.000Z')`;
       yield* sql`INSERT INTO projection_projects (project_id, title, workspace_root, scripts_json, created_at, updated_at)

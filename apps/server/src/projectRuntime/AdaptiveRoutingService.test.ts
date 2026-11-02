@@ -1,6 +1,8 @@
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, it } from "@effect/vitest";
 import {
+  AdaptiveCapacityPoolId,
+  AdaptiveCapacitySnapshotId,
   AdaptiveDifficultyPredictionId,
   AdaptiveExecutionObservationId,
   AdaptiveOutcomeId,
@@ -11,8 +13,11 @@ import {
   type AdaptiveExecutionObservationReference,
   type AdaptiveRecommendationReceipt,
   ProjectId,
+  ProviderDriverKind,
   ProjectRuntimeTaskId,
   RuntimeExecutionAttemptId,
+  RunId,
+  ThreadId,
 } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
@@ -210,6 +215,13 @@ const seedTwoTasksWithAttempts = Effect.gen(function* () {
   }
 });
 
+const recordAttemptRun = (task: ProjectRuntimeTaskId, runId: RunId) =>
+  Effect.gen(function* () {
+    const sql = yield* SqlClient.SqlClient;
+    yield* sql`UPDATE project_runtime_execution_attempts
+      SET run_id = ${runId} WHERE attempt_id = ${attemptOf(task)}`;
+  });
+
 const prediction = (task: ProjectRuntimeTaskId): AdaptiveDifficultyPrediction => ({
   schemaVersion: 1,
   predictionId: predictionOf(task),
@@ -292,6 +304,95 @@ it.effect("rejects an observation that pairs one task with another task's attemp
       .pipe(Effect.flip);
     assert.equal(rejected._tag, "PersistenceSqlError");
     assert.lengthOf(yield* sql`SELECT 1 FROM adaptive_execution_observations`, 0);
+  }).pipe(Effect.provide(layerTest)),
+);
+
+it.effect("rejects a supplied execution when the linked attempt recorded no run", () =>
+  Effect.gen(function* () {
+    yield* seedTwoTasksWithAttempts;
+    yield* seedPredictions;
+    const service = yield* AdaptiveRoutingService.AdaptiveRoutingService;
+    const sql = yield* SqlClient.SqlClient;
+
+    const rejected = yield* service
+      .appendExecutionObservationReference({
+        ...observation({
+          task: taskId,
+          attempt: attemptOf(taskId),
+          prediction: predictionOf(taskId),
+        }),
+        execution: { threadId: ThreadId.make(`thread-${taskId}`), runId: RunId.make("run-1") },
+      })
+      .pipe(Effect.flip);
+    assert.equal(rejected._tag, "PersistenceSqlError");
+    assert.lengthOf(yield* sql`SELECT 1 FROM adaptive_execution_observations`, 0);
+  }).pipe(Effect.provide(layerTest)),
+);
+
+it.effect("rejects a supplied execution that contradicts the attempt's recorded run", () =>
+  Effect.gen(function* () {
+    yield* seedTwoTasksWithAttempts;
+    yield* seedPredictions;
+    yield* recordAttemptRun(taskId, RunId.make("recorded-run"));
+    const service = yield* AdaptiveRoutingService.AdaptiveRoutingService;
+    const sql = yield* SqlClient.SqlClient;
+
+    const rejected = yield* service
+      .appendExecutionObservationReference({
+        ...observation({
+          task: taskId,
+          attempt: attemptOf(taskId),
+          prediction: predictionOf(taskId),
+        }),
+        execution: { threadId: ThreadId.make(`thread-${taskId}`), runId: RunId.make("other-run") },
+      })
+      .pipe(Effect.flip);
+    assert.equal(rejected._tag, "PersistenceSqlError");
+    assert.lengthOf(yield* sql`SELECT 1 FROM adaptive_execution_observations`, 0);
+  }).pipe(Effect.provide(layerTest)),
+);
+
+it.effect("rejects a supplied execution that contradicts the attempt's recorded thread", () =>
+  Effect.gen(function* () {
+    yield* seedTwoTasksWithAttempts;
+    yield* seedPredictions;
+    yield* recordAttemptRun(taskId, RunId.make("recorded-run"));
+    const service = yield* AdaptiveRoutingService.AdaptiveRoutingService;
+    const sql = yield* SqlClient.SqlClient;
+
+    const rejected = yield* service
+      .appendExecutionObservationReference({
+        ...observation({
+          task: taskId,
+          attempt: attemptOf(taskId),
+          prediction: predictionOf(taskId),
+        }),
+        execution: { threadId: ThreadId.make("other-thread"), runId: RunId.make("recorded-run") },
+      })
+      .pipe(Effect.flip);
+    assert.equal(rejected._tag, "PersistenceSqlError");
+    assert.lengthOf(yield* sql`SELECT 1 FROM adaptive_execution_observations`, 0);
+  }).pipe(Effect.provide(layerTest)),
+);
+
+it.effect("persists a supplied execution only at the attempt's exact recorded identity", () =>
+  Effect.gen(function* () {
+    yield* seedTwoTasksWithAttempts;
+    yield* seedPredictions;
+    yield* recordAttemptRun(taskId, RunId.make("recorded-run"));
+    const service = yield* AdaptiveRoutingService.AdaptiveRoutingService;
+    const sql = yield* SqlClient.SqlClient;
+
+    const matched = {
+      ...observation({
+        task: taskId,
+        attempt: attemptOf(taskId),
+        prediction: predictionOf(taskId),
+      }),
+      execution: { threadId: ThreadId.make(`thread-${taskId}`), runId: RunId.make("recorded-run") },
+    };
+    assert.deepStrictEqual(yield* service.appendExecutionObservationReference(matched), matched);
+    assert.lengthOf(yield* sql`SELECT 1 FROM adaptive_execution_observations`, 1);
   }).pipe(Effect.provide(layerTest)),
 );
 
@@ -463,4 +564,58 @@ it.effect("fails closed on a malformed stored accepted-outcome payload", () =>
       [{ state: "unresolved", revision: 1 }],
     );
   }).pipe(Effect.provide(layerTest)),
+);
+
+it.effect(
+  "captures upstream usage evidence without retaining stale windows or account credentials",
+  () =>
+    Effect.gen(function* () {
+      const service = yield* AdaptiveRoutingService.AdaptiveRoutingService;
+      const sql = yield* SqlClient.SqlClient;
+      const capacityPoolId = AdaptiveCapacityPoolId.make("capacity-pool");
+      yield* service.appendCapacityPool({
+        schemaVersion: 1,
+        capacityPoolId,
+        providerDriver: ProviderDriverKind.make("codex"),
+        identityQuality: "provider_instance",
+        createdAt,
+      });
+      const usageLimits = {
+        checkedAt: createdAt,
+        credentialFingerprint: "private-fingerprint",
+        windows: [
+          {
+            id: "session",
+            kind: "session" as const,
+            label: "Session",
+            usedPercent: 25,
+            resetsAt: firstReconciledAt,
+          },
+        ],
+      };
+      const captured = yield* service.captureProviderCapacitySnapshot({
+        snapshotId: AdaptiveCapacitySnapshotId.make("capacity-fresh"),
+        capacityPoolId,
+        sourceRef: "provider:codex",
+        usageLimits,
+      });
+      assert.deepStrictEqual(captured.windows[0]?.remaining, {
+        quality: "approximate",
+        value: 75,
+        unit: "percent",
+      });
+      assert.equal(captured.windows[0]?.resetAt, firstReconciledAt);
+      const unavailable = yield* service.captureProviderCapacitySnapshot({
+        snapshotId: AdaptiveCapacitySnapshotId.make("capacity-unavailable"),
+        capacityPoolId,
+        sourceRef: "provider:codex",
+        usageLimits: { ...usageLimits, unavailable: { reason: "probeFailed" } },
+      });
+      assert.deepStrictEqual(unavailable.windows, []);
+      const rows = yield* sql<{
+        payload_json: string;
+      }>`SELECT payload_json FROM adaptive_capacity_snapshots`;
+      assert.lengthOf(rows, 2);
+      for (const row of rows) assert.notInclude(row.payload_json, "private-fingerprint");
+    }).pipe(Effect.provide(layerTest)),
 );

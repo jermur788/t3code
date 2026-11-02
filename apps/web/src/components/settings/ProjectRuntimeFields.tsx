@@ -127,7 +127,7 @@ export function RuntimePager({
 export function useRuntimeLoad<T>(fetch: () => Promise<RuntimeResult<T>>, ready = true) {
   const [result, setResult] = useState<RuntimeResult<T> | null>(null);
   const load = useStableCallback(fetch);
-  // oxlint-disable-next-line t3code/react-effect-budget -- Fetches Runtime data over RPC and ignores the result after unmount or dependency change.
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Fetches Runtime data over RPC and ignores the result after unmount or dependency change.
   useEffect(() => {
     if (!ready) return;
     let current = true;

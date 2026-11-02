@@ -11,7 +11,9 @@ import { assert, it } from "@effect/vitest";
 import { EnvironmentId, ProviderInstanceId } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
+import * as Logger from "effect/Logger";
 import * as Option from "effect/Option";
+import * as References from "effect/References";
 import * as Stream from "effect/Stream";
 import * as Fiber from "effect/Fiber";
 import * as Deferred from "effect/Deferred";
@@ -1258,6 +1260,73 @@ it.effect.each([
     }),
   ),
 );
+
+it.effect("records a sanitized refresh rejection without token material", () => {
+  const logs: Array<{
+    readonly message: unknown;
+    readonly annotations: Readonly<Record<string, unknown>>;
+  }> = [];
+  const logger = Logger.make(({ fiber, message }) => {
+    logs.push({ message, annotations: fiber.getRef(References.CurrentLogAnnotations) });
+  });
+  return provision(
+    Effect.gen(function* () {
+      const h = yield* makeHarness;
+      yield* h.signIn;
+      yield* h.phase("succeeded");
+      yield* h.seedExpired;
+      h.setRefreshError("refresh_token_reused");
+      yield* Effect.flip(h.auth.access);
+      const rejection = logs.find(
+        (log) => Array.isArray(log.message) && log.message[0] === "ChatGPT refresh token rejected",
+      );
+      assert.isDefined(rejection);
+      assert.equal(rejection.annotations.instanceId, instanceId);
+      assert.equal(rejection.annotations.operation, "refresh");
+      assert.equal(rejection.annotations.oauthError, "refresh_token_reused");
+      const serialized = JSON.stringify(logs);
+      for (const field of ["accessToken", "refreshToken", "idToken", "authorization_code"]) {
+        assert.notInclude(serialized, field);
+      }
+      assert.notInclude(serialized, "oaiapp_test");
+    }),
+  ).pipe(Effect.provide(Logger.layer([logger], { mergeWithExisting: false })));
+});
+
+it.effect("renews two Codex instances independently when one refresh is rejected", () => {
+  const logs: Array<{
+    readonly message: unknown;
+    readonly annotations: Readonly<Record<string, unknown>>;
+  }> = [];
+  const logger = Logger.make(({ fiber, message }) => {
+    logs.push({ message, annotations: fiber.getRef(References.CurrentLogAnnotations) });
+  });
+  return provision(
+    Effect.gen(function* () {
+      const work = yield* makeHarnessFor(ProviderInstanceId.make("codex-work"));
+      const personal = yield* makeHarnessFor(ProviderInstanceId.make("codex-personal"));
+      personal.setIdentity("personal-user", "personal@example.test");
+      yield* work.signIn;
+      yield* work.phase("succeeded");
+      yield* personal.signIn;
+      yield* personal.phase("succeeded");
+      yield* work.seedExpired;
+      yield* personal.seedExpired;
+      work.setRefreshError("invalid_grant");
+
+      yield* Effect.flip(work.auth.access);
+      const renewed = yield* personal.auth.access;
+      assert.equal(renewed.subject, "personal-user");
+      assert.isTrue(Option.isNone(yield* work.auth.read));
+      assert.isTrue(Option.isSome(yield* personal.auth.read));
+      const rejection = logs.find(
+        (log) => Array.isArray(log.message) && log.message[0] === "ChatGPT refresh token rejected",
+      );
+      assert.equal(rejection?.annotations.instanceId, "codex-work");
+      assert.equal(rejection?.annotations.oauthError, "invalid_grant");
+    }),
+  ).pipe(Effect.provide(Logger.layer([logger], { mergeWithExisting: false })));
+});
 
 it.effect(
   "logout revokes the latest refresh token with the selected client and clears its ID hint",

@@ -113,7 +113,7 @@ export function ForkHome({
   const selectedValue = selected === null ? "" : optionValue(selected.group, selected.member);
 
   // Persist the default choice so a reload returns to the same project.
-  // oxlint-disable-next-line t3code/react-effect-budget -- Writes the default project into the URL once so a reload returns to the same project.
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Writes the default project into the URL once so a reload returns to the same project.
   useEffect(() => {
     if (search.project === undefined && defaultSelection !== null) {
       onSearchChange(defaultSelection);

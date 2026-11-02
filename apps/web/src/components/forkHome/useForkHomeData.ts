@@ -101,7 +101,7 @@ export function useForkHomeRuntime(target: {
     });
   });
 
-  // oxlint-disable-next-line t3code/react-effect-budget -- Loads the project Runtime sections over RPC and cancels stale results on unmount or environment change.
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Loads the project Runtime sections over RPC and cancels stale results on unmount or environment change.
   useEffect(() => {
     let active = true;
     void load(api.ready, () => active);
@@ -143,7 +143,7 @@ export function useForkHomeProfile(target: {
     );
   });
 
-  // oxlint-disable-next-line t3code/react-effect-budget -- Loads the effective Development Profile over RPC and cancels stale results on unmount or environment change.
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Loads the effective Development Profile over RPC and cancels stale results on unmount or environment change.
   useEffect(() => {
     let active = true;
     void load(api.ready, () => active);

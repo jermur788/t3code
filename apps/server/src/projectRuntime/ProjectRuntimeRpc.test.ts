@@ -46,6 +46,7 @@ const routingProviderView = Layer.succeed(RuntimeRoutingProviderView.RuntimeRout
     providers: [] as ReadonlyArray<ServerProvider>,
     orchestrationCapableInstanceIds: new Set<ProviderInstanceId>(),
     settings: DEFAULT_SERVER_SETTINGS,
+    capacityByInstanceId: new Map(),
   }),
 });
 const layer = Sources.layer.pipe(

@@ -5,6 +5,13 @@ import {
   NonNegativeInt,
   PositiveInt,
   ProjectId,
+  ThreadId,
+  RunId,
+  RunAttemptId,
+  NodeId,
+  ProviderSessionId,
+  ProviderThreadId,
+  ContextTransferId,
   TrimmedNonEmptyString,
 } from "./baseSchemas.ts";
 import { ModelSelection } from "./modelSelection.ts";
@@ -160,10 +167,7 @@ export const AdaptiveRealizedDifficulty = Schema.Struct({
 });
 export type AdaptiveRealizedDifficulty = typeof AdaptiveRealizedDifficulty.Type;
 
-/**
- * ARM-010 stores only durable links around an execution attempt. ARM-020 adds the exact
- * launch/context observation without changing the existing execution receipt or launch path.
- */
+// Missing fields on historical observations mean unknown, never requested-as-executed.
 export const AdaptiveExecutionObservationReference = Schema.Struct({
   schemaVersion: AdaptiveSchemaVersion,
   observationId: AdaptiveExecutionObservationId,
@@ -176,6 +180,75 @@ export const AdaptiveExecutionObservationReference = Schema.Struct({
   capacityBeforeSnapshotId: Schema.optionalKey(AdaptiveCapacitySnapshotId),
   capacityAfterSnapshotId: Schema.optionalKey(AdaptiveCapacitySnapshotId),
   experimentAssignmentId: Schema.optionalKey(AdaptiveExperimentAssignmentId),
+  execution: Schema.optionalKey(
+    Schema.Struct({
+      threadId: ThreadId,
+      runId: RunId,
+      runAttemptId: Schema.optionalKey(RunAttemptId),
+      nodeId: Schema.optionalKey(NodeId),
+      providerSessionId: Schema.optionalKey(ProviderSessionId),
+      providerThreadId: Schema.optionalKey(ProviderThreadId),
+      contextTransferId: Schema.optionalKey(ContextTransferId),
+    }),
+  ),
+  configuration: Schema.optionalKey(
+    Schema.Struct({
+      requested: ModelSelection,
+      selected: ModelSelection,
+      executed: Schema.Union([
+        Schema.Struct({ quality: Schema.Literal("unknown") }),
+        Schema.Struct({
+          quality: Schema.Literals(["provider_reported", "t3_observed"]),
+          selection: ModelSelection,
+          evidenceRef: AdaptiveReference,
+        }),
+      ]),
+      substitutionReason: Schema.optionalKey(AdaptiveReason),
+    }),
+  ),
+  failure: Schema.optionalKey(
+    Schema.Struct({
+      class: Schema.Literals([
+        "provider_capacity",
+        "provider_auth",
+        "provider_network",
+        "provider_unavailable",
+        "provider_substitution",
+        "tool_or_environment",
+        "harness_or_verification_fixture",
+        "implementation_defect",
+        "verification_failure",
+        "integration_conflict",
+        "cancellation",
+        "operator_or_policy_stop",
+        "unknown",
+      ]),
+      evidenceRef: AdaptiveReference,
+    }),
+  ),
+  verification: Schema.optionalKey(
+    Schema.Struct({
+      profileId: AdaptiveId,
+      requiredKinds: Schema.Array(AdaptiveLabel).check(
+        Schema.isMaxLength(ADAPTIVE_ROUTING_BOUNDS.evidenceMaxCount),
+      ),
+      performedKinds: Schema.Array(AdaptiveLabel).check(
+        Schema.isMaxLength(ADAPTIVE_ROUTING_BOUNDS.evidenceMaxCount),
+      ),
+      independence: Schema.Literals([
+        "none",
+        "same-provider",
+        "cross-provider",
+        "human",
+        "external",
+      ]),
+      result: Schema.Literals(["pass", "fail", "partial", "blocked", "unknown"]),
+      strength: Schema.Literals(["weak", "moderate", "strong"]),
+      evidenceRefs: Schema.Array(AdaptiveReference).check(
+        Schema.isMaxLength(ADAPTIVE_ROUTING_BOUNDS.evidenceMaxCount),
+      ),
+    }),
+  ),
   createdAt: IsoDateTime,
 });
 export type AdaptiveExecutionObservationReference =
@@ -238,6 +311,7 @@ export const AdaptiveCapacitySnapshot = Schema.Struct({
   capacityPoolId: AdaptiveCapacityPoolId,
   observedAt: IsoDateTime,
   sourceQuality: AdaptiveCapacityObservationQuality,
+  sourceRef: Schema.optionalKey(AdaptiveReference),
   windows: Schema.Array(AdaptiveCapacityWindow).check(
     Schema.isMaxLength(ADAPTIVE_ROUTING_BOUNDS.windowsMaxCount),
   ),
