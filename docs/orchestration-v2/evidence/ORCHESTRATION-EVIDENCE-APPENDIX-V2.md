@@ -382,3 +382,68 @@ At dispatch: capacity-to-completion `SUFFICIENT` for the narrow local repair; `U
 - **Remaining non-blocking/UNKNOWN:** route item sorts after the launch item under the existing event-ID tie-break (deterministic, logically backwards); no post-completion byte-stability assertion for the route item; unchanged v0 decision event ID with a moved fact set may matter to external consumers; V2 1,000-event cap has no truncation marker; cross-task staging references dropped; finite 2,000 caps; no transport wiring; no live-service/real-DB proof; ARM producers remain the next milestone.
 - **PR #14:** untouched at `e51c1c5d74aed9824927d391590ddb33026c8d56`; OPEN / DRAFT / NOT MERGED.
 - **Next action:** Browser Overall inspects the exact final delta; do not merge. Transport wiring plus live/real-DB verification is the next milestone.
+
+---
+
+# Run 6 — Evidence V0 transport + persistent-database runtime qualification
+
+Run: Local DeepSeek Evidence V0 transport/runtime gate
+Date: 2026-11-01/02
+Orchestrator: DeepSeek V4.1 Flash (`opencode-go/deepseek-v4.1-flash`, OpenCode harness, variant `max`, agent `build`)
+Starting head: `a8fc43174e8e93c40f887b9f9bdfa99564ac46f3`
+Code head: `919b948dfc35f30e812c65317010bff240aedac6`
+Base / merge-base: `e51c1c5d74aed9824927d391590ddb33026c8d56`
+Governing handoff: `Overall-Dev/messages/t3-fork/2026-11-01-local-evidence-v0-transport-runtime-qualification-handoff.md`
+
+This section records the decision-time and outcome record for the transport gate. It does not rewrite Runs 1–5. PR #14 was merged externally during this run (see R6.4) without this branch rebasing or integrating `main`.
+
+## R6.1 Routing and decomposition
+
+| Decision            | Work unit                               | Band / confidence | Selected                              | Reviewer                        | Selection        | Recorded at |
+| ------------------- | --------------------------------------- | ----------------- | ------------------------------------- | ------------------------------- | ---------------- | ----------- |
+| `ev0-transport-d01` | Choose one existing server transport    | LOW / 0.95        | DeepSeek V4.1 Flash                   | Claude B — Pro Opus 5.5 / Codex | exploit          | 2026-11-01  |
+| `ev0-transport-d02` | Bounded-read incompleteness marker      | MEDIUM / 0.85     | DeepSeek V4.1 Flash                   | Claude B — Pro Opus 5.5 / Codex | exploit          | 2026-11-01  |
+| `ev0-transport-d03` | Cross-task staging boundary rejection   | LOW / 0.95        | DeepSeek V4.1 Flash                   | Claude B — Pro Opus 5.5 / Codex | exploit          | 2026-11-01  |
+| `ev0-transport-d04` | F1 tied ordering repair                 | LOW / 0.95        | DeepSeek V4.1 Flash                   | Claude B — Pro Opus 5.5 / Codex | exploit          | 2026-11-01  |
+| `ev0-transport-d05` | F2 route-item stability coverage        | LOW / 0.95        | DeepSeek V4.1 Flash                   | Claude B — Pro Opus 5.5 / Codex | exploit          | 2026-11-01  |
+| `ev0-transport-d06` | F3 consumer inspection                  | LOW / 0.95        | DeepSeek V4.1 Flash                   | Claude B — Pro Opus 5.5 / Codex | exploit          | 2026-11-01  |
+| `ev0-transport-d07` | Running-server + persistent-DB exercise | HIGH / 0.85       | DeepSeek V4.1 Flash                   | Claude B — Pro Opus 5.5 / Codex | exploit + review | 2026-11-01  |
+| `ev0-transport-d08` | Independent review rounds               | MEDIUM / 0.85     | Claude B Opus 5.5 + Codex gpt-6.1-sol | N/A                             | explore          | 2026-11-01  |
+
+## R6.2 Capacity at decision time
+
+| Provider/pool                                         | State                            | Remaining capacity | Source                    | Observed at |
+| ----------------------------------------------------- | -------------------------------- | ------------------ | ------------------------- | ----------- |
+| OpenCode / DeepSeek V4.1 Flash                        | AVAILABLE (running this session) | `UNKNOWN`          | T3 live catalog + session | 2026-11-01  |
+| Claude B — Pro (`claudeAgent_claude_b_pro`, Opus 5.5) | AVAILABLE (listed)               | `UNKNOWN`          | T3 live catalog           | 2026-11-01  |
+| Codex (`codex_c75d8114…`, `gpt-6.1-sol`)              | AVAILABLE (listed)               | `UNKNOWN`          | T3 live catalog           | 2026-11-01  |
+
+## R6.3 Outcome summary
+
+| Decision            | Actual executor                                          | State                     | Key evidence                                                                       |
+| ------------------- | -------------------------------------------------------- | ------------------------- | ---------------------------------------------------------------------------------- |
+| `ev0-transport-d01` | DeepSeek V4.1 Flash                                      | COMPLETED                 | one read-only RPC `projectRuntime.exportEvidence` on the existing `WsRpcGroup`     |
+| `ev0-transport-d02` | DeepSeek V4.1 Flash                                      | COMPLETED                 | explicit `orchestration-v2-truncation` record at the 1,000-event bound             |
+| `ev0-transport-d03` | DeepSeek V4.1 Flash                                      | COMPLETED                 | RPC boundary rejects cross-project and cross-task staging with `invalid_request`   |
+| `ev0-transport-d04` | DeepSeek V4.1 Flash                                      | COMPLETED                 | scalar decision tie key; route before launch for every same-clock attempt          |
+| `ev0-transport-d05` | DeepSeek V4.1 Flash                                      | COMPLETED                 | post-completion route-item byte stability test                                     |
+| `ev0-transport-d06` | DeepSeek V4.1 Flash                                      | COMPLETED                 | no pre-split external Evidence V0 consumer; IDs/schema kept                        |
+| `ev0-transport-d07` | DeepSeek V4.1 Flash                                      | RUNTIME PASS (bounded)    | real server + isolated SQLite DB + WS RPC, stop/restart, full stable payload hash  |
+| `ev0-transport-d08` | Claude B Opus 5.5 (round 1), Codex gpt-6.1-sol (round 2) | REVIEW PASS WITH FINDINGS | No blockers; round 1 medium comparator finding fixed and independently re-verified |
+
+## R6.4 Outcome details
+
+- **Transport:** `projectRuntime.exportEvidence` added to `PROJECT_RUNTIME_RPCS` and served by the existing `makeHandlers` / WebSocket RPC path. Request is `projectId` + `taskId` + optional staging references; success is `OrchestrationEvidenceReconstruction`; read scope is `orchestration:read`. No HTTP/MCP/CLI duplicate, no new transport framework, no new datastore or migration.
+- **Bounded incompleteness:** the per-thread read stays at `1_000` events. Reaching the bound emits `orchestration-v2-truncation` (`recordBasis: "derived-view"`, `authority: "orchestration-v2"`, `status: "incomplete"`, `completeness: "unknown"`, `readLimit: 1000`, `unknownFields` includes `completeness`). A control task below the bound emits no marker. The read is deliberately conservative: exactly 1,000 events cannot prove completeness without an extra read, so it is UNKNOWN.
+- **Cross-task staging:** the RPC handler rejects any project/task mismatch before the service. The service's internal filter remains defence in depth. Duplicate `stagingId`s and oversize exports remain residual, documented below.
+- **F1:** one scalar key per route/decision pair (`execution-attempt-decision:<attemptId>\0<0 route|1 decision>`) keeps the comparator a total order for multiple same-clock attempts; V2 sequence blocks, ARM revision blocks, task-first and other event-id ties are unchanged. A 20-attempt regression test asserts route-before-decision and deterministic event-id order.
+- **F2:** route-item byte stability is asserted after the attempt completes.
+- **F3:** no repository-native production/public consumer of a pre-split Evidence V0 transport exists; the v0 IDs and schema are retained as development-history compatibility (an older contract still rejects the additive record type, which is why this is documented rather than silently changed).
+- **Read path:** the export now calls `ProjectRuntimeService.getStatus` first (missing/deleted project → `not_found`) and wraps the export transaction with `NodeSqliteClient.readOnly` so it uses the reader connection rather than the writer.
+- **Runtime evidence:** `/media/jer/Files/CCF/Verification/evidence-v0-transport-runtime-20261101/final3/`. Fresh isolated SQLite DB seeded through canonical services (1,003 V2 events), real server on `127.0.0.1:3903`, browser-session + WS ticket + real WS RPC, contract decode. Bounded V2 count 1,000, route index 1001 < decision index 1002, truncation present, cross-task rejected, complete-read control present, then stop/restart with identical 1,006 event IDs and identical stable payload SHA-256 `9e9d5865b95c2ccb8304c3c2d79240ce1e14bd913cb95865582c3c055be0f498`; only `generatedAt` differs.
+- **Independent review:** round 1, Claude B — Pro Opus 5.5: `REVIEW PASS WITH FINDINGS`, no blockers (medium: same-attempt-only F1 tie-break was non-transitive; medium-low: access checks; low-medium: write lock; plus low residuals). Round 2, Codex `gpt-6.1-sol` high effort: `REVIEW PASS WITH FINDINGS`, no blockers; confirmed the scalar tie key is a total order (100 permutations, zero violations), that the new regression test fails against the old comparator, and independently reproduced the restart payload hash from the retained database. Round 2 residuals: export still succeeds with Runtime disabled (deliberately mirrors `readExecutionAttempt`, which checks status only); duplicate `stagingId`s; oversize exports fail during transport encoding without a typed overflow error; exactly-1,000 truncation is conservative; runtime WS exercise demonstrates cross-project rejection while same-project/different-task rejection is covered by the RPC test; seeding mocks routing/launch/threads; WS missing-scope rejection not exercised; full repo test step timed out.
+- **Automated verification:** 7 focused files / 97 tests pass (Evidence exporter 32, RPC 5, AdaptiveRouting+RuntimeTaskExecution 32, ws 9, RpcAuthorization+contracts rpc 19). Contracts and `t3` server typecheck pass. Changed-file format and lint pass. `git diff --check` clean. `vp run check:changed` passes format/lint/knip/typecheck(39 packages)/React compiler/graphql; the 699-file repo test step times out at 900 s and is not claimed. Standalone full `knip` exits 1 on pre-existing repo-wide findings unrelated to changed files.
+- **PR #14:** this branch did not modify, rebase, merge or otherwise touch PR #14. However, outside this task, PR #14 was marked ready at `2026-11-02T00:25:56Z` and merged at `2026-11-02T00:26:02Z` (merge commit `19b128fe`) by the `jermur788` account while the round-1 review was running. The branch tip and merge-base are unchanged and `main` was not integrated.
+- **Merge state:** NOT MERGED.
+- **Verdict:** `EVIDENCE V0 TRANSPORT RUNTIME PASS / REVIEW PASS WITH FINDINGS / NOT MERGED`.
+- **Next action:** Browser Overall inspects the exact candidate and runtime evidence; do not merge. ARM producer WP2/WP3 remains separate.
