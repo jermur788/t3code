@@ -22,7 +22,11 @@ import {
   FORK_RECONCILIATION_TABLE,
   forkMigrationManifest,
 } from "../src/persistence/ForkMigrations.ts";
-import { migrationManifest, runMigrations } from "../src/persistence/Migrations.ts";
+import {
+  FIRST_V2_MIGRATION_ID,
+  migrationManifest,
+  runMigrations,
+} from "../src/persistence/Migrations.ts";
 import * as NodeSqliteClient from "@t3tools/shared/nodeSqliteClient";
 
 export class MigrateDevDbNotInWorktreeError extends Schema.TaggedError<MigrateDevDbNotInWorktreeError>()(
@@ -457,6 +461,8 @@ const verifyMigrationSlots = Effect.fn("verifyMigrationSlots")(function* () {
     SELECT migration_id, name FROM effect_sql_migrations`;
   const appliedById = new Map(applied.map((row) => [Number(row.migration_id), row.name]));
   for (const [slot, codeName] of migrationManifest) {
+    // Upstream tolerates local migration names below V2; only V2 schema ids must match.
+    if (slot < FIRST_V2_MIGRATION_ID) continue;
     const appliedName = appliedById.get(slot);
     if (appliedName !== undefined && appliedName !== codeName) {
       return yield* new MigrateDevDbSlotCollisionError({ slot, codeName, appliedName });
