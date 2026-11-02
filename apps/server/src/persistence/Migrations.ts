@@ -178,7 +178,7 @@ const makeMigrationLoader = (throughId?: number) =>
     ),
   );
 
-const FIRST_V2_MIGRATION_ID = 55;
+export const FIRST_V2_MIGRATION_ID = 55;
 
 // Migrators skip ids up to the highest recorded; reject collisions that would skip V2 schema.
 const assertV2MigrationsCanRun = Effect.fn("assertV2MigrationsCanRun")(function* (
