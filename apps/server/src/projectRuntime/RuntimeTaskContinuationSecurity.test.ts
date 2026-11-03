@@ -1,0 +1,1021 @@
+import * as DevelopmentProfileService from "../developmentProfiles/DevelopmentProfileService.ts";
+import * as NodeServices from "@effect/platform-node/NodeServices";
+import { assert, it } from "@effect/vitest";
+import {
+  DEFAULT_SERVER_SETTINGS,
+  ProjectId,
+  ProviderDriverKind,
+  ProviderInstanceId,
+  ThreadId,
+  type Project,
+  type RuntimeExecutionAttempt,
+  type RuntimeRouteResolution,
+  type ServerProvider,
+} from "@t3tools/contracts";
+import * as Deferred from "effect/Deferred";
+import * as Effect from "effect/Effect";
+import * as FileSystem from "effect/FileSystem";
+import * as Layer from "effect/Layer";
+import * as SqlClient from "effect/sql/SqlClient";
+
+import * as ThreadLaunchService from "../orchestration-v2/ThreadLaunchService.ts";
+import type { ThreadLaunchInput } from "../orchestration-v2/ThreadLaunchService.ts";
+import * as ThreadManagementService from "../orchestration-v2/ThreadManagementService.ts";
+import * as ProjectService from "../project/ProjectService.ts";
+import * as SqlitePersistence from "../persistence/Sqlite.ts";
+import * as RuntimeRoutingService from "../runtimeRouting/RuntimeRoutingService.ts";
+import { RuntimeRoutingProviderView } from "../runtimeRouting/RuntimeRoutingProviderView.ts";
+import * as ServerSettingsService from "../serverSettings.ts";
+import * as ProjectRuntimeService from "./ProjectRuntimeService.ts";
+import * as RuntimeTaskExecutionService from "./RuntimeTaskExecutionService.ts";
+
+/**
+ * Negative and concurrency qualification for the synthetic continuation
+ * authorization boundary. Everything below runs against a file-backed SQLite
+ * database with stub providers; no model is ever invoked.
+ */
+
+const projectId = ProjectId.make("continuation-security-project");
+const codex = ProviderInstanceId.make("codex");
+const claude = ProviderInstanceId.make("claudeAgent");
+const timestamp = "2026-11-03T00:00:00.000Z";
+
+const project: Project = {
+  id: projectId,
+  title: "Continuation security",
+  workspaceRoot: "/tmp/continuation-security",
+  defaultModelSelection: { instanceId: codex, model: "gpt-6" },
+  scripts: [],
+  createdAt: timestamp,
+  updatedAt: timestamp,
+  deletedAt: null,
+};
+
+const provider = (
+  instanceId: ProviderInstanceId,
+  driver: string,
+  model: string,
+): ServerProvider => ({
+  instanceId,
+  driver: ProviderDriverKind.make(driver),
+  enabled: true,
+  installed: true,
+  status: "ready",
+  auth: { status: "authenticated" },
+  version: null,
+  checkedAt: timestamp,
+  models: [{ slug: model, name: model, isCustom: false, capabilities: null }],
+  slashCommands: [],
+  skills: [],
+});
+
+const providers = [provider(codex, "codex", "gpt-6"), provider(claude, "claudeAgent", "fable")];
+
+const resolution = (
+  taskId: string,
+  instanceId: ProviderInstanceId,
+  driver: string,
+  model: string,
+): RuntimeRouteResolution => ({
+  projectId,
+  taskId: taskId as never,
+  role: "implementation",
+  status: "resolved",
+  source: "project",
+  selected: {
+    source: "project",
+    candidateIndex: 0,
+    candidate: { providerInstanceId: instanceId, model },
+    providerInstanceId: instanceId,
+    driverKind: ProviderDriverKind.make(driver),
+    model,
+    isolation: "shared",
+    eligibility: "eligible-at-resolution",
+  },
+  inheritedFrom: null,
+  rejected: [],
+  failure: null,
+  revisions: { task: 1, projectRouting: 1, profile: null, assignment: null },
+});
+
+interface Gate {
+  readonly taskId: string;
+  armed: boolean;
+  readonly entered: Deferred.Deferred<void>;
+  readonly release: Deferred.Deferred<void>;
+}
+
+interface State {
+  readonly launches: Array<ThreadLaunchInput>;
+  readonly runs: Map<string, ReadonlyArray<{ readonly id: string; readonly status: string }>>;
+  readonly routes: Map<string, RuntimeRouteResolution>;
+  gate: Gate | null;
+}
+
+const makeState = (): State => ({
+  launches: [],
+  runs: new Map(),
+  routes: new Map(),
+  gate: null,
+});
+
+const makeLayer = (state: State, dbPath: string) =>
+  RuntimeTaskExecutionService.layer.pipe(
+    Layer.provideMerge(
+      ProjectRuntimeService.layer.pipe(
+        Layer.provideMerge(DevelopmentProfileService.layer),
+        Layer.provideMerge(SqlitePersistence.layerFromPath(dbPath)),
+        Layer.provide(NodeServices.layer),
+      ),
+    ),
+    Layer.provideMerge(
+      Layer.mock(RuntimeRoutingService.RuntimeRoutingService)({
+        resolveRoute: (input) =>
+          Effect.gen(function* () {
+            const gate = state.gate;
+            if (gate !== null && gate.armed && input.taskId === gate.taskId) {
+              gate.armed = false;
+              yield* Deferred.succeed(gate.entered, undefined);
+              yield* Deferred.await(gate.release);
+            }
+            return (
+              (input.taskId === undefined ? undefined : state.routes.get(input.taskId)) ??
+              resolution(input.taskId ?? "unknown", codex, "codex", "gpt-6")
+            );
+          }),
+      }),
+    ),
+    Layer.provideMerge(
+      Layer.succeed(RuntimeRoutingProviderView, {
+        read: Effect.succeed({
+          providers,
+          orchestrationCapableInstanceIds: new Set([codex, claude]),
+          settings: DEFAULT_SERVER_SETTINGS,
+          capacityByInstanceId: new Map(),
+        }),
+      }),
+    ),
+    Layer.provideMerge(
+      Layer.mock(ProjectService.ProjectService)({
+        getById: () => Effect.succeedSome(project),
+      }),
+    ),
+    Layer.provideMerge(
+      Layer.mock(ServerSettingsService.ServerSettingsService)({
+        getSettings: Effect.succeed(DEFAULT_SERVER_SETTINGS),
+      }),
+    ),
+    Layer.provideMerge(
+      Layer.mock(ThreadLaunchService.ThreadLaunchService)({
+        launch: ((input: ThreadLaunchInput) =>
+          Effect.sync(() => {
+            state.launches.push(input);
+            const runId = `run-${state.launches.length}`;
+            state.runs.set(input.threadId ?? "", [{ id: runId, status: "running" }]);
+            return {
+              threadId: input.threadId,
+              projection: {
+                runs: [{ id: runId, userMessageId: input.initialMessage?.messageId }],
+              },
+              resumed: false,
+            };
+          })) as never,
+        checkWorktreeBase: () => Effect.void,
+      }),
+    ),
+    Layer.provideMerge(
+      Layer.mock(ThreadManagementService.ThreadManagementService)({
+        getThreadShell: (threadId) =>
+          Effect.succeed(state.runs.has(threadId) ? ({} as never) : null),
+        getThreadProjection: (threadId) =>
+          Effect.succeed({ runs: state.runs.get(threadId) ?? [] } as never),
+        dispatch: () => Effect.succeed({} as never),
+      }),
+    ),
+    Layer.provide(NodeServices.layer),
+  );
+
+type Services =
+  | RuntimeTaskExecutionService.RuntimeTaskExecutionService
+  | ProjectRuntimeService.ProjectRuntimeService
+  | SqlClient.SqlClient;
+
+const process = <A, E>(state: State, dbPath: string, program: Effect.Effect<A, E, Services>) =>
+  program.pipe(Effect.provide(makeLayer(state, dbPath)));
+
+const completeRun = (state: State, threadId: string) => {
+  const runs = state.runs.get(threadId) ?? [];
+  state.runs.set(
+    threadId,
+    runs.map((run) => ({ ...run, status: "completed" })),
+  );
+};
+
+const seedAndCreateTasks = (state: State) =>
+  Effect.gen(function* () {
+    const runtime = yield* ProjectRuntimeService.ProjectRuntimeService;
+    const sql = yield* SqlClient.SqlClient;
+    yield* sql`INSERT INTO projection_projects (project_id, title, workspace_root, scripts_json, created_at, updated_at)
+      VALUES (${projectId}, 'Continuation security', '/tmp/continuation-security', '[]', ${timestamp}, ${timestamp})`;
+    yield* runtime.setEnabled(projectId, { enabled: true });
+    const review = yield* runtime.createTask(
+      projectId,
+      {
+        title: "Independent review",
+        scope: "Review the implementation evidence.",
+        owner: "user:reviewer",
+        acceptanceCriteria: [],
+        status: "ready",
+      },
+      { actor: "user:maintainer" },
+    );
+    const repair = yield* runtime.createTask(
+      projectId,
+      {
+        title: "Bounded repair",
+        scope: "Repair what the review rejected.",
+        owner: "user:repairer",
+        acceptanceCriteria: [],
+        status: "ready",
+      },
+      { actor: "user:maintainer" },
+    );
+    const source = yield* runtime.createTask(
+      projectId,
+      {
+        title: "Implementation",
+        scope: "Implement the change.",
+        owner: "user:maintainer",
+        acceptanceCriteria: [],
+        status: "ready",
+        continuation: {
+          version: 1,
+          mode: "synthetic",
+          reviewTaskId: review.taskId,
+          repairTaskId: repair.taskId,
+          maxRepairCycles: 2,
+        },
+      },
+      { actor: "user:maintainer" },
+    );
+    state.routes.set(source.taskId, resolution(source.taskId, codex, "codex", "gpt-6"));
+    state.routes.set(review.taskId, resolution(review.taskId, claude, "claudeAgent", "fable"));
+    state.routes.set(repair.taskId, resolution(repair.taskId, codex, "codex", "gpt-6"));
+    return { source, review, repair };
+  });
+
+const appendHandoff = (
+  attempt: RuntimeExecutionAttempt,
+  verification: {
+    readonly milestone: "none" | "review-pass";
+    readonly result: "pass" | "fail" | "none";
+  },
+) =>
+  Effect.gen(function* () {
+    const runtime = yield* ProjectRuntimeService.ProjectRuntimeService;
+    const task = yield* runtime.readTask(projectId, attempt.taskId);
+    return yield* runtime.appendHandoff(
+      projectId,
+      {
+        taskId: attempt.taskId,
+        expectedTaskRevision: task.revision,
+        checkpoint: `synthetic-${attempt.attemptId}`,
+        summary: `Synthetic handoff for ${attempt.taskId}`,
+        filesChanged: [],
+        ...(verification.result === "none"
+          ? {}
+          : {
+              verification: {
+                milestone: verification.milestone,
+                evidence: [
+                  {
+                    evidenceId: "synthetic-verdict",
+                    result: verification.result,
+                    summary: "Synthetic reviewer verdict",
+                    recordedAt: timestamp,
+                  },
+                ],
+              },
+            }),
+      },
+      {
+        actor: `thread:${attempt.threadId}`,
+        threadId: ThreadId.make(attempt.threadId),
+        providerInstanceId: attempt.modelSelection.instanceId,
+        model: attempt.modelSelection.model,
+      },
+    );
+  });
+
+const attemptByKey = (taskId: string, requestKey: string) =>
+  Effect.gen(function* () {
+    const sql = yield* SqlClient.SqlClient;
+    const service = yield* RuntimeTaskExecutionService.RuntimeTaskExecutionService;
+    const rows = yield* sql<{ readonly attempt_id: string }>`SELECT attempt_id
+      FROM project_runtime_execution_attempts
+      WHERE project_id = ${projectId} AND task_id = ${taskId} AND request_key = ${requestKey}`;
+    assert.equal(rows.length, 1);
+    return yield* service.readAttempt(projectId, rows[0]!.attempt_id as never);
+  });
+
+const forceAttemptStatus = (attemptId: string, status: string) =>
+  Effect.gen(function* () {
+    const sql = yield* SqlClient.SqlClient;
+    yield* sql`UPDATE project_runtime_execution_attempts
+      SET status = ${status}, run_id = NULL,
+        payload_json = json_set(payload_json, '$.status', ${status}, '$.runId', NULL)
+      WHERE project_id = ${projectId} AND attempt_id = ${attemptId}`;
+  });
+
+/** Worker completes, appends a handoff and returns the auto-dispatched review. */
+const setupThroughReview = (state: State, dbPath: string) =>
+  process(
+    state,
+    dbPath,
+    Effect.gen(function* () {
+      const service = yield* RuntimeTaskExecutionService.RuntimeTaskExecutionService;
+      const tasks = yield* seedAndCreateTasks(state);
+      const worker = yield* service.execute(projectId, {
+        taskId: tasks.source.taskId,
+        expectedTaskRevision: tasks.source.revision,
+      });
+      yield* appendHandoff(worker, { milestone: "none", result: "none" });
+      completeRun(state, worker.threadId);
+      yield* service.reconcileAttempt(projectId, worker.attemptId);
+      const review = yield* attemptByKey(tasks.review.taskId, `cont:v1:r:${worker.attemptId}`);
+      return { ...tasks, worker, review };
+    }),
+  );
+
+it.effect("still accepts an ordinary, non-reserved request key", () =>
+  Effect.scoped(
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const dir = yield* fs.makeTempDirectoryScoped();
+      const dbPath = `${dir}/continuation.sqlite`;
+      const state = makeState();
+      const tasks = yield* process(
+        state,
+        dbPath,
+        Effect.gen(function* () {
+          const service = yield* RuntimeTaskExecutionService.RuntimeTaskExecutionService;
+          return yield* seedAndCreateTasks(state).pipe(
+            Effect.flatMap((created) =>
+              service.execute(projectId, {
+                taskId: created.source.taskId,
+                expectedTaskRevision: created.source.revision,
+                clientRequestId: "operator-approved-implementation",
+              }),
+            ),
+          );
+        }),
+      );
+      assert.equal(tasks.status, "launched");
+      assert.equal(state.launches.length, 1);
+      const replay = yield* process(
+        state,
+        dbPath,
+        Effect.gen(function* () {
+          const service = yield* RuntimeTaskExecutionService.RuntimeTaskExecutionService;
+          return yield* service.execute(projectId, {
+            taskId: tasks.taskId,
+            expectedTaskRevision: tasks.receipt.packet.taskRevision,
+            clientRequestId: "operator-approved-implementation",
+          });
+        }),
+      );
+      assert.equal(replay.attemptId, tasks.attemptId);
+      assert.equal(state.launches.length, 1);
+    }),
+  ).pipe(Effect.provide(NodeServices.layer)),
+);
+
+it.effect("rejects a caller-supplied repair key for a passing review", () =>
+  Effect.scoped(
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const dir = yield* fs.makeTempDirectoryScoped();
+      const dbPath = `${dir}/continuation.sqlite`;
+      const state = makeState();
+      const created = yield* setupThroughReview(state, dbPath);
+      assert.equal(state.launches.length, 2);
+
+      const rejected = yield* process(
+        state,
+        dbPath,
+        Effect.gen(function* () {
+          const runtime = yield* ProjectRuntimeService.ProjectRuntimeService;
+          const service = yield* RuntimeTaskExecutionService.RuntimeTaskExecutionService;
+          completeRun(state, created.review.threadId);
+          yield* appendHandoff(created.review, { milestone: "review-pass", result: "pass" });
+          yield* service.reconcileAttempt(projectId, created.review.attemptId);
+          const current = yield* runtime.readTask(projectId, created.repair.taskId);
+          return yield* service
+            .execute(projectId, {
+              taskId: created.repair.taskId,
+              expectedTaskRevision: current.revision,
+              clientRequestId: `cont:v1:p:${created.review.attemptId}`,
+            })
+            .pipe(Effect.flip);
+        }),
+      );
+      assert.equal(rejected._tag, "RuntimeExecutionRejectedError");
+      assert.equal(state.launches.length, 2);
+      const repairs = yield* process(
+        state,
+        dbPath,
+        Effect.gen(function* () {
+          const service = yield* RuntimeTaskExecutionService.RuntimeTaskExecutionService;
+          return yield* service.listAttempts(projectId, { taskId: created.repair.taskId });
+        }),
+      );
+      assert.isEmpty(repairs.attempts);
+    }),
+  ).pipe(Effect.provide(NodeServices.layer)),
+);
+
+it.effect("rejects a caller-supplied repair key after the synthetic budget is exhausted", () =>
+  Effect.scoped(
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const dir = yield* fs.makeTempDirectoryScoped();
+      const dbPath = `${dir}/continuation.sqlite`;
+      const state = makeState();
+      const created = yield* setupThroughReview(state, dbPath);
+      let review = created.review;
+
+      // Two authorized repairs, each followed by a linked review.
+      for (let cycle = 0; cycle < 2; cycle++) {
+        yield* process(
+          state,
+          dbPath,
+          Effect.gen(function* () {
+            const service = yield* RuntimeTaskExecutionService.RuntimeTaskExecutionService;
+            completeRun(state, review.threadId);
+            yield* appendHandoff(review, { milestone: "none", result: "fail" });
+            yield* service.reconcileAttempt(projectId, review.attemptId);
+          }),
+        );
+        const repair = yield* process(
+          state,
+          dbPath,
+          attemptByKey(created.repair.taskId, `cont:v1:p:${review.attemptId}`),
+        );
+        review = yield* process(
+          state,
+          dbPath,
+          Effect.gen(function* () {
+            const service = yield* RuntimeTaskExecutionService.RuntimeTaskExecutionService;
+            completeRun(state, repair.threadId);
+            yield* appendHandoff(repair, { milestone: "none", result: "none" });
+            yield* service.reconcileAttempt(projectId, repair.attemptId);
+            return yield* attemptByKey(created.review.taskId, `cont:v1:r:${repair.attemptId}`);
+          }),
+        );
+      }
+      assert.equal(state.launches.length, 6);
+
+      // Third failure exhausts the budget and blocks once.
+      const source = yield* process(
+        state,
+        dbPath,
+        Effect.gen(function* () {
+          const runtime = yield* ProjectRuntimeService.ProjectRuntimeService;
+          const service = yield* RuntimeTaskExecutionService.RuntimeTaskExecutionService;
+          completeRun(state, review.threadId);
+          yield* appendHandoff(review, { milestone: "none", result: "fail" });
+          yield* service.reconcileAttempt(projectId, review.attemptId);
+          return yield* runtime.readTask(projectId, created.source.taskId);
+        }),
+      );
+      assert.equal(state.launches.length, 6);
+      assert.equal(source.status, "blocked");
+
+      const rejected = yield* process(
+        state,
+        dbPath,
+        Effect.gen(function* () {
+          const runtime = yield* ProjectRuntimeService.ProjectRuntimeService;
+          const service = yield* RuntimeTaskExecutionService.RuntimeTaskExecutionService;
+          const target = yield* runtime.readTask(projectId, created.repair.taskId);
+          return yield* service
+            .execute(projectId, {
+              taskId: created.repair.taskId,
+              expectedTaskRevision: target.revision,
+              clientRequestId: `cont:v1:p:${review.attemptId}`,
+            })
+            .pipe(Effect.flip);
+        }),
+      );
+      assert.equal(rejected._tag, "RuntimeExecutionRejectedError");
+      assert.equal(state.launches.length, 6);
+      const repairs = yield* process(
+        state,
+        dbPath,
+        Effect.gen(function* () {
+          const service = yield* RuntimeTaskExecutionService.RuntimeTaskExecutionService;
+          return yield* service.listAttempts(projectId, { taskId: created.repair.taskId });
+        }),
+      );
+      assert.equal(repairs.attempts.length, 2);
+    }),
+  ).pipe(Effect.provide(NodeServices.layer)),
+);
+
+it.effect("rejects a caller-supplied repair key after the source task is cancelled", () =>
+  Effect.scoped(
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const dir = yield* fs.makeTempDirectoryScoped();
+      const dbPath = `${dir}/continuation.sqlite`;
+      const state = makeState();
+      const created = yield* setupThroughReview(state, dbPath);
+
+      const rejected = yield* process(
+        state,
+        dbPath,
+        Effect.gen(function* () {
+          const runtime = yield* ProjectRuntimeService.ProjectRuntimeService;
+          const service = yield* RuntimeTaskExecutionService.RuntimeTaskExecutionService;
+          const source = yield* runtime.readTask(projectId, created.source.taskId);
+          yield* runtime.updateTask(
+            projectId,
+            {
+              taskId: created.source.taskId,
+              expectedRevision: source.revision,
+              status: "cancelled",
+            },
+            { actor: "user:maintainer" },
+          );
+          completeRun(state, created.review.threadId);
+          yield* appendHandoff(created.review, { milestone: "none", result: "fail" });
+          yield* service.reconcileAttempt(projectId, created.review.attemptId);
+          const target = yield* runtime.readTask(projectId, created.repair.taskId);
+          return yield* service
+            .execute(projectId, {
+              taskId: created.repair.taskId,
+              expectedTaskRevision: target.revision,
+              clientRequestId: `cont:v1:p:${created.review.attemptId}`,
+            })
+            .pipe(Effect.flip);
+        }),
+      );
+      assert.equal(rejected._tag, "RuntimeExecutionRejectedError");
+      assert.equal(state.launches.length, 2);
+    }),
+  ).pipe(Effect.provide(NodeServices.layer)),
+);
+
+it.effect("does not dispatch a review when the source is cancelled during authorization", () =>
+  Effect.scoped(
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const dir = yield* fs.makeTempDirectoryScoped();
+      const dbPath = `${dir}/continuation.sqlite`;
+      const state = makeState();
+      const tasks = yield* process(
+        state,
+        dbPath,
+        Effect.gen(function* () {
+          const service = yield* RuntimeTaskExecutionService.RuntimeTaskExecutionService;
+          const created = yield* seedAndCreateTasks(state);
+          const worker = yield* service.execute(projectId, {
+            taskId: created.source.taskId,
+            expectedTaskRevision: created.source.revision,
+          });
+          yield* appendHandoff(worker, { milestone: "none", result: "none" });
+          return { ...created, worker };
+        }),
+      );
+      completeRun(state, tasks.worker.threadId);
+      state.gate = {
+        taskId: tasks.review.taskId,
+        armed: true,
+        entered: yield* Deferred.make<void>(),
+        release: yield* Deferred.make<void>(),
+      };
+
+      // Two independent service instances over the same SQLite file. The
+      // reconciler is paused between its policy decision and attempt insertion.
+      yield* Effect.all(
+        [
+          process(
+            state,
+            dbPath,
+            Effect.gen(function* () {
+              const service = yield* RuntimeTaskExecutionService.RuntimeTaskExecutionService;
+              yield* service.reconcileAttempt(projectId, tasks.worker.attemptId);
+            }),
+          ),
+          process(
+            state,
+            dbPath,
+            Effect.gen(function* () {
+              const runtime = yield* ProjectRuntimeService.ProjectRuntimeService;
+              yield* Deferred.await(state.gate!.entered);
+              const current = yield* runtime.readTask(projectId, tasks.source.taskId);
+              yield* runtime.updateTask(
+                projectId,
+                {
+                  taskId: tasks.source.taskId,
+                  expectedRevision: current.revision,
+                  status: "cancelled",
+                },
+                { actor: "user:maintainer" },
+              );
+              yield* Deferred.succeed(state.gate!.release, undefined);
+            }),
+          ),
+        ],
+        { concurrency: 2 },
+      );
+
+      assert.equal(state.launches.length, 1);
+      const result = yield* process(
+        state,
+        dbPath,
+        Effect.gen(function* () {
+          const runtime = yield* ProjectRuntimeService.ProjectRuntimeService;
+          const service = yield* RuntimeTaskExecutionService.RuntimeTaskExecutionService;
+          return {
+            source: yield* runtime.readTask(projectId, tasks.source.taskId),
+            reviews: yield* service.listAttempts(projectId, { taskId: tasks.review.taskId }),
+          };
+        }),
+      );
+      assert.equal(result.source.status, "cancelled");
+      assert.isEmpty(result.reviews.attempts);
+    }),
+  ).pipe(Effect.provide(NodeServices.layer)),
+);
+
+it.effect("does not dispatch a review when continuation is removed during authorization", () =>
+  Effect.scoped(
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const dir = yield* fs.makeTempDirectoryScoped();
+      const dbPath = `${dir}/continuation.sqlite`;
+      const state = makeState();
+      const tasks = yield* process(
+        state,
+        dbPath,
+        Effect.gen(function* () {
+          const service = yield* RuntimeTaskExecutionService.RuntimeTaskExecutionService;
+          const created = yield* seedAndCreateTasks(state);
+          const worker = yield* service.execute(projectId, {
+            taskId: created.source.taskId,
+            expectedTaskRevision: created.source.revision,
+          });
+          yield* appendHandoff(worker, { milestone: "none", result: "none" });
+          return { ...created, worker };
+        }),
+      );
+      completeRun(state, tasks.worker.threadId);
+      state.gate = {
+        taskId: tasks.review.taskId,
+        armed: true,
+        entered: yield* Deferred.make<void>(),
+        release: yield* Deferred.make<void>(),
+      };
+
+      yield* Effect.all(
+        [
+          process(
+            state,
+            dbPath,
+            Effect.gen(function* () {
+              const service = yield* RuntimeTaskExecutionService.RuntimeTaskExecutionService;
+              yield* service.reconcileAttempt(projectId, tasks.worker.attemptId);
+            }),
+          ),
+          process(
+            state,
+            dbPath,
+            Effect.gen(function* () {
+              const runtime = yield* ProjectRuntimeService.ProjectRuntimeService;
+              yield* Deferred.await(state.gate!.entered);
+              const current = yield* runtime.readTask(projectId, tasks.source.taskId);
+              yield* runtime.updateTask(
+                projectId,
+                {
+                  taskId: tasks.source.taskId,
+                  expectedRevision: current.revision,
+                  continuation: null,
+                },
+                { actor: "user:maintainer" },
+              );
+              yield* Deferred.succeed(state.gate!.release, undefined);
+            }),
+          ),
+        ],
+        { concurrency: 2 },
+      );
+
+      assert.equal(state.launches.length, 1);
+      const reviews = yield* process(
+        state,
+        dbPath,
+        Effect.gen(function* () {
+          const service = yield* RuntimeTaskExecutionService.RuntimeTaskExecutionService;
+          return yield* service.listAttempts(projectId, { taskId: tasks.review.taskId });
+        }),
+      );
+      assert.isEmpty(reviews.attempts);
+    }),
+  ).pipe(Effect.provide(NodeServices.layer)),
+);
+
+it.effect("does not replay a pending review after continuation is withdrawn on restart", () =>
+  Effect.scoped(
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const dir = yield* fs.makeTempDirectoryScoped();
+      const dbPath = `${dir}/continuation.sqlite`;
+      const state = makeState();
+      const created = yield* setupThroughReview(state, dbPath);
+      assert.equal(state.launches.length, 2);
+
+      // Crash after the receipt insert and before the external launch.
+      yield* process(
+        state,
+        dbPath,
+        Effect.gen(function* () {
+          const sql = yield* SqlClient.SqlClient;
+          yield* sql`UPDATE project_runtime_execution_attempts
+            SET status = 'pending', run_id = NULL,
+              payload_json = json_set(payload_json, '$.status', 'pending', '$.runId', NULL)
+            WHERE attempt_id = ${created.review.attemptId}`;
+        }),
+      );
+      state.runs.delete(created.review.threadId);
+
+      const replayed = yield* process(
+        state,
+        dbPath,
+        Effect.gen(function* () {
+          const runtime = yield* ProjectRuntimeService.ProjectRuntimeService;
+          const service = yield* RuntimeTaskExecutionService.RuntimeTaskExecutionService;
+          const current = yield* runtime.readTask(projectId, created.source.taskId);
+          yield* runtime.updateTask(
+            projectId,
+            {
+              taskId: created.source.taskId,
+              expectedRevision: current.revision,
+              continuation: null,
+            },
+            { actor: "user:maintainer" },
+          );
+          yield* service.reconcileActiveAttempts();
+          return yield* service.readAttempt(projectId, created.review.attemptId);
+        }),
+      );
+      assert.equal(replayed.status, "cancelled");
+      assert.match(replayed.failure ?? "", /authorization/i);
+      assert.equal(state.launches.length, 2);
+    }),
+  ).pipe(Effect.provide(NodeServices.layer)),
+);
+
+it.effect("does not replay a pending review after the source is cancelled on restart", () =>
+  Effect.scoped(
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const dir = yield* fs.makeTempDirectoryScoped();
+      const dbPath = `${dir}/continuation.sqlite`;
+      const state = makeState();
+      const created = yield* setupThroughReview(state, dbPath);
+      yield* process(
+        state,
+        dbPath,
+        Effect.gen(function* () {
+          const sql = yield* SqlClient.SqlClient;
+          yield* sql`UPDATE project_runtime_execution_attempts
+            SET status = 'pending', run_id = NULL,
+              payload_json = json_set(payload_json, '$.status', 'pending', '$.runId', NULL)
+            WHERE attempt_id = ${created.review.attemptId}`;
+        }),
+      );
+      state.runs.delete(created.review.threadId);
+
+      const replayed = yield* process(
+        state,
+        dbPath,
+        Effect.gen(function* () {
+          const runtime = yield* ProjectRuntimeService.ProjectRuntimeService;
+          const service = yield* RuntimeTaskExecutionService.RuntimeTaskExecutionService;
+          const current = yield* runtime.readTask(projectId, created.source.taskId);
+          yield* runtime.updateTask(
+            projectId,
+            {
+              taskId: created.source.taskId,
+              expectedRevision: current.revision,
+              status: "cancelled",
+            },
+            { actor: "user:maintainer" },
+          );
+          yield* service.reconcileActiveAttempts();
+          return yield* service.readAttempt(projectId, created.review.attemptId);
+        }),
+      );
+      assert.equal(replayed.status, "cancelled");
+      assert.equal(state.launches.length, 2);
+    }),
+  ).pipe(Effect.provide(NodeServices.layer)),
+);
+
+it.effect("keeps a pending replay ambiguous when a launched thread may already exist", () =>
+  Effect.scoped(
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const dir = yield* fs.makeTempDirectoryScoped();
+      const dbPath = `${dir}/continuation.sqlite`;
+      const state = makeState();
+      const created = yield* setupThroughReview(state, dbPath);
+      assert.equal(state.launches.length, 2);
+
+      yield* process(
+        state,
+        dbPath,
+        Effect.gen(function* () {
+          const sql = yield* SqlClient.SqlClient;
+          yield* sql`UPDATE project_runtime_execution_attempts
+            SET status = 'pending', run_id = NULL,
+              payload_json = json_set(payload_json, '$.status', 'pending', '$.runId', NULL)
+            WHERE attempt_id = ${created.review.attemptId}`;
+        }),
+      );
+
+      const replayed = yield* process(
+        state,
+        dbPath,
+        Effect.gen(function* () {
+          const runtime = yield* ProjectRuntimeService.ProjectRuntimeService;
+          const service = yield* RuntimeTaskExecutionService.RuntimeTaskExecutionService;
+          const current = yield* runtime.readTask(projectId, created.source.taskId);
+          yield* runtime.updateTask(
+            projectId,
+            {
+              taskId: created.source.taskId,
+              expectedRevision: current.revision,
+              continuation: null,
+            },
+            { actor: "user:maintainer" },
+          );
+          yield* service.reconcileActiveAttempts();
+          return yield* service.readAttempt(projectId, created.review.attemptId);
+        }),
+      );
+      assert.equal(replayed.status, "reconcile_required");
+      assert.match(replayed.failure ?? "", /authorization/i);
+      assert.equal(state.launches.length, 2);
+    }),
+  ).pipe(Effect.provide(NodeServices.layer)),
+);
+
+it.effect("records one durable blocked outcome for a terminal failed review", () =>
+  Effect.scoped(
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const dir = yield* fs.makeTempDirectoryScoped();
+      const dbPath = `${dir}/continuation.sqlite`;
+      const state = makeState();
+      const created = yield* setupThroughReview(state, dbPath);
+
+      const stopped = yield* process(
+        state,
+        dbPath,
+        Effect.gen(function* () {
+          const runtime = yield* ProjectRuntimeService.ProjectRuntimeService;
+          const service = yield* RuntimeTaskExecutionService.RuntimeTaskExecutionService;
+          yield* forceAttemptStatus(created.review.attemptId, "failed");
+          state.runs.delete(created.review.threadId);
+          yield* service.reconcileActiveAttempts();
+          return yield* runtime.readTask(projectId, created.source.taskId);
+        }),
+      );
+      assert.equal(stopped.status, "blocked");
+      assert.equal(stopped.blocker?.classification, "review-required");
+      assert.match(stopped.blocker?.detail ?? "", /review_not_completed/);
+      assert.notInclude(stopped.verification.milestone, "verified");
+
+      // Repeated event replay and a restart keep the one recorded escalation.
+      const repeated = yield* process(
+        state,
+        dbPath,
+        Effect.gen(function* () {
+          const runtime = yield* ProjectRuntimeService.ProjectRuntimeService;
+          const service = yield* RuntimeTaskExecutionService.RuntimeTaskExecutionService;
+          yield* service.reconcileActiveAttempts();
+          yield* service.reconcileAttempt(projectId, created.review.attemptId);
+          return yield* runtime.readTask(projectId, created.source.taskId);
+        }),
+      );
+      assert.equal(repeated.revision, stopped.revision);
+      assert.equal(repeated.blocker?.detail, stopped.blocker?.detail);
+      assert.equal(repeated.blocker?.createdAt, stopped.blocker?.createdAt);
+      assert.equal(state.launches.length, 2);
+    }),
+  ).pipe(Effect.provide(NodeServices.layer)),
+);
+
+it.effect("records one blocked outcome for contradictory review evidence without repair", () =>
+  Effect.scoped(
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const dir = yield* fs.makeTempDirectoryScoped();
+      const dbPath = `${dir}/continuation.sqlite`;
+      const state = makeState();
+      const created = yield* setupThroughReview(state, dbPath);
+
+      const stopped = yield* process(
+        state,
+        dbPath,
+        Effect.gen(function* () {
+          const runtime = yield* ProjectRuntimeService.ProjectRuntimeService;
+          const service = yield* RuntimeTaskExecutionService.RuntimeTaskExecutionService;
+          const task = yield* runtime.readTask(projectId, created.review.taskId);
+          completeRun(state, created.review.threadId);
+          yield* runtime.appendHandoff(
+            projectId,
+            {
+              taskId: created.review.taskId,
+              expectedTaskRevision: task.revision,
+              checkpoint: `synthetic-${created.review.attemptId}`,
+              summary: "Contradictory synthetic review",
+              filesChanged: [],
+              verification: {
+                milestone: "review-pass",
+                evidence: [
+                  {
+                    evidenceId: "synthetic-pass",
+                    result: "pass",
+                    summary: "Synthetic pass",
+                    recordedAt: timestamp,
+                  },
+                  {
+                    evidenceId: "synthetic-fail",
+                    result: "fail",
+                    summary: "Synthetic fail",
+                    recordedAt: timestamp,
+                  },
+                ],
+              },
+            },
+            {
+              actor: `thread:${created.review.threadId}`,
+              threadId: ThreadId.make(created.review.threadId),
+              providerInstanceId: created.review.modelSelection.instanceId,
+              model: created.review.modelSelection.model,
+            },
+          );
+          yield* service.reconcileAttempt(projectId, created.review.attemptId);
+          return yield* runtime.readTask(projectId, created.source.taskId);
+        }),
+      );
+      assert.equal(stopped.status, "blocked");
+      assert.match(stopped.blocker?.detail ?? "", /contradictory_review_evidence/);
+      assert.equal(state.launches.length, 2);
+      const repairs = yield* process(
+        state,
+        dbPath,
+        Effect.gen(function* () {
+          const service = yield* RuntimeTaskExecutionService.RuntimeTaskExecutionService;
+          return yield* service.listAttempts(projectId, { taskId: created.repair.taskId });
+        }),
+      );
+      assert.isEmpty(repairs.attempts);
+    }),
+  ).pipe(Effect.provide(NodeServices.layer)),
+);
+
+it.effect("keeps ambiguous review execution observable instead of blocked", () =>
+  Effect.scoped(
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const dir = yield* fs.makeTempDirectoryScoped();
+      const dbPath = `${dir}/continuation.sqlite`;
+      const state = makeState();
+      const created = yield* setupThroughReview(state, dbPath);
+
+      const result = yield* process(
+        state,
+        dbPath,
+        Effect.gen(function* () {
+          const runtime = yield* ProjectRuntimeService.ProjectRuntimeService;
+          const service = yield* RuntimeTaskExecutionService.RuntimeTaskExecutionService;
+          state.runs.set(created.review.threadId, []);
+          const first = yield* service.reconcileAttempt(projectId, created.review.attemptId);
+          yield* service.reconcileActiveAttempts();
+          return {
+            first: first.status,
+            source: yield* runtime.readTask(projectId, created.source.taskId),
+          };
+        }),
+      );
+      assert.equal(result.first, "reconcile_required");
+      assert.equal(result.source.status, "ready");
+      assert.equal(result.source.blocker, null);
+      assert.equal(state.launches.length, 2);
+    }),
+  ).pipe(Effect.provide(NodeServices.layer)),
+);

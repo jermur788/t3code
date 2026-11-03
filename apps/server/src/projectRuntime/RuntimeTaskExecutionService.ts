@@ -8,6 +8,8 @@ import {
   ProjectRuntimeDisabledError,
   ProjectRuntimeNotFoundError,
   ProjectRuntimeTaskId,
+  type ProjectRuntimeContinuationPolicy,
+  type ProjectRuntimeHandoff,
   type ProjectRuntimeTask,
   type OrchestrationV2Run,
   RuntimeExecutionAttempt,
@@ -111,6 +113,19 @@ type AttemptRow = {
   readonly payload_json: string;
 };
 
+/** A currently valid policy decision, re-derived at the insertion boundary. */
+interface ContinuationAuthorization {
+  readonly kind: "r" | "p";
+  readonly sourceTask: ProjectRuntimeTask;
+  readonly sourceAttempt: RuntimeExecutionAttempt;
+  readonly sourceHandoff: ProjectRuntimeHandoff;
+}
+
+interface ContinuationSource {
+  readonly sourceTask: ProjectRuntimeTask;
+  readonly policy: ProjectRuntimeContinuationPolicy;
+}
+
 const EXECUTABLE_TASK_STATUSES = new Set<ProjectRuntimeTask["status"]>([
   "planned",
   "ready",
@@ -132,6 +147,20 @@ const isActiveAttempt = (status: AttemptStatus) => ACTIVE_ATTEMPT_STATUSES.has(s
 
 const now = DateTime.now.pipe(Effect.map(DateTime.formatIso));
 const asAttemptId = (value: string) => value as RuntimeExecutionAttemptId;
+
+/**
+ * `cont:v1:` keys are minted only by the continuation evaluator. The prefix is
+ * intentionally not a capability: public execution rejects it, and server
+ * dispatch still re-evaluates the current policy before inserting a receipt.
+ */
+const parseContinuationRequestKey = (
+  key: string,
+): { readonly kind: "r" | "p"; readonly attemptId: RuntimeExecutionAttemptId } | null => {
+  const match = /^cont:v1:([rp]):(.+)$/.exec(key);
+  return match === null ? null : { kind: match[1] as "r" | "p", attemptId: asAttemptId(match[2]!) };
+};
+
+const isContinuationRequestKey = (key: string) => parseContinuationRequestKey(key) !== null;
 
 function toSummary(attempt: RuntimeExecutionAttempt): RuntimeExecutionAttemptSummary {
   const { receipt: _receipt, ...rest } = attempt;
@@ -284,6 +313,174 @@ const make = Effect.gen(function* () {
         AND status IN ('pending', 'launched', 'cancelling', 'reconcile_required')
       ORDER BY created_at DESC, attempt_id DESC LIMIT 1`;
     return rows[0] === undefined ? null : yield* decodeRow(rows[0]);
+  });
+
+  const requestKeyForAttempt = Effect.fn("RuntimeTaskExecutionService.requestKeyForAttempt")(
+    function* (projectId: ProjectId, attemptId: RuntimeExecutionAttemptId) {
+      const rows = yield* sql<{ readonly request_key: string | null }>`SELECT request_key
+        FROM project_runtime_execution_attempts
+        WHERE project_id = ${projectId} AND attempt_id = ${attemptId}`;
+      return rows[0]?.request_key ?? null;
+    },
+  );
+
+  const linkedHandoffFor = Effect.fn("RuntimeTaskExecutionService.linkedHandoffFor")(function* (
+    projectId: ProjectId,
+    attempt: RuntimeExecutionAttempt,
+  ) {
+    if (attempt.handoffId === undefined || attempt.handoffId === null) return null;
+    return yield* runtime
+      .readHandoff(projectId, attempt.handoffId)
+      .pipe(Effect.catchTags({ ProjectRuntimeNotFoundError: () => Effect.succeed(null) }));
+  });
+
+  const repairCyclesFor = Effect.fn("RuntimeTaskExecutionService.repairCyclesFor")(function* (
+    projectId: ProjectId,
+    repairTaskId: ProjectRuntimeTaskId,
+    excludeAttemptId?: RuntimeExecutionAttemptId,
+  ) {
+    const rows = yield* sql<{ readonly count: number }>`SELECT count(*) AS count
+      FROM project_runtime_execution_attempts
+      WHERE project_id = ${projectId} AND task_id = ${repairTaskId}
+        AND request_key LIKE 'cont:v1:p:%'
+        ${excludeAttemptId === undefined ? sql`` : sql`AND attempt_id <> ${excludeAttemptId}`}`;
+    return rows[0]?.count ?? 0;
+  });
+
+  const readContinuationSource = Effect.fn("RuntimeTaskExecutionService.readContinuationSource")(
+    function* (projectId: ProjectId, sourceTaskId: ProjectRuntimeTaskId) {
+      const option = yield* runtime.readTask(projectId, sourceTaskId).pipe(Effect.option);
+      if (Option.isNone(option)) return null;
+      const sourceTask = option.value;
+      const policy = sourceTask.continuation;
+      if (policy?.mode !== "synthetic") return null;
+      if (!["planned", "ready", "active", "review"].includes(sourceTask.status)) return null;
+      return { sourceTask, policy } satisfies ContinuationSource;
+    },
+  );
+
+  /**
+   * Re-derives a review decision from current durable state. A request key
+   * prefix is never sufficient: the source status/policy, the linked terminal
+   * handoff and reviewer independence must still produce exactly this key.
+   */
+  const authorizeReviewContinuation = Effect.fn(
+    "RuntimeTaskExecutionService.authorizeReviewContinuation",
+  )(function* (input: {
+    readonly projectId: ProjectId;
+    readonly sourceTaskId: ProjectRuntimeTaskId;
+    readonly targetTaskId: ProjectRuntimeTaskId;
+    readonly requestKey: string;
+  }) {
+    const parsed = parseContinuationRequestKey(input.requestKey);
+    if (parsed?.kind !== "r") return null;
+    const source = yield* readContinuationSource(input.projectId, input.sourceTaskId);
+    if (source === null) return null;
+    const { sourceTask, policy } = source;
+    if (policy.reviewTaskId !== input.targetTaskId) return null;
+
+    const linkedOption = yield* readAttemptRow(input.projectId, parsed.attemptId).pipe(
+      Effect.option,
+    );
+    if (Option.isNone(linkedOption)) return null;
+    const linked = linkedOption.value;
+    if (linked.taskId !== input.sourceTaskId && linked.taskId !== policy.repairTaskId) return null;
+    const linkedHandoff = yield* linkedHandoffFor(input.projectId, linked);
+    if (linkedHandoff === null || !handoffMatchesAttempt(linked, linkedHandoff)) return null;
+    const cursorTaskOption = yield* runtime
+      .readTask(input.projectId, linked.taskId)
+      .pipe(Effect.option);
+    if (Option.isNone(cursorTaskOption)) return null;
+    const decision = evaluateContinuation({
+      stage: "after_worker",
+      sourceTask,
+      cursorTask: cursorTaskOption.value,
+      cursorAttempt: linked,
+      cursorHandoff: linkedHandoff,
+      repairCyclesSpent: 0,
+    });
+    if (decision.action !== "review" || decision.requestKey !== input.requestKey) return null;
+    return {
+      kind: "r" as const,
+      sourceTask,
+      sourceAttempt: linked,
+      sourceHandoff: linkedHandoff,
+    };
+  });
+
+  /**
+   * Re-derives a repair decision, including the review's own authorization.
+   * The repair budget is the count of persisted repair receipts for this
+   * policy, so replay and restart cannot reset it.
+   */
+  const authorizeContinuationDispatch = Effect.fn(
+    "RuntimeTaskExecutionService.authorizeContinuationDispatch",
+  )(function* (input: {
+    readonly projectId: ProjectId;
+    readonly sourceTaskId: ProjectRuntimeTaskId;
+    readonly targetTaskId: ProjectRuntimeTaskId;
+    readonly requestKey: string;
+    readonly excludeAttemptId?: RuntimeExecutionAttemptId;
+  }) {
+    const parsed = parseContinuationRequestKey(input.requestKey);
+    if (parsed === null) return null;
+    if (parsed.kind === "r") return yield* authorizeReviewContinuation(input);
+
+    const source = yield* readContinuationSource(input.projectId, input.sourceTaskId);
+    if (source === null) return null;
+    const { sourceTask, policy } = source;
+    const repairTaskId = policy.repairTaskId;
+    if (repairTaskId === undefined || repairTaskId !== input.targetTaskId) return null;
+
+    const linkedOption = yield* readAttemptRow(input.projectId, parsed.attemptId).pipe(
+      Effect.option,
+    );
+    if (Option.isNone(linkedOption)) return null;
+    const linked = linkedOption.value;
+    if (linked.taskId !== policy.reviewTaskId) return null;
+    const linkedHandoff = yield* linkedHandoffFor(input.projectId, linked);
+    if (linkedHandoff === null) return null;
+
+    const reviewKey = yield* requestKeyForAttempt(input.projectId, linked.attemptId);
+    if (reviewKey === null) return null;
+    // A repair cannot bootstrap from a standalone or hand-written review row.
+    const reviewAuthorization = yield* authorizeReviewContinuation({
+      projectId: input.projectId,
+      sourceTaskId: input.sourceTaskId,
+      targetTaskId: policy.reviewTaskId,
+      requestKey: reviewKey,
+    });
+    if (reviewAuthorization === null) return null;
+    const cursor = reviewAuthorization.sourceAttempt;
+    if (cursor.taskId !== input.sourceTaskId && cursor.taskId !== repairTaskId) return null;
+    const cursorTaskOption = yield* runtime
+      .readTask(input.projectId, cursor.taskId)
+      .pipe(Effect.option);
+    if (Option.isNone(cursorTaskOption)) return null;
+    const reviewTaskOption = yield* runtime
+      .readTask(input.projectId, policy.reviewTaskId)
+      .pipe(Effect.option);
+    if (Option.isNone(reviewTaskOption)) return null;
+    const cycles = yield* repairCyclesFor(input.projectId, repairTaskId, input.excludeAttemptId);
+    const decision = evaluateContinuation({
+      stage: "after_review",
+      sourceTask,
+      cursorTask: cursorTaskOption.value,
+      cursorAttempt: cursor,
+      cursorHandoff: reviewAuthorization.sourceHandoff,
+      repairCyclesSpent: cycles,
+      reviewTask: reviewTaskOption.value,
+      reviewAttempt: linked,
+      reviewHandoff: linkedHandoff,
+    });
+    if (decision.action !== "repair_or_retry" || decision.requestKey !== input.requestKey)
+      return null;
+    return {
+      kind: "p" as const,
+      sourceTask,
+      sourceAttempt: linked,
+      sourceHandoff: linkedHandoff,
+    };
   });
 
   const updateAttempt = Effect.fn("RuntimeTaskExecutionService.updateAttempt")(function* (input: {
@@ -450,6 +647,42 @@ const make = Effect.gen(function* () {
   const launchAttempt = Effect.fn("RuntimeTaskExecutionService.launchAttempt")(function* (
     attempt: RuntimeExecutionAttempt,
   ) {
+    const requestKey = yield* requestKeyForAttempt(attempt.projectId, attempt.attemptId);
+    if (requestKey !== null && isContinuationRequestKey(requestKey)) {
+      const sourceIds = yield* continuationSourceIds(attempt.projectId, attempt.taskId);
+      const authorization =
+        sourceIds.length !== 1
+          ? null
+          : yield* authorizeContinuationDispatch({
+              projectId: attempt.projectId,
+              sourceTaskId: sourceIds[0]!,
+              targetTaskId: attempt.taskId,
+              requestKey,
+              excludeAttemptId: attempt.attemptId,
+            });
+      // The receipt insert is the dispatch boundary; this closes the gap
+      // between that insert and the external launch (including pending replay
+      // after restart). A launched thread is reconciled, never discarded.
+      if (authorization === null) {
+        const shell = yield* threads.getThreadShell(attempt.threadId).pipe(
+          Effect.asSome,
+          Effect.orElseSucceed(() => Option.none()),
+        );
+        const threadExists = Option.isSome(shell) && shell.value !== null;
+        yield* Effect.logWarning("runtime-execution.continuation-revoked", {
+          attemptId: attempt.attemptId,
+          threadExists,
+        });
+        return yield* updateAttempt({
+          attempt,
+          status: threadExists ? "reconcile_required" : "cancelled",
+          runId: attempt.runId,
+          failure: threadExists
+            ? "Continuation authorization was withdrawn before launch. Reconcile this attempt; no new turn was started."
+            : "Continuation authorization was withdrawn before launch; no work was started.",
+        });
+      }
+    }
     return yield* runLaunch(attempt).pipe(
       Effect.catch((cause) =>
         Effect.gen(function* () {
@@ -665,12 +898,6 @@ const make = Effect.gen(function* () {
       if (sourceTask.revision !== cursor.receipt.packet.taskRevision + 1) return;
       let cursorTask: ProjectRuntimeTask = sourceTask;
       let cycles = 0;
-      const fetchLinkedHandoff = (attempt: RuntimeExecutionAttempt) =>
-        attempt.handoffId === undefined || attempt.handoffId === null
-          ? Effect.succeed(null)
-          : runtime
-              .readHandoff(projectId, attempt.handoffId)
-              .pipe(Effect.catchTags({ ProjectRuntimeNotFoundError: () => Effect.succeed(null) }));
 
       // No external question is emitted: the single durable blocked task is the
       // operator-facing escalation receipt for this synthetic spike.
@@ -689,7 +916,7 @@ const make = Effect.gen(function* () {
             status: "blocked",
             blocker: {
               classification: "review-required",
-              summary: "Continuation requires an operator decision",
+              summary: "Continuation stopped for operator review",
               detail: `Synthetic continuation stopped: ${reason}. Source attempt: ${sourceAttemptId}. Evidence handoff: ${evidenceHandoffId ?? "none"}.`,
             },
             nextAction: "Review the evidence and explicitly authorize any further work.",
@@ -732,12 +959,15 @@ const make = Effect.gen(function* () {
               return;
             }
           }
-          // execute handles the persisted request-key/active-attempt CAS and
-          // launch receipts. Never call ThreadLaunchService directly here.
-          yield* execute(projectId, {
-            taskId: targetTaskId,
-            expectedTaskRevision: target.revision,
-            clientRequestId: requestKey,
+          // The internal dispatcher re-derives the policy decision and inserts
+          // the receipt with a source-revision CAS. Never call ThreadLaunchService
+          // directly here, and never accept a caller-minted continuation key.
+          yield* dispatchContinuation({
+            projectId,
+            sourceTaskId,
+            targetTaskId,
+            requestKey,
+            expectedTargetRevision: target.revision,
           });
         },
       );
@@ -746,7 +976,7 @@ const make = Effect.gen(function* () {
       // under a request key consumes the same slot regardless of provider,
       // restart, event replay, or rephrased reviewer complaint.
       for (let step = 0; step <= policy.maxRepairCycles; step++) {
-        const cursorHandoff = yield* fetchLinkedHandoff(cursor);
+        const cursorHandoff = yield* linkedHandoffFor(projectId, cursor);
         const workerDecision = evaluateContinuation({
           stage: "after_worker",
           sourceTask,
@@ -756,7 +986,7 @@ const make = Effect.gen(function* () {
           repairCyclesSpent: cycles,
         });
         if (workerDecision.action !== "review" || workerDecision.requestKey === null) {
-          if (workerDecision.action === "ask_user") {
+          if (workerDecision.action === "ask_user" || workerDecision.action === "blocked") {
             yield* holdForUser(workerDecision.reason, cursor.attemptId, cursor.handoffId ?? null);
           }
           return;
@@ -774,7 +1004,7 @@ const make = Effect.gen(function* () {
           return;
         }
         if (!TERMINAL_ATTEMPT_STATUSES.has(review.status)) return;
-        const reviewHandoff = yield* fetchLinkedHandoff(review);
+        const reviewHandoff = yield* linkedHandoffFor(projectId, review);
         const reviewDecision = evaluateContinuation({
           stage: "after_review",
           sourceTask,
@@ -786,7 +1016,7 @@ const make = Effect.gen(function* () {
           reviewAttempt: review,
           reviewHandoff,
         });
-        if (reviewDecision.action === "ask_user") {
+        if (reviewDecision.action === "ask_user" || reviewDecision.action === "blocked") {
           yield* holdForUser(reviewDecision.reason, review.attemptId, review.handoffId ?? null);
           return;
         }
@@ -999,13 +1229,34 @@ const make = Effect.gen(function* () {
     );
   });
 
-  const execute: RuntimeTaskExecutionService["Service"]["execute"] = Effect.fn(
-    "RuntimeTaskExecutionService.execute",
-  )(function* (projectId, input) {
+  const runExecute = Effect.fn("RuntimeTaskExecutionService.runExecute")(function* (
+    projectId: ProjectId,
+    input: {
+      readonly taskId: ProjectRuntimeTaskId;
+      readonly expectedTaskRevision: number;
+      readonly clientRequestId?: string;
+    },
+    continuation: ContinuationAuthorization | null,
+  ) {
     return yield* lane.withPermits(1)(
       Effect.gen(function* () {
         const status = yield* runtime.getStatus(projectId);
         if (!status.enabled) return yield* new ProjectRuntimeDisabledError({ projectId });
+
+        // Defense in depth for the public entry point: a key prefix is a label,
+        // never a capability. Only the internal dispatcher may present one.
+        if (
+          continuation === null &&
+          input.clientRequestId !== undefined &&
+          isContinuationRequestKey(input.clientRequestId)
+        ) {
+          return yield* rejected(
+            projectId,
+            input.taskId,
+            "task_not_executable",
+            "Continuation request keys are reserved for server-issued continuation dispatch.",
+          );
+        }
 
         if (input.clientRequestId !== undefined) {
           const existing = yield* readByRequestKey(projectId, input.taskId, input.clientRequestId);
@@ -1050,64 +1301,26 @@ const make = Effect.gen(function* () {
         const timestamp = yield* now;
         const attemptId = yield* newAttemptId;
         const threadId = yield* ids.allocate.thread({ projectId });
-        let continuationOrigin: RuntimeTaskContinuationOrigin | undefined;
-        const continuationMatch = /^cont:v1:([rp]):(.+)$/.exec(input.clientRequestId ?? "");
-        if (continuationMatch !== null) {
-          const kind = continuationMatch[1]!;
-          const source = yield* readAttemptRow(projectId, asAttemptId(continuationMatch[2]!));
-          const sourceHandoff =
-            source.handoffId == null
-              ? null
-              : yield* runtime
-                  .readHandoff(projectId, source.handoffId)
-                  .pipe(
-                    Effect.catchTags({ ProjectRuntimeNotFoundError: () => Effect.succeed(null) }),
-                  );
-          const roots = yield* sql<{ readonly task_id: string }>`SELECT task_id
-            FROM project_runtime_tasks WHERE project_id = ${projectId}
-              AND json_extract(payload_json, '$.continuation.mode') = 'synthetic'
-              AND (
-                (${kind} = 'r' AND json_extract(payload_json, '$.continuation.reviewTaskId') = ${task.taskId}
-                  AND (task_id = ${source.taskId}
-                    OR json_extract(payload_json, '$.continuation.repairTaskId') = ${source.taskId}))
-                OR
-                (${kind} = 'p' AND json_extract(payload_json, '$.continuation.repairTaskId') = ${task.taskId}
-                  AND json_extract(payload_json, '$.continuation.reviewTaskId') = ${source.taskId})
-              )`;
-          if (
-            roots.length !== 1 ||
-            source.status !== "completed" ||
-            !handoffMatchesAttempt(source, sourceHandoff)
-          ) {
-            return yield* rejected(
-              projectId,
-              task.taskId,
-              "task_not_executable",
-              "The continuation source is not an authorized, reconciled completion.",
-            );
-          }
-          if (kind === "r") {
-            const rootTask = yield* runtime.readTask(
-              projectId,
-              ProjectRuntimeTaskId.make(roots[0]!.task_id),
-            );
-            if (
-              rootTask.owner === task.owner ||
-              source.modelSelection.instanceId === resolved.launchPlan.modelSelection.instanceId
-            ) {
-              return yield* rejected(
-                projectId,
-                task.taskId,
-                "task_not_executable",
-                "The resolved reviewer is not independent of the source worker.",
-              );
-            }
-          }
-          continuationOrigin = {
-            sourceTaskId: source.taskId,
-            sourceAttemptId: source.attemptId,
-            sourceHandoffId: sourceHandoff.handoffId,
-          };
+        const continuationOrigin: RuntimeTaskContinuationOrigin | undefined =
+          continuation === null
+            ? undefined
+            : {
+                sourceTaskId: continuation.sourceAttempt.taskId,
+                sourceAttemptId: continuation.sourceAttempt.attemptId,
+                sourceHandoffId: continuation.sourceHandoff.handoffId,
+              };
+        if (
+          continuation?.kind === "r" &&
+          (continuation.sourceTask.owner === task.owner ||
+            continuation.sourceAttempt.modelSelection.instanceId ===
+              resolved.launchPlan.modelSelection.instanceId)
+        ) {
+          return yield* rejected(
+            projectId,
+            task.taskId,
+            "task_not_executable",
+            "The resolved reviewer is not independent of the source worker.",
+          );
         }
         const packetText = buildRuntimeTaskPacket(task, handoff, continuationOrigin);
         const receipt: RuntimeExecutionRoutingReceipt = {
@@ -1149,6 +1362,18 @@ const make = Effect.gen(function* () {
               WHERE project_id = ${projectId} AND task_id = ${task.taskId}
                 AND revision = ${input.expectedTaskRevision}
             )
+            ${
+              continuation === null
+                ? sql``
+                : sql`AND EXISTS (
+                    SELECT 1 FROM project_runtime_tasks
+                    WHERE project_id = ${projectId}
+                      AND task_id = ${continuation.sourceTask.taskId}
+                      AND revision = ${continuation.sourceTask.revision}
+                      AND status IN ('planned', 'ready', 'active', 'review')
+                      AND json_extract(payload_json, '$.continuation.mode') = 'synthetic'
+                  )`
+            }
             ON CONFLICT DO NOTHING
             RETURNING attempt_id`;
         if (inserted.length === 0) {
@@ -1159,6 +1384,14 @@ const make = Effect.gen(function* () {
           const activeAfterConflict = yield* readActive(projectId, task.taskId);
           if (existing !== null) return existing;
           if (activeAfterConflict !== null) return activeAfterConflict;
+          if (continuation !== null) {
+            return yield* rejected(
+              projectId,
+              task.taskId,
+              "task_not_executable",
+              "Continuation authorization changed before dispatch.",
+            );
+          }
           const current = yield* runtime.getStatus(projectId);
           if (!current.enabled) return yield* new ProjectRuntimeDisabledError({ projectId });
           const [row] = yield* sql<{ readonly revision: number }>`SELECT revision
@@ -1182,6 +1415,46 @@ const make = Effect.gen(function* () {
       }),
     );
   });
+
+  const execute: RuntimeTaskExecutionService["Service"]["execute"] = Effect.fn(
+    "RuntimeTaskExecutionService.execute",
+  )(function* (projectId, input) {
+    return yield* runExecute(projectId, input, null);
+  });
+
+  const dispatchContinuation = Effect.fn("RuntimeTaskExecutionService.dispatchContinuation")(
+    function* (input: {
+      readonly projectId: ProjectId;
+      readonly sourceTaskId: ProjectRuntimeTaskId;
+      readonly targetTaskId: ProjectRuntimeTaskId;
+      readonly requestKey: string;
+      readonly expectedTargetRevision: number;
+    }) {
+      const authorization = yield* authorizeContinuationDispatch({
+        projectId: input.projectId,
+        sourceTaskId: input.sourceTaskId,
+        targetTaskId: input.targetTaskId,
+        requestKey: input.requestKey,
+      });
+      if (authorization === null) {
+        yield* Effect.logWarning("runtime-execution.continuation-stale-decision", {
+          projectId: input.projectId,
+          sourceTaskId: input.sourceTaskId,
+          targetTaskId: input.targetTaskId,
+        });
+        return null;
+      }
+      return yield* runExecute(
+        input.projectId,
+        {
+          taskId: input.targetTaskId,
+          expectedTaskRevision: input.expectedTargetRevision,
+          clientRequestId: input.requestKey,
+        },
+        authorization,
+      );
+    },
+  );
 
   const listAttempts: RuntimeTaskExecutionService["Service"]["listAttempts"] = Effect.fn(
     "RuntimeTaskExecutionService.listAttempts",
