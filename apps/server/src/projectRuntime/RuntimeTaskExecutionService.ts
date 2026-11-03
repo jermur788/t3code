@@ -654,7 +654,7 @@ const make = Effect.gen(function* () {
       // choice is made when two root attempts share the same recorded instant.
       if (roots.length === 0 || (roots.length === 2 &&
           roots[0]?.created_at === roots[1]?.created_at)) return;
-      let cursor = yield* decodeRow(roots[0]!);
+      let cursor = yield* lane.withPermits(1)(reconcileAttemptRow(yield* decodeRow(roots[0]!)));
       let cursorTask: ProjectRuntimeTask = sourceTask;
       let cycles = 0;
       const fetchLinkedHandoff = (attempt: RuntimeExecutionAttempt) =>
@@ -723,8 +723,12 @@ const make = Effect.gen(function* () {
         }
         const reviewTask = yield* runtime.readTask(projectId, policy.reviewTaskId);
         const reviewKey = workerDecision.requestKey;
-        const review = yield* readByRequestKey(projectId, policy.reviewTaskId, reviewKey);
+        const savedReview = yield* readByRequestKey(projectId, policy.reviewTaskId, reviewKey);
+        const review = savedReview === null
+          ? null
+          : yield* lane.withPermits(1)(reconcileAttemptRow(savedReview));
         if (review === null) {
+          if (cursorTask.revision !== cursor.receipt.packet.taskRevision + 1) return;
           yield* dispatchAuthorized(policy.reviewTaskId, reviewKey, cursor, true);
           return;
         }
@@ -754,12 +758,14 @@ const make = Effect.gen(function* () {
           reviewDecision.requestKey,
         );
         if (repair === null) {
+          if (reviewTask.revision !== review.receipt.packet.taskRevision + 1) return;
           yield* dispatchAuthorized(policy.repairTaskId, reviewDecision.requestKey, review, false);
           return;
         }
         cycles += 1;
-        if (!TERMINAL_ATTEMPT_STATUSES.has(repair.status)) return;
-        cursor = repair;
+        const reconciledRepair = yield* lane.withPermits(1)(reconcileAttemptRow(repair));
+        if (!TERMINAL_ATTEMPT_STATUSES.has(reconciledRepair.status)) return;
+        cursor = reconciledRepair;
         cursorTask = yield* runtime.readTask(projectId, policy.repairTaskId);
       }
 
