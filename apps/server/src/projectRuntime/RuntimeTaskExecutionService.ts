@@ -1073,6 +1073,20 @@ const make = Effect.gen(function* () {
               "The continuation source is not an authorized, reconciled completion.",
             );
           }
+          if (kind === "r") {
+            const rootTask = yield* runtime.readTask(
+              projectId, ProjectRuntimeTaskId.make(roots[0]!.task_id),
+            );
+            if (rootTask.owner === task.owner ||
+                source.modelSelection.instanceId === resolved.launchPlan.modelSelection.instanceId) {
+              return yield* rejected(
+                projectId,
+                task.taskId,
+                "task_not_executable",
+                "The resolved reviewer is not independent of the source worker.",
+              );
+            }
+          }
           continuationOrigin = {
             sourceTaskId: source.taskId,
             sourceAttemptId: source.attemptId,
