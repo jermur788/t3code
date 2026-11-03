@@ -749,6 +749,8 @@ it.effect("auto-launches one independent review after a reconciled worker; passi
     assert.equal(terminal.status, "completed");
     assert.equal(state.launchCalls.length, 2);
     assert.equal(state.launchCalls[1]?.modelSelection.instanceId, syntheticReviewerId);
+    assert.include(state.launchCalls[1]?.initialMessage?.text ?? "", worker.attemptId);
+    assert.include(state.launchCalls[1]?.initialMessage?.text ?? "", workerHandoff.handoffId);
     const listed = yield* service.listAttempts(projectId, { taskId: syntheticReviewTaskId });
     assert.equal(listed.attempts.length, 1);
     const review = yield* service.readAttempt(projectId, listed.attempts[0]!.attemptId);
@@ -824,6 +826,8 @@ it.effect("a failed review launches one authorized repair, and restart/replay do
 
     yield* service.reconcileAttempt(projectId, review.attemptId);
     assert.equal(state.launchCalls.length, 3);
+    assert.include(state.launchCalls[2]?.initialMessage?.text ?? "", review.attemptId);
+    assert.include(state.launchCalls[2]?.initialMessage?.text ?? "", failing.handoffId);
     const repairs = yield* service.listAttempts(projectId, { taskId: syntheticRepairTaskId });
     assert.equal(repairs.attempts.length, 1);
     assert.equal(repairs.attempts[0]?.status, "launched");
