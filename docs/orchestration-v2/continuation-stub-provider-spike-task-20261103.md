@@ -1,7 +1,7 @@
 # Bounded spike: T3-native automatic continuation
 
 Date: 2026-11-03
-Status: PAUSED — upstream-first overlap audit and Argus comparison pending / DRAFT experiment only / NOT IMPLEMENTED
+Status: SOURCE-RESEARCH GATE PASSED; READY FOR BOUNDED LOCAL STUB EXPERIMENT AFTER REPO/OWNERSHIP PRECHECK; NOT IMPLEMENTED
 Owner: T3 Code local isolated worker, with Overall Manager evidence review
 Repository: jermur788/t3code
 Base: current main as of review, revalidate before work (reported d3bedef12a31); use fresh isolated worktree
@@ -31,15 +31,24 @@ Before starting the local code writer, reconcile the source findings from [the c
 
 ## New preflight gate from 2026-11-03 upstream-first research
 
-This experiment is **not cleared for writable implementation** until Overall Manager reconciles the attached upstream-first study and a source-level Argus-versus-native-T3 comparison with Current State and a small governing spec. The attached study changes the cost-minimizing sequence:
+The source-level audit gate **passed on 2026-11-03**. The Overall Manager reconciled the attached upstream-first study and a code-level Argus-versus-native-T3 comparison in [the living research report](preimplementation-architecture-reuse-research-20261103.md). This only clears the **isolated, synthetic, reversible spike**; it does not accept a production architecture, authorize a merge, or grant real-provider access. The detailed task boundaries and the existing accepted product/RTE contracts are the scoped governing requirements for this experiment. The attached study changes the cost-minimizing sequence:
 
 1. Confirm where upstream T3 Orchestration V2 already implements post-worker continuation, durable effects/receipts, cross-provider handoffs and recovery. Distinguish generic provider-child post-settle wakeups from fork-specific project-level `review -> repair -> next task` decisions.
 2. Search active upstream issues, discussions, pull requests and forks for relevant implementations before adding fork code. The latest source review found ongoing upstream proposals and unmerged continuation fixes; no proposal is an accepted API until integrated and verified.
 3. Attribute every necessary remaining capability to upstream T3, existing fork Project Runtime policy, an optional external agent component, or a deliberate deferred decision. Record expected security/rebase cost.
 4. Assess whether Argus's project/mission/reviewer stage machinery is materially cheaper to reuse for the **upper policy layer** than extending T3 Runtime. Do not assume the earlier Sonnet recommendation against DeepSeek also resolves Argus.
-5. Resume the synthetic spike only if this gate still identifies a missing T3-fork-specific continuation policy. Use existing T3 command/effect receipts rather than creating duplicate execution state.
+5. **Finding:** T3 upstream already owns provider post-settle continuation; T3 Fork still lacks demonstrated autonomous **project-task review/repair** selection. The isolated synthetic spike may proceed in a separate worktree, using existing T3 task-revision, request-key and command/effect receipts rather than creating duplicate execution state. A new table or upstream-internal effect type requires separate source justification and reviewer approval before implementation.
 
 The separate DeepSeek 12-item todo/progress discrepancy is an observability candidate; it does not authorize changes within this spike.
+
+## Narrow architecture interpretation and stop rule
+
+- **Not in scope:** implement provider turn completion wakes, rewrite T3 orchestration V2, install Argus/DeepSeek Superagent as a manager, synchronize a second task store, or modify the upstream MCP delegation contract. These are already existing upstream services or material architecture changes.
+- **Only new semantic decision:** a task-level policy determines whether a **previously authorized** review or bounded repair should follow a reconciled terminal worker attempt. It must validate task/attempt/reviewer provenance and reject stale or untrusted completion claims.
+- **No-model-call clean review:** follow Argus's independently reviewed fast path: once trusted review plus deterministic guards pass, do not pay for a redundant Manager semantic vote.
+- **Crash boundary:** first test existing per-task `request_key` uniqueness and persisted attempt-before-launch behavior. The policy must not invent extra identities, stores or side effects for a duplicate run event. If this cannot guarantee safe recovery after a durable action intent but before launch, STOP and report a design gap before expanding.
+- **Authorization:** operator-owned accepted scope and verification requirements cannot be changed by a worker; a repair may use another provider only under an existing explicit policy. User gates for merge, destructive actions and paid models remain unchanged.
+- **Baseline distinction:** RTE-V1 launch/recovery tests are integrated VERIFIED; this *new continuation feature* remains NOT IMPLEMENTED until the isolated spike passes.
 
 ## Initial gate: repo and task ownership
 
