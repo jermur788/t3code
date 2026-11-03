@@ -1,7 +1,17 @@
+## Upstream submission — confirmed 2026-11-03
+
+**User approval:** Explicitly given in manager chat immediately before submission (2026-11-03 22:07 UTC).
+
+**ACTION COMPLETE:** [Top-level contribution comment posted to upstream PR #28777](https://github.com/pingdotgg/t3code/pull/28777#issuecomment-6616620085) under the connected user's GitHub identity. GitHub returned the comment identifier; subsequent direct read independently verified the actual published body, author, timestamp, patch URL and verification report URL.
+
+The published comment offers the **passing original-interrupted test-only patch** to the existing upstream PR author, describes the 34/34 focused local test pass and static checks, distinguishes command-ID replay from end-to-end MCP request-key replay, and notes the two previously raised instruction issues without claiming they were repaired. This is a public comment, **not** a new PR, commit to upstream, merge, or proof that the author accepted it.
+
+**Current status:** UPSTREAM FEEDBACK POSTED / AWAITING MAINTAINER RESPONSE OR PR INTEGRATION. Keep original fork worktrees and research files intact; no cleanup authorized. The separate fork continuation experiment is unaffected. Next step is monitor PR response and offer narrow requested help if necessary, with normal safety and contribution boundaries. Recheck PR head if patch adoption changes the source. No product decision or paid model use required for read-only response monitoring.
+
 # Manager evidence review and draft upstream feedback — PR #28777
 
 Date: 2026-11-03
-Verdict: **RUNTIME PASS, supported by worker-executed local tests and fetched evidence; independent manager SOURCE REVIEW PASS; LIVE MODEL EVAL NOT RUN; UPSTREAM NOT SUBMITTED**.
+Verdict: **RUNTIME PASS, supported by worker-executed local tests and fetched evidence; independent manager SOURCE REVIEW PASS; LIVE MODEL EVAL NOT RUN; UPSTREAM FEEDBACK POSTED**.
 Ownership: T3 Fork Overall Manager. Public posting requires user authorization.
 
 ## Source and artifacts independently fetched
