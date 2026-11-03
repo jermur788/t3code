@@ -110,6 +110,15 @@ Expected: exit 0, all focused tests pass, no unexpected files changed, no type e
 - This experiment assumes a review/repair task is dedicated to a single source task. Ambiguous sharing fails closed; no ownership lease or separate scheduler has been added.
 - Numeric 2-cycle maximum is **synthetic only**, not accepted production policy.
 
+## SECURITY REPAIR — 2026-11-03
+
+Branch `fix/continuation-security-repair-20261103` addresses the independent review's F1/F2 authorization gaps and F3 stop visibility. Integration remains **NOT INTEGRATED**.
+
+- Public `executeTask` rejects the reserved `cont:v1:` request-key namespace. Internal dispatch re-derives the current decision from source status/revision/policy, linked terminal handoffs, reviewer independence and the durable repair budget, then inserts the existing receipt with a source-revision CAS. Pending receipts revalidate again before launch.
+- A withdrawn authorization cancels a not-yet-launched continuation, or marks it `reconcile_required` when a thread may already exist; a terminal failed or invalid review writes one durable `blocked` source task. Genuinely ambiguous execution stays pending and is not mislabeled as failed.
+- **F4 is a hard pre-integration gate:** `mode: "synthetic"` is a label, not an environment switch. This API must be removed from shipping builds or placed behind a disabled-by-default non-production gate before any merge, and the agent-context budget must not grow for production.
+- Verification: 78 focused tests (66 existing plus 12 new negative/concurrency/restart) and `check:changed` pass. No contract or `agentContextBudget.json` change in this repair.
+
 ## REVIEW / INTEGRATION / NEXT
 
 - Browser worker self-reviewed implementation seams and tracked source-level fixes for handoff recovery, revision freshness, independent model route drift and exact packet provenance. **No independent reviewer yet.**
