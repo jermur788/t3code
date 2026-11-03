@@ -732,7 +732,9 @@ const make = Effect.gen(function* () {
         });
         if (workerDecision.action !== "review" || workerDecision.requestKey === null) {
           if (workerDecision.action === "ask_user") {
-            yield* holdForUser(workerDecision.reason);
+            yield* holdForUser(
+              workerDecision.reason, cursor.attemptId, cursor.handoffId ?? null,
+            );
           }
           return;
         }
@@ -761,7 +763,9 @@ const make = Effect.gen(function* () {
           reviewHandoff,
         });
         if (reviewDecision.action === "ask_user") {
-          yield* holdForUser(reviewDecision.reason);
+          yield* holdForUser(
+            reviewDecision.reason, review.attemptId, review.handoffId ?? null,
+          );
           return;
         }
         if (reviewDecision.action !== "repair_or_retry" ||
@@ -784,7 +788,11 @@ const make = Effect.gen(function* () {
         cursorTask = yield* runtime.readTask(projectId, policy.repairTaskId);
       }
 
-      function holdForUser(reason: string) {
+      function holdForUser(
+        reason: string,
+        sourceAttemptId: string,
+        evidenceHandoffId: string | null,
+      ) {
         return Effect.gen(function* () {
           const current = yield* runtime.readTask(projectId, sourceTaskId);
           if (current.status === "blocked" || current.status === "cancelled") return;
@@ -799,7 +807,7 @@ const make = Effect.gen(function* () {
               blocker: {
                 classification: "review-required",
                 summary: "Continuation requires an operator decision",
-                detail: `Synthetic continuation stopped: ${reason}.`,
+                detail: `Synthetic continuation stopped: ${reason}. Source attempt: ${sourceAttemptId}. Evidence handoff: ${evidenceHandoffId ?? "none"}.`,
               },
               nextAction: "Review the evidence and explicitly authorize any further work.",
             },
