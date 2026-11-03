@@ -10,10 +10,7 @@ import {
   type ProjectRuntimeTask,
   type RuntimeExecutionAttempt,
 } from "@t3tools/contracts";
-import {
-  continuationRequestKey,
-  evaluateContinuation,
-} from "./RuntimeTaskContinuationPolicy.ts";
+import { continuationRequestKey, evaluateContinuation } from "./RuntimeTaskContinuationPolicy.ts";
 
 const projectId = ProjectId.make("synthetic-continuation");
 const at = "2026-11-03T00:00:00.000Z";
@@ -97,12 +94,17 @@ function handoff(
     filesChanged: [],
     verification: {
       milestone: result === "pass" ? "review-pass" : "none",
-      evidence: result === "none" ? [] : [{
-        evidenceId: "test-outcome",
-        result,
-        summary: "Synthetic independent review evidence",
-        recordedAt: at,
-      }],
+      evidence:
+        result === "none"
+          ? []
+          : [
+              {
+                evidenceId: "test-outcome",
+                result,
+                summary: "Synthetic independent review evidence",
+                recordedAt: at,
+              },
+            ],
     },
     runtimeRevision: 1,
     taskRevision: 1,
@@ -165,7 +167,10 @@ it("permits only a preauthorized bounded repair on a failing review", () => {
   });
   assert.equal(decision.action, "repair_or_retry");
   assert.equal(decision.targetTaskId, repairId);
-  assert.equal(decision.requestKey, continuationRequestKey("repair_or_retry", reviewerAttempt.attemptId));
+  assert.equal(
+    decision.requestKey,
+    continuationRequestKey("repair_or_retry", reviewerAttempt.attemptId),
+  );
 });
 
 it("rephrasing the same failure, or changing provider, cannot reset the consumed budget", () => {
@@ -236,8 +241,10 @@ it("blocks contradictory or inconclusive review evidence, never upgrades verific
       ],
     },
   });
-  assert.equal(evaluateContinuation({ ...afterReview, reviewHandoff: contradiction }).reason,
-    "contradictory_review_evidence");
+  assert.equal(
+    evaluateContinuation({ ...afterReview, reviewHandoff: contradiction }).reason,
+    "contradictory_review_evidence",
+  );
   assert.equal(
     evaluateContinuation({ ...afterReview, reviewHandoff: handoff(reviewerAttempt) }).reason,
     "missing_review_verdict_evidence",
@@ -261,27 +268,41 @@ it("blocks self-review and a matching provider instance", () => {
 });
 
 it("stops immediately for an operator-owned decision without spending a repair cycle", () => {
-  assert.equal(evaluateContinuation({
-    ...afterWorker,
-    cursorHandoff: handoff(work, "none", { unresolvedDecisions: ["Destructive action requested"] }),
-  }).action, "ask_user");
-  assert.equal(evaluateContinuation({
-    ...afterReview,
-    reviewHandoff: handoff(reviewerAttempt, "pass", {
-      unresolvedDecisions: ["Product choice"],
-    }),
-  }).action, "ask_user");
+  assert.equal(
+    evaluateContinuation({
+      ...afterWorker,
+      cursorHandoff: handoff(work, "none", {
+        unresolvedDecisions: ["Destructive action requested"],
+      }),
+    }).action,
+    "ask_user",
+  );
+  assert.equal(
+    evaluateContinuation({
+      ...afterReview,
+      reviewHandoff: handoff(reviewerAttempt, "pass", {
+        unresolvedDecisions: ["Product choice"],
+      }),
+    }).action,
+    "ask_user",
+  );
 });
 
 it("does not treat healthy in-progress work as failed debate", () => {
-  assert.equal(evaluateContinuation({
-    ...afterWorker,
-    cursorAttempt: attempt("worker-1", source, "worker-x", "launched"),
-  }).reason, "worker_not_terminal");
-  assert.equal(evaluateContinuation({
-    ...afterReview,
-    reviewAttempt: attempt("review-1", reviewer, "reviewer-y", "launched"),
-  }).reason, "review_not_terminal");
+  assert.equal(
+    evaluateContinuation({
+      ...afterWorker,
+      cursorAttempt: attempt("worker-1", source, "worker-x", "launched"),
+    }).reason,
+    "worker_not_terminal",
+  );
+  assert.equal(
+    evaluateContinuation({
+      ...afterReview,
+      reviewAttempt: attempt("review-1", reviewer, "reviewer-y", "launched"),
+    }).reason,
+    "review_not_terminal",
+  );
 });
 
 it("never automatically re-runs cancelled work, failed launches or unresolved attempts", () => {
@@ -293,10 +314,13 @@ it("never automatically re-runs cancelled work, failed launches or unresolved at
     assert.notEqual(decision.action, "review");
     assert.notEqual(decision.action, "repair_or_retry");
   }
-  assert.equal(evaluateContinuation({
-    ...afterWorker,
-    sourceTask: task(sourceId, "worker", { status: "cancelled", continuation: authorization }),
-  }).action, "no_action");
+  assert.equal(
+    evaluateContinuation({
+      ...afterWorker,
+      sourceTask: task(sourceId, "worker", { status: "cancelled", continuation: authorization }),
+    }).action,
+    "no_action",
+  );
 });
 
 it("does not mint authorization when the source has no operator-owned continuation policy", () => {

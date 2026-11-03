@@ -7,8 +7,8 @@ import {
   ProjectRuntimeConflictError,
   ProjectRuntimeDisabledError,
   ProjectRuntimeNotFoundError,
+  ProjectRuntimeTaskId,
   type ProjectRuntimeTask,
-  type ProjectRuntimeTaskId,
   type OrchestrationV2Run,
   RuntimeExecutionAttempt,
   type RuntimeExecutionAttemptId,
@@ -54,11 +54,7 @@ import {
   RUNTIME_TASK_PACKET_VERSION,
   type RuntimeTaskContinuationOrigin,
 } from "./RuntimeTaskPacket.ts";
-import {
-  continuationRequestKey,
-  evaluateContinuation,
-  handoffMatchesAttempt,
-} from "./RuntimeTaskContinuationPolicy.ts";
+import { evaluateContinuation, handoffMatchesAttempt } from "./RuntimeTaskContinuationPolicy.ts";
 
 const AttemptJson = Schema.fromJsonString(RuntimeExecutionAttempt);
 const encodeAttempt = Schema.encodeEffect(AttemptJson);
@@ -633,23 +629,17 @@ const make = Effect.gen(function* () {
     },
   );
 
-
-  /**
-   * Project-owned post-settlement policy. The source task's operator-authored
-   * policy is the sole authorization. The action chain is derived from existing
-   * durable request keys, never from free-form prompts or reviewer wording:
-   *
-   *   implementation attempt -> review:<attempt> -> repair:<review> -> review:<repair>
-   *
-   * The existing execution receipt is inserted before launch. A crash before
-   * calling execute is recovered by the startup scan; a crash after its receipt
-   * replays the same thread/command ids. This adds no new queue or state owner.
-   */
+  /** Operator policy is the only authorization; durable request keys, not
+   * reviewer wording, drive each link, and the existing receipt replays its ids. */
   const advanceContinuation = Effect.fn("RuntimeTaskExecutionService.advanceContinuation")(
     function* (projectId: ProjectId, sourceTaskId: ProjectRuntimeTaskId) {
       const sourceTask = yield* runtime.readTask(projectId, sourceTaskId);
       const policy = sourceTask.continuation;
-      if (policy?.mode !== "synthetic" || !["planned", "ready", "active", "review"].includes(sourceTask.status)) return;
+      if (
+        policy?.mode !== "synthetic" ||
+        !["planned", "ready", "active", "review"].includes(sourceTask.status)
+      )
+        return;
       // A shared target would allow one policy's completion to influence
       // another policy. Fail closed rather than arbitrating ownership.
       const collisions = yield* sql<{ readonly count: number }>`SELECT count(*) AS count
@@ -666,8 +656,11 @@ const make = Effect.gen(function* () {
         ORDER BY created_at DESC, attempt_id DESC LIMIT 2`;
       // The latest implementation attempt is the only candidate. No implicit
       // choice is made when two root attempts share the same recorded instant.
-      if (roots.length === 0 || (roots.length === 2 &&
-          roots[0]?.created_at === roots[1]?.created_at)) return;
+      if (
+        roots.length === 0 ||
+        (roots.length === 2 && roots[0]?.created_at === roots[1]?.created_at)
+      )
+        return;
       let cursor = yield* lane.withPermits(1)(reconcileAttemptRow(yield* decodeRow(roots[0]!)));
       if (sourceTask.revision !== cursor.receipt.packet.taskRevision + 1) return;
       let cursorTask: ProjectRuntimeTask = sourceTask;
@@ -675,9 +668,35 @@ const make = Effect.gen(function* () {
       const fetchLinkedHandoff = (attempt: RuntimeExecutionAttempt) =>
         attempt.handoffId === undefined || attempt.handoffId === null
           ? Effect.succeed(null)
-          : runtime.readHandoff(projectId, attempt.handoffId).pipe(
-              Effect.catchTags({ ProjectRuntimeNotFoundError: () => Effect.succeed(null) }),
-            );
+          : runtime
+              .readHandoff(projectId, attempt.handoffId)
+              .pipe(Effect.catchTags({ ProjectRuntimeNotFoundError: () => Effect.succeed(null) }));
+
+      // No external question is emitted: the single durable blocked task is the
+      // operator-facing escalation receipt for this synthetic spike.
+      const holdForUser = Effect.fn("RuntimeTaskExecutionService.holdForUser")(function* (
+        reason: string,
+        sourceAttemptId: string,
+        evidenceHandoffId: string | null,
+      ) {
+        const current = yield* runtime.readTask(projectId, sourceTaskId);
+        if (current.status === "blocked" || current.status === "cancelled") return;
+        yield* runtime.updateTask(
+          projectId,
+          {
+            taskId: sourceTaskId,
+            expectedRevision: current.revision,
+            status: "blocked",
+            blocker: {
+              classification: "review-required",
+              summary: "Continuation requires an operator decision",
+              detail: `Synthetic continuation stopped: ${reason}. Source attempt: ${sourceAttemptId}. Evidence handoff: ${evidenceHandoffId ?? "none"}.`,
+            },
+            nextAction: "Review the evidence and explicitly authorize any further work.",
+          },
+          { actor: "runtime:continuation" },
+        );
+      });
 
       const dispatchAuthorized = Effect.fn("RuntimeTaskExecutionService.dispatchContinuation")(
         function* (
@@ -687,9 +706,12 @@ const make = Effect.gen(function* () {
           independentReview: boolean,
         ) {
           const target = yield* runtime.readTask(projectId, targetTaskId);
-          if (!EXECUTABLE_TASK_STATUSES.has(target.status) ||
-              target.projectId !== sourceTask.projectId ||
-              (independentReview && target.owner === sourceTask.owner)) return;
+          if (
+            !EXECUTABLE_TASK_STATUSES.has(target.status) ||
+            target.projectId !== sourceTask.projectId ||
+            (independentReview && target.owner === sourceTask.owner)
+          )
+            return;
 
           const active = yield* sql<{ readonly request_key: string | null }>`SELECT request_key
             FROM project_runtime_execution_attempts
@@ -702,8 +724,11 @@ const make = Effect.gen(function* () {
             // Do not infer independence from a role string or prompt. An
             // explicit eligible alternative provider instance is required.
             const reviewRoute = yield* routing.resolveRoute({ projectId, taskId: targetTaskId });
-            if (reviewRoute.status !== "resolved" || reviewRoute.selected === null ||
-                reviewRoute.selected.providerInstanceId === compareWith.modelSelection.instanceId) {
+            if (
+              reviewRoute.status !== "resolved" ||
+              reviewRoute.selected === null ||
+              reviewRoute.selected.providerInstanceId === compareWith.modelSelection.instanceId
+            ) {
               return;
             }
           }
@@ -732,18 +757,17 @@ const make = Effect.gen(function* () {
         });
         if (workerDecision.action !== "review" || workerDecision.requestKey === null) {
           if (workerDecision.action === "ask_user") {
-            yield* holdForUser(
-              workerDecision.reason, cursor.attemptId, cursor.handoffId ?? null,
-            );
+            yield* holdForUser(workerDecision.reason, cursor.attemptId, cursor.handoffId ?? null);
           }
           return;
         }
         const reviewTask = yield* runtime.readTask(projectId, policy.reviewTaskId);
         const reviewKey = workerDecision.requestKey;
         const savedReview = yield* readByRequestKey(projectId, policy.reviewTaskId, reviewKey);
-        const review = savedReview === null
-          ? null
-          : yield* lane.withPermits(1)(reconcileAttemptRow(savedReview));
+        const review =
+          savedReview === null
+            ? null
+            : yield* lane.withPermits(1)(reconcileAttemptRow(savedReview));
         if (review === null) {
           if (cursorTask.revision !== cursor.receipt.packet.taskRevision + 1) return;
           yield* dispatchAuthorized(policy.reviewTaskId, reviewKey, cursor, true);
@@ -763,13 +787,15 @@ const make = Effect.gen(function* () {
           reviewHandoff,
         });
         if (reviewDecision.action === "ask_user") {
-          yield* holdForUser(
-            reviewDecision.reason, review.attemptId, review.handoffId ?? null,
-          );
+          yield* holdForUser(reviewDecision.reason, review.attemptId, review.handoffId ?? null);
           return;
         }
-        if (reviewDecision.action !== "repair_or_retry" ||
-            reviewDecision.requestKey === null || policy.repairTaskId === undefined) return;
+        if (
+          reviewDecision.action !== "repair_or_retry" ||
+          reviewDecision.requestKey === null ||
+          policy.repairTaskId === undefined
+        )
+          return;
 
         const repair = yield* readByRequestKey(
           projectId,
@@ -786,34 +812,6 @@ const make = Effect.gen(function* () {
         if (!TERMINAL_ATTEMPT_STATUSES.has(reconciledRepair.status)) return;
         cursor = reconciledRepair;
         cursorTask = yield* runtime.readTask(projectId, policy.repairTaskId);
-      }
-
-      function holdForUser(
-        reason: string,
-        sourceAttemptId: string,
-        evidenceHandoffId: string | null,
-      ) {
-        return Effect.gen(function* () {
-          const current = yield* runtime.readTask(projectId, sourceTaskId);
-          if (current.status === "blocked" || current.status === "cancelled") return;
-          // No external question is emitted: the single durable blocked task
-          // is the operator-facing escalation receipt for this synthetic spike.
-          yield* runtime.updateTask(
-            projectId,
-            {
-              taskId: sourceTaskId,
-              expectedRevision: current.revision,
-              status: "blocked",
-              blocker: {
-                classification: "review-required",
-                summary: "Continuation requires an operator decision",
-                detail: `Synthetic continuation stopped: ${reason}. Source attempt: ${sourceAttemptId}. Evidence handoff: ${evidenceHandoffId ?? "none"}.`,
-              },
-              nextAction: "Review the evidence and explicitly authorize any further work.",
-            },
-            { actor: "runtime:continuation" },
-          );
-        });
       }
     },
   );
@@ -898,18 +896,19 @@ const make = Effect.gen(function* () {
         ORDER BY project_id, task_id`;
       yield* Effect.forEach(
         configured,
-        (row) => advanceContinuation(
-          row.project_id as ProjectId,
-          ProjectRuntimeTaskId.make(row.task_id),
-        ).pipe(
-          Effect.catchCause((cause) =>
-            Effect.logWarning("runtime-execution.continuation-recovery-blocked", {
-              projectId: row.project_id,
-              taskId: row.task_id,
-              cause,
-            }),
+        (row) =>
+          advanceContinuation(
+            row.project_id as ProjectId,
+            ProjectRuntimeTaskId.make(row.task_id),
+          ).pipe(
+            Effect.catchCause((cause) =>
+              Effect.logWarning("runtime-execution.continuation-recovery-blocked", {
+                projectId: row.project_id,
+                taskId: row.task_id,
+                cause,
+              }),
+            ),
           ),
-        ),
         { concurrency: 1, discard: true },
       );
       return rows.length;
@@ -1056,11 +1055,14 @@ const make = Effect.gen(function* () {
         if (continuationMatch !== null) {
           const kind = continuationMatch[1]!;
           const source = yield* readAttemptRow(projectId, asAttemptId(continuationMatch[2]!));
-          const sourceHandoff = source.handoffId == null
-            ? null
-            : yield* runtime.readHandoff(projectId, source.handoffId).pipe(
-                Effect.catchTags({ ProjectRuntimeNotFoundError: () => Effect.succeed(null) }),
-              );
+          const sourceHandoff =
+            source.handoffId == null
+              ? null
+              : yield* runtime
+                  .readHandoff(projectId, source.handoffId)
+                  .pipe(
+                    Effect.catchTags({ ProjectRuntimeNotFoundError: () => Effect.succeed(null) }),
+                  );
           const roots = yield* sql<{ readonly task_id: string }>`SELECT task_id
             FROM project_runtime_tasks WHERE project_id = ${projectId}
               AND json_extract(payload_json, '$.continuation.mode') = 'synthetic'
@@ -1072,8 +1074,11 @@ const make = Effect.gen(function* () {
                 (${kind} = 'p' AND json_extract(payload_json, '$.continuation.repairTaskId') = ${task.taskId}
                   AND json_extract(payload_json, '$.continuation.reviewTaskId') = ${source.taskId})
               )`;
-          if (roots.length !== 1 || source.status !== "completed" ||
-              !handoffMatchesAttempt(source, sourceHandoff)) {
+          if (
+            roots.length !== 1 ||
+            source.status !== "completed" ||
+            !handoffMatchesAttempt(source, sourceHandoff)
+          ) {
             return yield* rejected(
               projectId,
               task.taskId,
@@ -1083,10 +1088,13 @@ const make = Effect.gen(function* () {
           }
           if (kind === "r") {
             const rootTask = yield* runtime.readTask(
-              projectId, ProjectRuntimeTaskId.make(roots[0]!.task_id),
+              projectId,
+              ProjectRuntimeTaskId.make(roots[0]!.task_id),
             );
-            if (rootTask.owner === task.owner ||
-                source.modelSelection.instanceId === resolved.launchPlan.modelSelection.instanceId) {
+            if (
+              rootTask.owner === task.owner ||
+              source.modelSelection.instanceId === resolved.launchPlan.modelSelection.instanceId
+            ) {
               return yield* rejected(
                 projectId,
                 task.taskId,

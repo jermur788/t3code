@@ -96,7 +96,10 @@ export function evaluateContinuation(input: ContinuationEvaluation): Continuatio
   if (sourceTask.status === "blocked" || sourceTask.status === "deferred") {
     return decide("no_action", "source_task_on_hold");
   }
-  if (cursorAttempt.projectId !== sourceTask.projectId || cursorTask.taskId !== cursorAttempt.taskId) {
+  if (
+    cursorAttempt.projectId !== sourceTask.projectId ||
+    cursorTask.taskId !== cursorAttempt.taskId
+  ) {
     return decide("blocked", "attempt_task_or_project_mismatch");
   }
   if (!TERMINAL.has(cursorAttempt.status)) return decide("no_action", "worker_not_terminal");

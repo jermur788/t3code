@@ -1573,10 +1573,14 @@ it.effect("requires an operator to grant or change experimental continuation aut
   Effect.gen(function* () {
     const service = yield* setup;
     const review = yield* service.createTask(
-      projectA, { ...taskInput, title: "Independent review" }, actor,
+      projectA,
+      { ...taskInput, title: "Independent review" },
+      actor,
     );
     const repair = yield* service.createTask(
-      projectA, { ...taskInput, title: "Bounded repair" }, actor,
+      projectA,
+      { ...taskInput, title: "Bounded repair" },
+      actor,
     );
     const policy = {
       version: 1 as const,
@@ -1585,27 +1589,31 @@ it.effect("requires an operator to grant or change experimental continuation aut
       repairTaskId: repair.taskId,
       maxRepairCycles: 2,
     };
-    const deniedCreate = yield* service.createTask(
-      projectA, { ...taskInput, continuation: policy },
-      { actor: "thread:untrusted-worker" },
-    ).pipe(Effect.flip);
+    const deniedCreate = yield* service
+      .createTask(
+        projectA,
+        { ...taskInput, continuation: policy },
+        { actor: "thread:untrusted-worker" },
+      )
+      .pipe(Effect.flip);
     assert.instanceOf(deniedCreate, ProjectRuntimeInvalidTransitionError);
     assert.equal(deniedCreate.violation, "continuation_requires_operator");
 
     const source = yield* service.createTask(
-      projectA, { ...taskInput, continuation: policy }, actor,
+      projectA,
+      { ...taskInput, continuation: policy },
+      actor,
     );
     assert.deepEqual(source.continuation, policy);
-    const deniedUpdate = yield* service.updateTask(
-      projectA,
-      { taskId: source.taskId, expectedRevision: source.revision, continuation: null },
-      { actor: "mcp-client:untrusted" },
-    ).pipe(Effect.flip);
+    const deniedUpdate = yield* service
+      .updateTask(
+        projectA,
+        { taskId: source.taskId, expectedRevision: source.revision, continuation: null },
+        { actor: "mcp-client:untrusted" },
+      )
+      .pipe(Effect.flip);
     assert.instanceOf(deniedUpdate, ProjectRuntimeInvalidTransitionError);
-    assert.deepEqual(
-      (yield* service.readTask(projectA, source.taskId)).continuation,
-      policy,
-    );
+    assert.deepEqual((yield* service.readTask(projectA, source.taskId)).continuation, policy);
 
     const cleared = yield* service.updateTask(
       projectA,
