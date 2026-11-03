@@ -41,6 +41,14 @@ Related [issue #17412](https://github.com/pingdotgg/t3code/issues/17412) is CLOS
 
 The user's reported DeepSeek run displayed stale `Task 1 of 12` while execution continued. This is **not yet an upstream-reproduced defect** because it may be an agent-authored stale plan, provider behavior, or the presentation layer. Research source and event timeline before filing; distinguish app-owned run progress, agent-authored plans, and independent verified result. No claim of stale plan as a proved upstream T3 bug.
 
+## First-pass review of PR #28777's behavioral seam (source inspection)
+
+- The patch changes [orchestrationInstructions.ts](https://github.com/pingdotgg/t3code/blob/main/packages/provider-core/src/server/orchestrationInstructions.ts) and the `t3_thread_send` tool description rather than the execution engine. It adds prompt-string tests and a tool-use eval fixture; the PR authors' note says the live model eval was not run.
+- [Orchestrator.ts](https://github.com/pingdotgg/t3code/blob/main/apps/server/src/orchestration-v2/Orchestrator.ts) has a `recordSubagentFollowup` path that links a new run in an existing child thread with a new `delegatedTaskId`. Its current [DelegatedCompletionDelivery.test.ts](https://github.com/pingdotgg/t3code/blob/main/apps/server/src/orchestration-v2/DelegatedCompletionDelivery.test.ts) includes follow-up cases (completed/interrupted/failed, overlapping, restart) around the existing mechanism.
+- **Narrow remaining verification question:** not whether existing `t3_thread_send` can ever run follow-ups, but whether this exact amended instruction makes the *parent model choose the correct tool* for explicit interrupted-review continuation, as opposed to a new independent review. That needs model-tool-use eval or a recorded before/after provider run and cannot be established by prompt string assertions alone.
+- Tool documentation must remain precise that conversation/context resumes **within the same child thread**, but an interrupted original task is not reopened under the same task identity. Results must still be attached to the new follow-up task's lineage and delivered once.
+- Any upstream contribution should be framed as **adding missing independent verification to the existing PR**, if evidence identifies a gap. Do not file a duplicate PR or assume its current tests fail. There was no local test or model eval in this inspection.
+
 ## Contribution decision rule
 
 1. Reproduction and scope first.
