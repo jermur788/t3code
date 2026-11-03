@@ -644,8 +644,17 @@ const make = Effect.gen(function* () {
     function* (projectId: ProjectId, sourceTaskId: ProjectRuntimeTaskId) {
       const sourceTask = yield* runtime.readTask(projectId, sourceTaskId);
       const policy = sourceTask.continuation;
-      if (policy?.mode !== "synthetic" || sourceTask.status === "blocked" ||
-          sourceTask.status === "cancelled" || sourceTask.status === "deferred") return;
+      if (policy?.mode !== "synthetic" || !["planned", "ready", "active", "review"].includes(sourceTask.status)) return;
+      // A shared target would allow one policy's completion to influence
+      // another policy. Fail closed rather than arbitrating ownership.
+      const collisions = yield* sql<{ readonly count: number }>`SELECT count(*) AS count
+        FROM project_runtime_tasks WHERE project_id = ${projectId}
+          AND json_extract(payload_json, '$.continuation.mode') = 'synthetic'
+          AND (
+            json_extract(payload_json, '$.continuation.reviewTaskId') IN (${policy.reviewTaskId}, ${policy.repairTaskId ?? ""})
+            OR json_extract(payload_json, '$.continuation.repairTaskId') IN (${policy.reviewTaskId}, ${policy.repairTaskId ?? ""})
+          )`;
+      if ((collisions[0]?.count ?? 0) !== 1) return;
 
       const roots = yield* sql<AttemptRow>`SELECT * FROM project_runtime_execution_attempts
         WHERE project_id = ${projectId} AND task_id = ${sourceTaskId}
@@ -655,6 +664,7 @@ const make = Effect.gen(function* () {
       if (roots.length === 0 || (roots.length === 2 &&
           roots[0]?.created_at === roots[1]?.created_at)) return;
       let cursor = yield* lane.withPermits(1)(reconcileAttemptRow(yield* decodeRow(roots[0]!)));
+      if (sourceTask.revision !== cursor.receipt.packet.taskRevision + 1) return;
       let cursorTask: ProjectRuntimeTask = sourceTask;
       let cycles = 0;
       const fetchLinkedHandoff = (attempt: RuntimeExecutionAttempt) =>
