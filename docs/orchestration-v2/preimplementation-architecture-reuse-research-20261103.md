@@ -61,6 +61,42 @@ Before writable implementation, inspect concrete existing T3 service/event hooks
 
 **Implementation implication:** First decide whether a small fork-owned after-commit listener/continuation receipt is enough, with no new table, or whether limited durable state is required. Do not modify upstream EventSink or EffectWorker until source-level review proves the extension is safe and cheaper than a fork-owned service.
 
+
+## 2026-11-03 addendum: attached upstream-first study and real-run progress evidence
+
+**Source status:** attached eight-page *Upstream-First Strategy for T3 Fork* is secondary/advisory architecture research, not a governing decision. A separate supplied Runtime timeline describes the 2026-11-03 DeepSeek/CCF qualification; its reconstruction has not been independently replayed in this browser session. Both are additional evidence, not proof of runtime integration.
+
+### Upstream-first capability ownership
+
+The study argues that T3's current Orchestration V2 is an app-owned, provider-neutral execution and event substrate rather than a thin agent UI. It recommends checking upstream main, issues, discussions, PRs and forks before fork-specific implementation; generic execution semantics, receipts, delegated continuation, wakeups, provider lifecycle, worktree handling and context efficiency belong upstream when possible. Fork-owned capabilities remain authoritative specs, accepted decisions, dependency-aware project tasks, review/verification policy, autonomous next-work selection and non-developer governance.
+
+**This does not close the prior Argus-versus-DeepSeek-versus-T3 build/reuse comparison.** The attached study itself treats the architecture comparison as its next input. In particular, Argus as potential coordinator has not yet received the same independent review as DeepSeek.
+
+Specific source references:
+- Upstream Orchestration V2 [overview](https://github.com/pingdotgg/t3code/blob/main/docs/orchestration-v2/README.md), [core graph](https://github.com/pingdotgg/t3code/blob/main/docs/orchestration-v2/core-graph-and-data-model.md), and [orchestrator MCP](https://github.com/pingdotgg/t3code/blob/main/docs/orchestration-v2/orchestrator-mcp-server.md).
+- [Persistent initiatives idea](https://github.com/pingdotgg/t3code/discussions/16269) and [project-scoped memory proposal](https://github.com/pingdotgg/t3code/discussions/15858): community proposals, **not accepted upstream implementations**.
+- [Orchestration-context efficiency proposal](https://github.com/pingdotgg/t3code/discussions/17253): reports an instruction-text reduction of ~21% in one block; actual provider token savings unverified.
+- [Review resumption issue](https://github.com/pingdotgg/t3code/issues/28734): open when checked on 2026-11-03.
+- [Antigravity async-child wake issue](https://github.com/pingdotgg/t3code/issues/17412): GitHub API shows closed on 2026-11-02 for lack of information; subsequent reports say it still reproduces. [PR #30083](https://github.com/pingdotgg/t3code/pull/30083) proposes continuation/streaming fixes and is **open, unmerged** on 2026-11-03. Do not equate closed issue with verified resolution. Separate [wake and paragraph streaming PRs](https://github.com/pingdotgg/t3code/pull/28204) and [#28221](https://github.com/pingdotgg/t3code/pull/28221) also remain open on the inspection date.
+
+### Supplied DeepSeek run progress correction (separate, user-supplied evidence)
+
+A separate supplied execution analysis finds that an agent-authored twelve-item todo list stopped receiving updates while T3 Runtime continued storing tool and run events. The user-visible display was stale for ~4h51m of a ~4h54m run, with ~4h24m in serial Unity tests and an ~1h01m invalid Unity method wait. The qualification was still **BLOCKED / NEEDS MORE EVIDENCE**, not VERIFIED. Neither model reasoning time nor tokens are instrumented. Thus:
+- Do not treat displayed plan item number as authoritative Runtime progress or as model-performance evidence.
+- Separate **agent-authored plan snapshot**, **actual event/step heartbeat**, **Runtime task/attempt state**, and **review/qualification verdict** in both research and eventual UX.
+- Treat plan freshness, append-only plan versions, declared revision and explicit current-step evidence as a **candidate generic T3 observability improvement** only after checking upstream discussions/PRs/code. Do not mix it into the continuation spike or CCF production work.
+- Use the run to motivate telemetry: measure model turn latency, tools/tests/waits, retries and final verified outcome separately, not elapsed UI-label time.
+
+### Updated research and implementation gate
+
+1. First complete an evidence-backed *current-upstream and community overlap map* for every proposed fork implementation primitive. Where upstream already owns a receipt/outbox/recovery guarantee, remove the duplicate fork item or narrow it to an integration/policy adapter.
+2. Finish independent Argus vs T3 upper-layer comparison and precise DeepSeek component reuse/migration economics. Distinguish generic orchestration runtime from project-level task authority.
+3. Make explicit owner/adopter decisions for each atomic capability: upstream candidate, existing upstream, thin T3-fork policy, optional worker/memory, or defer.
+4. Re-evaluate the isolated stub continuation experiment. Prefer T3's existing execution and effect lifecycle; don't add new tables or fork an upstream runner absent a proved gap. Keep this spike **unstarted** until the comparison and governing spec are reconciled.
+5. Track the progress-UI analysis as a separate observability candidate, pending source validation and user-facing rendered testing if implemented.
+
+**Status:** research and source recon completed in browser; no code, deployment, upstream contribution, test or provider change.
+
 ## Evidence limits
 
 This is browser source inspection, not an installation, runtime test, security audit, or independent review. Claims about live multi-day autonomy, speedups, cost or installed compatibility remain external authors' reports. The current user priority is to maximize verified outcomes per token and preserve project truth across providers; no production route, integration or adoption of Argus, OpenHands, DeepSeek Superagent, Cloudroom, Letta or Mastra is authorized by this note.
