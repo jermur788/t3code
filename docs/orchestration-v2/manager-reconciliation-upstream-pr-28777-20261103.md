@@ -1,7 +1,7 @@
 # Manager reconciliation — completed browser review of upstream PR #28777
 
 Date: 2026-11-03
-Status: SOURCE-INSPECTED / TEST PATCH PREPARED / RUNTIME VERIFICATION PENDING / NO UPSTREAM SUBMISSION
+Status: WORKER-REPORTED RUNTIME PASS / LOG AND CORRECTED PATCH INSPECTION PENDING / NO UPSTREAM SUBMISSION
 
 ## Received handoff and evidence
 
@@ -26,7 +26,7 @@ No source files were patched in the fork or upstream by this worker: the new tes
 
 **TEST GAP / GUIDANCE CORRECTIONS.** Do not claim a runtime regression in upstream from this read-only evidence. Do not open a duplicate PR.
 
-**Next authorized bounded task:** Local independent T3 Code test worker with **one writer, separate worktree**:
+**Earlier local test assignment (COMPLETED per 21:43 worker report; retained here as historical scope):** Local independent T3 Code test worker with **one writer, separate worktree**:
 - inspect status/ownership and do not touch unrelated work;
 - fetch the exact original PR branch/head from the upstream contributor's public fork;
 - verify the raw regression patch applies with `git apply --check` before applying;
@@ -35,7 +35,7 @@ No source files were patched in the fork or upstream by this worker: the new tes
 - report command logs, outcome, modified paths, evidence and whether a minimal test-only addition should be sent to the upstream author;
 - do not post/upstream-push, amend the author's branch, spend model credits, integrate main or change product policy.
 
-A full executable task packet, base/ref and focused assertions are in the linked review handoff. Classification: **OPERATIONAL BLOCKER for local runtime test** (not for source review); user approval is required for public posting after verified results.
+The local test assignment was reported complete. The remaining operational gap is access to the corrected patch and actual logs in the manager environment. A full executable task packet, base/ref and focused assertions are in the linked review handoff. User approval is required for public posting.
 
 ## 2026-11-03 local verification handoff received (21:43 UTC)
 
@@ -78,6 +78,26 @@ This was reported as a **TEST FIXTURE DEFECT**, not an upstream runtime implemen
 
 **Important:** Do not use the draft's `independently checked` wording in an actual public message until the manager can inspect the worker's corrected patch/logs, or attribute it explicitly to the local worker report.
 
+
+## Bounded follow-up handoff — preserve corrected local verification evidence
+
+**TASK:** Publish corrected test-only patch and sanitized verification record to the **existing fork research branch** for the Overall Manager to inspect. **ROUTING:** T3 Code local code worker with access to the existing completed local test worktree and `/tmp/opencode/pr28777/` artifacts; this cannot be completed by the GitHub-only browser connector because paths are not mounted here.
+
+**BASE/CONTEXT:** Upstream PR #28777 current state, unchanged PR source version as recorded in the preceding worker report. Existing local isolated worktree `/home/jer/dev/t3code-pr28777-test-20261103`; current branch `test/pr28777-original-interrupted-20261103`. Research destination `jermur788/t3code` branch `research/pr-28777-continuation-regression-20261103` (already exists). Manager record: this document, and original browser research handoff on the research branch.
+
+**SCOPE/OWNERSHIP:** Read-only source/runtime evidence export plus at most two **new** files in `docs/orchestration-v2/` on the research branch: (1) exact corrected `.patch`, (2) sanitized local test `RESULTS.md` with focused commands, actual output summaries and file lists. Preserve the original patch and reviewer handoff unchanged. One documentation writer. Other task code lanes unaffected.
+
+**PREFLIGHT:** Inspect both repositories/branches, working-tree cleanliness, untracked changes and other running writers before writable Git operations. Refresh remote research branch to avoid overwriting newer research. Do not reset, stash, force-push, delete or clean any worktree. Confirm file contents contain no secrets, tokens, private project strings or irrelevant machine paths beyond benign reproducibility information.
+
+**ACCEPTANCE:** Corrected patch contains the repaired wake-cohort assertion rather than `ProviderContinuationRequest.taskIds`; exact one-test-file scope; evidence document cites focused run 34/34, server typecheck/format/lint results and paths to full local logs, and distinguishes command-ID replay from MCP request-key replay. Link the original PR source version and the captured local test worktree base. Any unavailable log content is marked unverified, never fabricated.
+
+**VERIFY:** Fetch the two new GitHub research files back through the connector and confirm exact content; report source/local test status and changed paths. Optional single focused test rerun if the already-reported output cannot be tied to the corrected patch. The write is evidence capture, not a new upstream code contribution.
+
+**OUT OF SCOPE:** No upstream author branch modification, public PR review/comment/issue reply, new standalone upstream PR, merge to main, production changes, paid model calls, or deletion of the existing worktree.
+
+**STOP:** If research branch moved with conflicting files or local logs have secrets, stop with the conflict. Public sharing and any cleanup remain operator-authorized.
+
+**RETURN:** VERDICT; exact changed research files/URLs; source base and captured test log evidence; bytes checked and sensitive-data screening; remaining untested cases; upstream posting recommendation; user authorization still required.
 
 ## Coordination
 
