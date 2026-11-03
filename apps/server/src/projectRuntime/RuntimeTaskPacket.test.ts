@@ -85,3 +85,16 @@ it("bounds an oversized packet deterministically", () => {
   assert.isAtMost(packet.length, 65_536);
   assert.include(packet, "[Task packet truncated.]");
 });
+
+it("names the exact prior attempt and handoff without granting scope", () => {
+  const packet = buildRuntimeTaskPacket(task, null, {
+    sourceTaskId: "implementation-task",
+    sourceAttemptId: "attempt-123",
+    sourceHandoffId: "handoff-456",
+  });
+  assert.include(packet, "Source task: implementation-task");
+  assert.include(packet, "Source attempt: attempt-123");
+  assert.include(packet, "Source handoff: handoff-456");
+  assert.include(packet, "context, not authorization");
+  assert.notInclude(packet, "## Latest handoff");
+});
