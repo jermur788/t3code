@@ -1,7 +1,7 @@
 # Bounded spike: T3-native automatic continuation
 
 Date: 2026-11-03
-Status: DRAFT EXPERIMENT READY AFTER RESEARCH/SPEC GATE / NOT ACCEPTED PRODUCTION DESIGN / NOT IMPLEMENTED
+Status: PAUSED — upstream-first overlap audit and Argus comparison pending / DRAFT experiment only / NOT IMPLEMENTED
 Owner: T3 Code local isolated worker, with Overall Manager evidence review
 Repository: jermur788/t3code
 Base: current main as of review, revalidate before work (reported d3bedef12a31); use fresh isolated worktree
@@ -28,6 +28,18 @@ Before starting the local code writer, reconcile the source findings from [the c
 - Preserve the DeepSeek-style distinction between an incoming event and an authorization grant.
 - Record which design facts and event seams were source-inspected, and which still need runtime proof.
 - Keep the task a reversible synthetic proof, not a release or policy enablement. This gate may be satisfied by manager source review and a bounded accepted spec; it does not require another full external framework audit.
+
+## New preflight gate from 2026-11-03 upstream-first research
+
+This experiment is **not cleared for writable implementation** until Overall Manager reconciles the attached upstream-first study and a source-level Argus-versus-native-T3 comparison with Current State and a small governing spec. The attached study changes the cost-minimizing sequence:
+
+1. Confirm where upstream T3 Orchestration V2 already implements post-worker continuation, durable effects/receipts, cross-provider handoffs and recovery. Distinguish generic provider-child post-settle wakeups from fork-specific project-level `review -> repair -> next task` decisions.
+2. Search active upstream issues, discussions, pull requests and forks for relevant implementations before adding fork code. The latest source review found ongoing upstream proposals and unmerged continuation fixes; no proposal is an accepted API until integrated and verified.
+3. Attribute every necessary remaining capability to upstream T3, existing fork Project Runtime policy, an optional external agent component, or a deliberate deferred decision. Record expected security/rebase cost.
+4. Assess whether Argus's project/mission/reviewer stage machinery is materially cheaper to reuse for the **upper policy layer** than extending T3 Runtime. Do not assume the earlier Sonnet recommendation against DeepSeek also resolves Argus.
+5. Resume the synthetic spike only if this gate still identifies a missing T3-fork-specific continuation policy. Use existing T3 command/effect receipts rather than creating duplicate execution state.
+
+The separate DeepSeek 12-item todo/progress discrepancy is an observability candidate; it does not authorize changes within this spike.
 
 ## Initial gate: repo and task ownership
 
