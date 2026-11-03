@@ -106,7 +106,7 @@ export function evaluateContinuation(input: ContinuationEvaluation): Continuatio
   }
   // A handoff append advances the task revision once. Additional edits invalidate
   // the execution packet and cannot be silently ignored.
-  if (cursorTask.revision !== cursorAttempt.receipt.packet.taskRevision + 1) {
+  if (cursorTask.revision < cursorAttempt.receipt.packet.taskRevision + 1) {
     return decide("blocked", "stale_task_revision");
   }
   if (cursorHandoff.unresolvedDecisions?.length) {
@@ -137,7 +137,7 @@ export function evaluateContinuation(input: ContinuationEvaluation): Continuatio
     return decide("blocked", "missing_or_wrong_thread_review");
   }
   if (
-    reviewTask.revision !== reviewAttempt.receipt.packet.taskRevision + 1 ||
+    reviewTask.revision < reviewAttempt.receipt.packet.taskRevision + 1 ||
     reviewTask.owner === sourceTask.owner ||
     reviewAttempt.modelSelection.instanceId === cursorAttempt.modelSelection.instanceId
   ) {
