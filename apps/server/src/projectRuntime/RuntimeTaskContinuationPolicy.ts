@@ -107,8 +107,10 @@ export function evaluateContinuation(input: ContinuationEvaluation): Continuatio
   if (!handoffMatchesAttempt(cursorAttempt, cursorHandoff)) {
     return decide("blocked", "missing_or_wrong_thread_handoff");
   }
-  // A handoff append advances the task revision once. Additional edits invalidate
-  // the execution packet and cannot be silently ignored.
+  // A handoff append advances the task revision once. Later advances may be
+  // legitimate chain activity on a shared review/repair lane, so this pure
+  // evaluator keeps the historical allowance; the execution service binds the
+  // exact authoritative revision at the launch/receipt authorization boundary.
   if (cursorTask.revision < cursorAttempt.receipt.packet.taskRevision + 1) {
     return decide("blocked", "stale_task_revision");
   }

@@ -149,18 +149,20 @@ const now = DateTime.now.pipe(Effect.map(DateTime.formatIso));
 const asAttemptId = (value: string) => value as RuntimeExecutionAttemptId;
 
 /**
- * `cont:v1:` keys are minted only by the continuation evaluator. The prefix is
- * intentionally not a capability: public execution rejects it, and server
- * dispatch still re-evaluates the current policy before inserting a receipt.
+ * Every request key in the `cont:v1:` namespace is reserved. The prefix is a
+ * label, never a capability: the public entry point rejects malformed keys too,
+ * while only a well-formed key can be re-derived by the internal dispatcher.
  */
+const CONTINUATION_REQUEST_KEY_NAMESPACE = "cont:v1:";
+const isReservedContinuationRequestKey = (key: string) =>
+  key.startsWith(CONTINUATION_REQUEST_KEY_NAMESPACE);
+
 const parseContinuationRequestKey = (
   key: string,
 ): { readonly kind: "r" | "p"; readonly attemptId: RuntimeExecutionAttemptId } | null => {
   const match = /^cont:v1:([rp]):(.+)$/.exec(key);
   return match === null ? null : { kind: match[1] as "r" | "p", attemptId: asAttemptId(match[2]!) };
 };
-
-const isContinuationRequestKey = (key: string) => parseContinuationRequestKey(key) !== null;
 
 function toSummary(attempt: RuntimeExecutionAttempt): RuntimeExecutionAttemptSummary {
   const { receipt: _receipt, ...rest } = attempt;
@@ -315,6 +317,22 @@ const make = Effect.gen(function* () {
     return rows[0] === undefined ? null : yield* decodeRow(rows[0]);
   });
 
+  /**
+   * The root execution of a source task is the only candidate for the chain.
+   * A tie at the recorded instant is ambiguous and fails closed.
+   */
+  const readRootAttempt = Effect.fn("RuntimeTaskExecutionService.readRootAttempt")(function* (
+    projectId: ProjectId,
+    sourceTaskId: ProjectRuntimeTaskId,
+  ) {
+    const rows = yield* sql<AttemptRow>`SELECT * FROM project_runtime_execution_attempts
+        WHERE project_id = ${projectId} AND task_id = ${sourceTaskId}
+        ORDER BY created_at DESC, attempt_id DESC LIMIT 2`;
+    if (rows.length === 0) return null;
+    if (rows.length === 2 && rows[0]?.created_at === rows[1]?.created_at) return null;
+    return yield* decodeRow(rows[0]!);
+  });
+
   const requestKeyForAttempt = Effect.fn("RuntimeTaskExecutionService.requestKeyForAttempt")(
     function* (projectId: ProjectId, attemptId: RuntimeExecutionAttemptId) {
       const rows = yield* sql<{ readonly request_key: string | null }>`SELECT request_key
@@ -344,6 +362,8 @@ const make = Effect.gen(function* () {
       WHERE project_id = ${projectId} AND task_id = ${repairTaskId}
         AND request_key LIKE 'cont:v1:p:%'
         ${excludeAttemptId === undefined ? sql`` : sql`AND attempt_id <> ${excludeAttemptId}`}`;
+    // The public entry point reserves the whole `cont:v1:` namespace, so every
+    // row counted here is host-issued rather than a caller-chosen key.
     return rows[0]?.count ?? 0;
   });
 
@@ -378,6 +398,16 @@ const make = Effect.gen(function* () {
     if (source === null) return null;
     const { sourceTask, policy } = source;
     if (policy.reviewTaskId !== input.targetTaskId) return null;
+    // The chain is authorized by the source snapshot the operator accepted. If
+    // the source was edited after its root handoff, this decision is stale even
+    // when the immediately reviewed task did not change.
+    const rootAttempt = yield* readRootAttempt(input.projectId, input.sourceTaskId);
+    if (
+      rootAttempt === null ||
+      sourceTask.revision !== rootAttempt.receipt.packet.taskRevision + 1
+    ) {
+      return null;
+    }
 
     const linkedOption = yield* readAttemptRow(input.projectId, parsed.attemptId).pipe(
       Effect.option,
@@ -391,10 +421,16 @@ const make = Effect.gen(function* () {
       .readTask(input.projectId, linked.taskId)
       .pipe(Effect.option);
     if (Option.isNone(cursorTaskOption)) return null;
+    const cursorTask = cursorTaskOption.value;
+    // This is the launch/receipt authorization boundary, so it binds the exact
+    // authoritative revision: the handoff advanced the task once from the packet
+    // revision. A later operator edit (scope, acceptance, status) is a different
+    // decision and must be re-authorized explicitly rather than inherited.
+    if (cursorTask.revision !== linked.receipt.packet.taskRevision + 1) return null;
     const decision = evaluateContinuation({
       stage: "after_worker",
       sourceTask,
-      cursorTask: cursorTaskOption.value,
+      cursorTask,
       cursorAttempt: linked,
       cursorHandoff: linkedHandoff,
       repairCyclesSpent: 0,
@@ -461,15 +497,27 @@ const make = Effect.gen(function* () {
       .readTask(input.projectId, policy.reviewTaskId)
       .pipe(Effect.option);
     if (Option.isNone(reviewTaskOption)) return null;
+    const cursorTask = cursorTaskOption.value;
+    const reviewTask = reviewTaskOption.value;
+    // Repair authorization inherits the reviewed work and the reviewer verdict.
+    // Both revisions must still be exactly the post-handoff revision recorded in
+    // their receipts; otherwise the operator changed the accepted source or the
+    // reviewer instructions after dispatch.
+    if (
+      cursorTask.revision !== cursor.receipt.packet.taskRevision + 1 ||
+      reviewTask.revision !== linked.receipt.packet.taskRevision + 1
+    ) {
+      return null;
+    }
     const cycles = yield* repairCyclesFor(input.projectId, repairTaskId, input.excludeAttemptId);
     const decision = evaluateContinuation({
       stage: "after_review",
       sourceTask,
-      cursorTask: cursorTaskOption.value,
+      cursorTask,
       cursorAttempt: cursor,
       cursorHandoff: reviewAuthorization.sourceHandoff,
       repairCyclesSpent: cycles,
-      reviewTask: reviewTaskOption.value,
+      reviewTask,
       reviewAttempt: linked,
       reviewHandoff: linkedHandoff,
     });
@@ -648,10 +696,19 @@ const make = Effect.gen(function* () {
     attempt: RuntimeExecutionAttempt,
   ) {
     const requestKey = yield* requestKeyForAttempt(attempt.projectId, attempt.attemptId);
-    if (requestKey !== null && isContinuationRequestKey(requestKey)) {
+    if (requestKey !== null && isReservedContinuationRequestKey(requestKey)) {
+      // A pending receipt replays the packet that was authorized for one exact
+      // target revision. If the operator edited that task after insertion, the
+      // stored instructions are stale and must not launch.
+      const targetOption = yield* runtime
+        .readTask(attempt.projectId, attempt.taskId)
+        .pipe(Effect.option);
+      const target = Option.isNone(targetOption) ? null : targetOption.value;
+      const targetFresh =
+        target !== null && target.revision === attempt.receipt.packet.taskRevision;
       const sourceIds = yield* continuationSourceIds(attempt.projectId, attempt.taskId);
       const authorization =
-        sourceIds.length !== 1
+        !targetFresh || sourceIds.length !== 1
           ? null
           : yield* authorizeContinuationDispatch({
               projectId: attempt.projectId,
@@ -672,14 +729,16 @@ const make = Effect.gen(function* () {
         yield* Effect.logWarning("runtime-execution.continuation-revoked", {
           attemptId: attempt.attemptId,
           threadExists,
+          packetTaskRevision: attempt.receipt.packet.taskRevision,
+          currentTaskRevision: target?.revision ?? null,
         });
         return yield* updateAttempt({
           attempt,
           status: threadExists ? "reconcile_required" : "cancelled",
           runId: attempt.runId,
           failure: threadExists
-            ? "Continuation authorization was withdrawn before launch. Reconcile this attempt; no new turn was started."
-            : "Continuation authorization was withdrawn before launch; no work was started.",
+            ? "Continuation authorization was withdrawn or superseded before launch. Reconcile this attempt; no new turn was started."
+            : "Continuation authorization was withdrawn or superseded before launch; no work was started.",
         });
       }
     }
@@ -884,17 +943,11 @@ const make = Effect.gen(function* () {
           )`;
       if ((collisions[0]?.count ?? 0) !== 1) return;
 
-      const roots = yield* sql<AttemptRow>`SELECT * FROM project_runtime_execution_attempts
-        WHERE project_id = ${projectId} AND task_id = ${sourceTaskId}
-        ORDER BY created_at DESC, attempt_id DESC LIMIT 2`;
+      const rootAttempt = yield* readRootAttempt(projectId, sourceTaskId);
       // The latest implementation attempt is the only candidate. No implicit
       // choice is made when two root attempts share the same recorded instant.
-      if (
-        roots.length === 0 ||
-        (roots.length === 2 && roots[0]?.created_at === roots[1]?.created_at)
-      )
-        return;
-      let cursor = yield* lane.withPermits(1)(reconcileAttemptRow(yield* decodeRow(roots[0]!)));
+      if (rootAttempt === null) return;
+      let cursor = yield* lane.withPermits(1)(reconcileAttemptRow(rootAttempt));
       if (sourceTask.revision !== cursor.receipt.packet.taskRevision + 1) return;
       let cursorTask: ProjectRuntimeTask = sourceTask;
       let cycles = 0;
@@ -905,24 +958,54 @@ const make = Effect.gen(function* () {
         reason: string,
         sourceAttemptId: string,
         evidenceHandoffId: string | null,
+        expectedSourceRevision: number,
       ) {
         const current = yield* runtime.readTask(projectId, sourceTaskId);
         if (current.status === "blocked" || current.status === "cancelled") return;
-        yield* runtime.updateTask(
-          projectId,
-          {
+        // The escalation describes the snapshot that produced it. A newer
+        // operator decision (done, deferred, or withdrawn continuation) advances
+        // the revision; the delayed stop must not overwrite it.
+        if (
+          current.revision !== expectedSourceRevision ||
+          current.continuation?.mode !== "synthetic"
+        ) {
+          yield* Effect.logWarning("runtime-execution.continuation-stop-superseded", {
+            projectId,
             taskId: sourceTaskId,
-            expectedRevision: current.revision,
-            status: "blocked",
-            blocker: {
-              classification: "review-required",
-              summary: "Continuation stopped for operator review",
-              detail: `Synthetic continuation stopped: ${reason}. Source attempt: ${sourceAttemptId}. Evidence handoff: ${evidenceHandoffId ?? "none"}.`,
+            expectedSourceRevision,
+            currentRevision: current.revision,
+            status: current.status,
+          });
+          return;
+        }
+        const written = yield* runtime
+          .updateTask(
+            projectId,
+            {
+              taskId: sourceTaskId,
+              expectedRevision: expectedSourceRevision,
+              status: "blocked",
+              blocker: {
+                classification: "review-required",
+                summary: "Continuation stopped for operator review",
+                detail: `Synthetic continuation stopped: ${reason}. Source attempt: ${sourceAttemptId}. Evidence handoff: ${evidenceHandoffId ?? "none"}.`,
+              },
+              nextAction: "Review the evidence and explicitly authorize any further work.",
             },
-            nextAction: "Review the evidence and explicitly authorize any further work.",
-          },
-          { actor: "runtime:continuation" },
-        );
+            { actor: "runtime:continuation" },
+          )
+          .pipe(
+            Effect.catchTags({
+              ProjectRuntimeConflictError: (conflict) =>
+                Effect.logWarning("runtime-execution.continuation-stop-superseded", {
+                  projectId,
+                  taskId: sourceTaskId,
+                  expectedSourceRevision,
+                  currentRevision: conflict.currentRevision,
+                }).pipe(Effect.as(null)),
+            }),
+          );
+        if (written === null) return;
       });
 
       const dispatchAuthorized = Effect.fn("RuntimeTaskExecutionService.dispatchContinuation")(
@@ -987,7 +1070,12 @@ const make = Effect.gen(function* () {
         });
         if (workerDecision.action !== "review" || workerDecision.requestKey === null) {
           if (workerDecision.action === "ask_user" || workerDecision.action === "blocked") {
-            yield* holdForUser(workerDecision.reason, cursor.attemptId, cursor.handoffId ?? null);
+            yield* holdForUser(
+              workerDecision.reason,
+              cursor.attemptId,
+              cursor.handoffId ?? null,
+              workerDecision.sourceTaskRevision,
+            );
           }
           return;
         }
@@ -1017,7 +1105,12 @@ const make = Effect.gen(function* () {
           reviewHandoff,
         });
         if (reviewDecision.action === "ask_user" || reviewDecision.action === "blocked") {
-          yield* holdForUser(reviewDecision.reason, review.attemptId, review.handoffId ?? null);
+          yield* holdForUser(
+            reviewDecision.reason,
+            review.attemptId,
+            review.handoffId ?? null,
+            reviewDecision.sourceTaskRevision,
+          );
           return;
         }
         if (
@@ -1243,12 +1336,12 @@ const make = Effect.gen(function* () {
         const status = yield* runtime.getStatus(projectId);
         if (!status.enabled) return yield* new ProjectRuntimeDisabledError({ projectId });
 
-        // Defense in depth for the public entry point: a key prefix is a label,
-        // never a capability. Only the internal dispatcher may present one.
+        // Defense in depth for the public entry point: the entire continuation
+        // namespace is reserved, including malformed keys that never parse.
         if (
           continuation === null &&
           input.clientRequestId !== undefined &&
-          isContinuationRequestKey(input.clientRequestId)
+          isReservedContinuationRequestKey(input.clientRequestId)
         ) {
           return yield* rejected(
             projectId,
