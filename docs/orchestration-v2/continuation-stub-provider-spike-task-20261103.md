@@ -68,6 +68,14 @@ Prove that T3 can deterministically advance one previously authorized Runtime ta
 - Fail closed on missing evidence, unresolved review, stale revision, ambiguous worktree/provider permission, `reconcile_required` attempt, duplicate terminal event and active execution.
 - Maintain user gate for merges, destructive operations, material architecture/security changes and unapproved paid resources.
 
+## Finite agent decision budget (user-directed requirement, 2026-11-03)
+
+The user requires that selective orchestration never degenerates into unbounded Manager/Reviewer/Engineer debate. See [bounded-decision escalation design](bounded-decision-escalation-design-20261103.md), which records the qualitative requirement and identifies numeric production thresholds as **proposed, not yet accepted**.
+
+For this stub-provider experiment only, use a configurable **two-repair-and-review-cycle** test budget per task. Each reviewed repair attempt consumes one cycle; rephrasing a complaint, restarting T3, selecting another provider/model, or spawning a child does **not** reset the budget. A valid clean review completes with no redundant Manager model turn. An unresolvable same-issue disagreement at the limit produces exactly one durable `ask_user`/blocked decision and launches no further work. An operator-owned product choice triggers `ask_user` immediately regardless of unused budget.
+
+Add negative tests: same failure under different wording, duplicate events and restart after one consumed cycle, provider switch, real new evidence before exhaustion, no progress despite activity, one healthy long-running external test which must **not** count as idle debate, and a request for unauthorised scope. Keep this policy over fork Project Runtime; **do not** implement a separate generic provider conversation-limit mechanism or modify upstream V2. Do not make two cycles a production default on the strength of synthetic tests alone.
+
 ## Acceptance and verification paths
 
 **A. Successful review, no retry**
