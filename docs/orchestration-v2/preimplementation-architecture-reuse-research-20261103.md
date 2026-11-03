@@ -97,6 +97,36 @@ A separate supplied execution analysis finds that an agent-authored twelve-item 
 
 **Status:** research and source recon completed in browser; no code, deployment, upstream contribution, test or provider change.
 
+
+## Next browser-capable research handoff — comparative architecture gate
+
+**TASK / ROUTING:** Browser-side Overall Manager, read-only GitHub source/research, no external agent needed. This is an architectural research task, not a local implementation assignment.
+
+**BASE / CONTEXT:** Compare the live upstream `pingdotgg/t3code` main, fork `jermur788/t3code` main, current Argus and DeepSeek source at known inspected revisions; refresh every head before final findings. Use this document and the attached *Upstream-First Strategy* as research; the accepted [fork product direction](https://github.com/jermur788/t3code/blob/main/docs/internals/fork-product-direction.md) and current Project Runtime/coordination sources govern authority.
+
+**GOAL:** Decide, with code-level evidence, which *atomic* continuation/review/authority/observability capabilities are already provided by upstream, should be contributed upstream, should remain fork-specific policy, can be imported from Argus/DeepSeek, or should be deferred.
+
+**IN SCOPE:**
+1. Read current T3 orchestration V2 event/receipt/effect/continuation services, Runtime execution/review/evidence contracts and their focused tests. Compare fork vs upstream rather than relying only on docs.
+2. Investigate Argus as a possible **upper-layer project coordination policy** replacement: list exact project/mission/stage/reviewer interfaces, external write APIs, durable state owners, package coupling, provider independence, error/replay semantics and minimal adapter boundaries.
+3. Investigate DeepSeek Superagent's Event/Policy/Eval/Mandate/Outbox seams only to identify independent reusable concepts or code; do not assume ACP transports its coordination engine.
+4. Inspect live upstream PRs/issues/discussions for overlap. Record **proposal vs open PR vs merged main vs tested** separately, and whether upstream wants contributions.
+5. Classify real-run 12-item todo staleness as distinct progress-observability source question; look for existing upstream plan revision/heartbeat features and candidate patch scope without building them.
+6. Deliver an owner/reuse matrix, maintenance cost bands, strongest counterarguments to winning architecture, and precise pass/fail criteria for any remaining synthetic experiment.
+
+**OUT OF SCOPE:** no code modifications, source migrations, subagent installs, credentials, paid inference, CCF/Unity runs, project-state rewrites, implementation starts, PR merges or outreach to upstream without separate authorization.
+
+**OWNERSHIP:** Read-only source inspection; GitHub draft research branch may be updated by one documentation writer. T3 Runtime, upstream T3 execution graph and user-owned project authority do not change.
+
+**ACCEPTANCE:** All material claims link to exact source file/function or discussion/PR; no second authoritative task/attempt store proposed; actual upstream implementation distinguished from pending proposals; Argus direct-embed constraints explicitly examined; total-effort and token-measurement uncertainties noted; selection criteria remain reversible and user controls product choice.
+
+**VERIFICATION:** Source-level only (`SOURCE-INSPECTED`); no `RUNTIME PASS` claimed. If a code experiment is recommended, define isolated stub task(s), replay/restart/idempotence/security negative tests and acceptance criteria. Reconcile with Current State (Documentation V1 remains separately pending), record updated source base and handoff.
+
+**STOP CONDITIONS:** user decision on replacing accepted Project Runtime authority, upstream contribution identity/public disclosure, paid infrastructure, destructive operations, material scope expansion or unresolved security conflict.
+
+**HANDOFF RETURN:** Verdict/alternatives, source revisions and links, implementation truth vs claims, capability matrix, maintenance/rebase risks, verification gaps, blocker classification, recommended smallest next task, state/PR changes and product decision (if any) requiring user action.
+
+
 ## Evidence limits
 
 This is browser source inspection, not an installation, runtime test, security audit, or independent review. Claims about live multi-day autonomy, speedups, cost or installed compatibility remain external authors' reports. The current user priority is to maximize verified outcomes per token and preserve project truth across providers; no production route, integration or adoption of Argus, OpenHands, DeepSeek Superagent, Cloudroom, Letta or Mastra is authorized by this note.
