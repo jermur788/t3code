@@ -50,6 +50,10 @@ import * as ServerSettingsService from "../serverSettings.ts";
 
 import * as ProjectRuntimeService from "./ProjectRuntimeService.ts";
 import { buildRuntimeTaskPacket, RUNTIME_TASK_PACKET_VERSION } from "./RuntimeTaskPacket.ts";
+import {
+  continuationRequestKey,
+  evaluateContinuation,
+} from "./RuntimeTaskContinuationPolicy.ts";
 
 const AttemptJson = Schema.fromJsonString(RuntimeExecutionAttempt);
 const encodeAttempt = Schema.encodeEffect(AttemptJson);
@@ -624,16 +628,214 @@ const make = Effect.gen(function* () {
     },
   );
 
+
+  /**
+   * Project-owned post-settlement policy. The source task's operator-authored
+   * policy is the sole authorization. The action chain is derived from existing
+   * durable request keys, never from free-form prompts or reviewer wording:
+   *
+   *   implementation attempt -> review:<attempt> -> repair:<review> -> review:<repair>
+   *
+   * The existing execution receipt is inserted before launch. A crash before
+   * calling execute is recovered by the startup scan; a crash after its receipt
+   * replays the same thread/command ids. This adds no new queue or state owner.
+   */
+  const advanceContinuation = Effect.fn("RuntimeTaskExecutionService.advanceContinuation")(
+    function* (projectId: ProjectId, sourceTaskId: ProjectRuntimeTaskId) {
+      const sourceTask = yield* runtime.readTask(projectId, sourceTaskId);
+      const policy = sourceTask.continuation;
+      if (policy?.mode !== "synthetic" || sourceTask.status === "blocked" ||
+          sourceTask.status === "cancelled" || sourceTask.status === "deferred") return;
+
+      const roots = yield* sql<AttemptRow>`SELECT * FROM project_runtime_execution_attempts
+        WHERE project_id = ${projectId} AND task_id = ${sourceTaskId}
+        ORDER BY created_at DESC, attempt_id DESC LIMIT 2`;
+      // The latest implementation attempt is the only candidate. No implicit
+      // choice is made when two root attempts share the same recorded instant.
+      if (roots.length === 0 || (roots.length === 2 &&
+          roots[0]?.created_at === roots[1]?.created_at)) return;
+      let cursor = yield* decodeRow(roots[0]!);
+      let cursorTask: ProjectRuntimeTask = sourceTask;
+      let cycles = 0;
+      const fetchLinkedHandoff = (attempt: RuntimeExecutionAttempt) =>
+        attempt.handoffId === undefined || attempt.handoffId === null
+          ? Effect.succeed(null)
+          : runtime.readHandoff(projectId, attempt.handoffId).pipe(
+              Effect.catchTags({ ProjectRuntimeNotFoundError: () => Effect.succeed(null) }),
+            );
+
+      const dispatchAuthorized = Effect.fn("RuntimeTaskExecutionService.dispatchContinuation")(
+        function* (
+          targetTaskId: ProjectRuntimeTaskId,
+          requestKey: string,
+          compareWith: RuntimeExecutionAttempt,
+          independentReview: boolean,
+        ) {
+          const target = yield* runtime.readTask(projectId, targetTaskId);
+          if (!EXECUTABLE_TASK_STATUSES.has(target.status) ||
+              target.projectId !== sourceTask.projectId ||
+              (independentReview && target.owner === sourceTask.owner)) return;
+
+          const active = yield* sql<{ readonly request_key: string | null }>`SELECT request_key
+            FROM project_runtime_execution_attempts
+            WHERE project_id = ${projectId} AND task_id = ${targetTaskId}
+              AND status IN ('pending', 'launched', 'cancelling', 'reconcile_required')
+            LIMIT 1`;
+          if (active[0] !== undefined && active[0].request_key !== requestKey) return;
+
+          if (independentReview) {
+            // Do not infer independence from a role string or prompt. An
+            // explicit eligible alternative provider instance is required.
+            const reviewRoute = yield* routing.resolveRoute({ projectId, taskId: targetTaskId });
+            if (reviewRoute.status !== "resolved" || reviewRoute.selected === null ||
+                reviewRoute.selected.providerInstanceId === compareWith.modelSelection.instanceId) {
+              return;
+            }
+          }
+          // execute handles the persisted request-key/active-attempt CAS and
+          // launch receipts. Never call ThreadLaunchService directly here.
+          yield* execute(projectId, {
+            taskId: targetTaskId,
+            expectedTaskRevision: target.revision,
+            clientRequestId: requestKey,
+          });
+        },
+      );
+
+      // Synthetic budget is at most two. A review/repair row already persisted
+      // under a request key consumes the same slot regardless of provider,
+      // restart, event replay, or rephrased reviewer complaint.
+      for (let step = 0; step <= policy.maxRepairCycles; step++) {
+        const cursorHandoff = yield* fetchLinkedHandoff(cursor);
+        const workerDecision = evaluateContinuation({
+          stage: "after_worker",
+          sourceTask,
+          cursorTask,
+          cursorAttempt: cursor,
+          cursorHandoff,
+          repairCyclesSpent: cycles,
+        });
+        if (workerDecision.action !== "review" || workerDecision.requestKey === null) {
+          if (workerDecision.action === "ask_user") {
+            yield* holdForUser(workerDecision.reason);
+          }
+          return;
+        }
+        const reviewTask = yield* runtime.readTask(projectId, policy.reviewTaskId);
+        const reviewKey = workerDecision.requestKey;
+        const review = yield* readByRequestKey(projectId, policy.reviewTaskId, reviewKey);
+        if (review === null) {
+          yield* dispatchAuthorized(policy.reviewTaskId, reviewKey, cursor, true);
+          return;
+        }
+        if (!TERMINAL_ATTEMPT_STATUSES.has(review.status)) return;
+        const reviewHandoff = yield* fetchLinkedHandoff(review);
+        const reviewDecision = evaluateContinuation({
+          stage: "after_review",
+          sourceTask,
+          cursorTask,
+          cursorAttempt: cursor,
+          cursorHandoff,
+          repairCyclesSpent: cycles,
+          reviewTask,
+          reviewAttempt: review,
+          reviewHandoff,
+        });
+        if (reviewDecision.action === "ask_user") {
+          yield* holdForUser(reviewDecision.reason);
+          return;
+        }
+        if (reviewDecision.action !== "repair_or_retry" ||
+            reviewDecision.requestKey === null || policy.repairTaskId === undefined) return;
+
+        const repair = yield* readByRequestKey(
+          projectId,
+          policy.repairTaskId,
+          reviewDecision.requestKey,
+        );
+        if (repair === null) {
+          yield* dispatchAuthorized(policy.repairTaskId, reviewDecision.requestKey, review, false);
+          return;
+        }
+        cycles += 1;
+        if (!TERMINAL_ATTEMPT_STATUSES.has(repair.status)) return;
+        cursor = repair;
+        cursorTask = yield* runtime.readTask(projectId, policy.repairTaskId);
+      }
+
+      function holdForUser(reason: string) {
+        return Effect.gen(function* () {
+          const current = yield* runtime.readTask(projectId, sourceTaskId);
+          if (current.status === "blocked" || current.status === "cancelled") return;
+          // No external question is emitted: the single durable blocked task
+          // is the operator-facing escalation receipt for this synthetic spike.
+          yield* runtime.updateTask(
+            projectId,
+            {
+              taskId: sourceTaskId,
+              expectedRevision: current.revision,
+              status: "blocked",
+              blocker: {
+                classification: "review-required",
+                summary: "Continuation requires an operator decision",
+                detail: `Synthetic continuation stopped: ${reason}.`,
+              },
+              nextAction: "Review the evidence and explicitly authorize any further work.",
+            },
+            { actor: "runtime:continuation" },
+          );
+        });
+      }
+    },
+  );
+
+  const continuationSourceIds = Effect.fn("RuntimeTaskExecutionService.continuationSourceIds")(
+    function* (projectId: ProjectId, taskId: ProjectRuntimeTaskId) {
+      const rows = yield* sql<{ readonly task_id: string }>`SELECT task_id
+        FROM project_runtime_tasks
+        WHERE project_id = ${projectId}
+          AND (
+            (task_id = ${taskId} AND json_extract(payload_json, '$.continuation.mode') = 'synthetic')
+            OR json_extract(payload_json, '$.continuation.reviewTaskId') = ${taskId}
+            OR json_extract(payload_json, '$.continuation.repairTaskId') = ${taskId}
+          )
+        ORDER BY task_id`;
+      // Sharing review/repair lanes between policies is ambiguous; stop rather
+      // than guessing which project decision owns the completion event.
+      return rows.length === 1 ? [ProjectRuntimeTaskId.make(rows[0]!.task_id)] : [];
+    },
+  );
+
+  const advanceAfterReconcile = Effect.fn("RuntimeTaskExecutionService.advanceAfterReconcile")(
+    function* (attempt: RuntimeExecutionAttempt) {
+      if (!TERMINAL_ATTEMPT_STATUSES.has(attempt.status)) return;
+      const sourceIds = yield* continuationSourceIds(attempt.projectId, attempt.taskId);
+      for (const sourceTaskId of sourceIds) {
+        yield* advanceContinuation(attempt.projectId, sourceTaskId).pipe(
+          Effect.catchCause((cause) =>
+            Effect.logWarning("runtime-execution.continuation-blocked", {
+              projectId: attempt.projectId,
+              taskId: sourceTaskId,
+              cause,
+            }),
+          ),
+        );
+      }
+    },
+  );
+
   const reconcileAttempt: RuntimeTaskExecutionService["Service"]["reconcileAttempt"] = Effect.fn(
     "RuntimeTaskExecutionService.reconcileAttempt",
   )(function* (projectId, attemptId) {
-    return yield* lane.withPermits(1)(
+    const reconciled = yield* lane.withPermits(1)(
       Effect.gen(function* () {
         yield* runtime.getStatus(projectId);
         const attempt = yield* readAttemptRow(projectId, attemptId);
         return yield* reconcileAttemptRow(attempt);
       }),
     );
+    yield* advanceAfterReconcile(reconciled);
+    return reconciled;
   });
 
   const reconcileActiveAttempts: RuntimeTaskExecutionService["Service"]["reconcileActiveAttempts"] =
@@ -655,6 +857,30 @@ const make = Effect.gen(function* () {
               }),
             ),
           ),
+        { concurrency: 1, discard: true },
+      );
+      // Catch a crash after terminal settlement but before the authorized
+      // follow-up dispatch. Historical terminal rows remain authoritative.
+      const configured = yield* sql<{
+        readonly project_id: string;
+        readonly task_id: string;
+      }>`SELECT project_id, task_id FROM project_runtime_tasks
+        WHERE json_extract(payload_json, '$.continuation.mode') = 'synthetic'
+        ORDER BY project_id, task_id`;
+      yield* Effect.forEach(
+        configured,
+        (row) => advanceContinuation(
+          row.project_id as ProjectId,
+          ProjectRuntimeTaskId.make(row.task_id),
+        ).pipe(
+          Effect.catchCause((cause) =>
+            Effect.logWarning("runtime-execution.continuation-recovery-blocked", {
+              projectId: row.project_id,
+              taskId: row.task_id,
+              cause,
+            }),
+          ),
+        ),
         { concurrency: 1, discard: true },
       );
       return rows.length;
