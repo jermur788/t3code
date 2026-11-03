@@ -1,0 +1,120 @@
+diff --git a/apps/server/src/orchestration-v2/DelegatedCompletionDelivery.test.ts b/apps/server/src/orchestration-v2/DelegatedCompletionDelivery.test.ts
+--- a/apps/server/src/orchestration-v2/DelegatedCompletionDelivery.test.ts
++++ b/apps/server/src/orchestration-v2/DelegatedCompletionDelivery.test.ts
+@@ -1233,7 +1233,7 @@
+   readonly name: string;
+   readonly completionWake: "always" | "settled_only";
+   readonly continuationPending: boolean;
+-  readonly runStatus?: "cancelled" | "completed";
++  readonly runStatus?: "cancelled" | "completed" | "interrupted";
+   readonly lostWork?: OrchestrationV2Run["restartCancelledBackgroundWork"];
+   readonly now: DateTime.Utc;
+ }) =>
+@@ -1746,6 +1746,7 @@
+       "completed",
+       "failed",
+       "interrupted",
++      "original-interrupted",
+       "restarted",
+       "stopped",
+       "overlapping",
+@@ -1779,7 +1780,7 @@
+             name: `followup-child-${outcome}`,
+             completionWake: "always",
+             continuationPending: false,
+-            runStatus: "completed",
++            runStatus: outcome === "original-interrupted" ? "interrupted" : "completed",
+             now,
+           });
+           yield* orchestrator.recoverDelegatedTasks;
+@@ -1796,6 +1797,9 @@
+           const original = (yield* orchestrator.getThreadProjection(parentThreadId)).subagents.find(
+             (task) => task.id === child.taskId,
+           )!;
++          if (outcome === "original-interrupted") {
++            assert.equal(original.status, "interrupted");
++          }
+           const parentRun = (yield* orchestrator.getThreadProjection(parentThreadId)).runs.find(
+             (run) => run.id === parentRunId,
+           )!;
+@@ -1813,7 +1817,7 @@
+             ],
+           });
+           const messageId = MessageId.make(`message:followup-${outcome}`);
+-          yield* orchestrator.dispatch({
++          const followupCommand = {
+             type: "message.dispatch",
+             createdBy: outcome === "failed" ? "user" : "agent",
+             creationSource: outcome === "failed" ? "web" : "mcp",
+@@ -1824,10 +1828,27 @@
+             text: "Check the same work again.",
+             attachments: [],
+             dispatchMode: { type: "start_immediately" },
+-          });
++          } as const;
++          yield* orchestrator.dispatch(followupCommand);
++          if (outcome === "original-interrupted") {
++            // Reusing a clientRequestId derives the same command ID and cannot create another task.
++            yield* orchestrator.dispatch(followupCommand);
++          }
+           const childProjection = yield* orchestrator.getThreadProjection(child.childThreadId);
+           let run = childProjection.runs.find((row) => row.userMessageId === messageId)!;
+           assert.isDefined(run.delegatedTaskId);
++          if (outcome === "original-interrupted") {
++            assert.equal(
++              childProjection.runs.find((row) => row.id === child.childRunId)?.status,
++              "interrupted",
++            );
++            assert.notEqual(run.id, child.childRunId);
++            assert.notEqual(run.delegatedTaskId, child.taskId);
++            assert.equal(
++              childProjection.runs.filter((row) => row.userMessageId === messageId).length,
++              1,
++            );
++          }
+           const workingParent = yield* orchestrator.getShellSnapshot();
+           const backgroundTask = workingParent.threads
+             .find((thread) => thread.id === parentThreadId)
+@@ -1916,7 +1937,7 @@
+                   status:
+                     outcome === "stopped"
+                       ? "interrupted"
+-                      : outcome === "restarted" || outcome === "overlapping"
++                      : outcome === "restarted" || outcome === "overlapping" || outcome === "original-interrupted"
+                         ? "completed"
+                         : outcome,
+                   startedAt: now,
+@@ -1946,7 +1967,7 @@
+             followup.status,
+             outcome === "stopped"
+               ? "interrupted"
+-              : outcome === "restarted" || outcome === "overlapping"
++              : outcome === "restarted" || outcome === "overlapping" || outcome === "original-interrupted"
+                 ? "completed"
+                 : outcome,
+           );
+@@ -1967,6 +1988,9 @@
+               wake.delegatedCompletion?.messageId,
+               firstWake.delegatedCompletion?.messageId,
+             );
++            if (outcome === "original-interrupted") {
++              assert.isTrue(wake.delegatedCompletion?.taskIds.includes(followup.id) ?? false);
++            }
+           }
+           assert.equal(
+             finished.contextTransfers.filter(
+@@ -1979,6 +2003,14 @@
+           yield* orchestrator.recoverDelegatedTasks;
+           const recovered = yield* orchestrator.getThreadProjection(parentThreadId);
+           assert.equal(recovered.contextTransfers.length, finished.contextTransfers.length);
++          if (outcome === "original-interrupted") {
++            assert.equal(
++              recovered.subagents.filter((task) => task.childThreadId === child.childThreadId)
++                .length,
++              2,
++            );
++            assert.deepEqual(recovered.subagents, finished.subagents);
++          }
+           if (outcome === "completed") {
+             const automaticMessageId = MessageId.make("message:followup-automatic-wake");
+             yield* orchestrator.dispatch({
