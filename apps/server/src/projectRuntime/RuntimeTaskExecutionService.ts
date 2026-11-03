@@ -49,10 +49,15 @@ import * as RuntimeRoutingService from "../runtimeRouting/RuntimeRoutingService.
 import * as ServerSettingsService from "../serverSettings.ts";
 
 import * as ProjectRuntimeService from "./ProjectRuntimeService.ts";
-import { buildRuntimeTaskPacket, RUNTIME_TASK_PACKET_VERSION } from "./RuntimeTaskPacket.ts";
+import {
+  buildRuntimeTaskPacket,
+  RUNTIME_TASK_PACKET_VERSION,
+  type RuntimeTaskContinuationOrigin,
+} from "./RuntimeTaskPacket.ts";
 import {
   continuationRequestKey,
   evaluateContinuation,
+  handoffMatchesAttempt,
 } from "./RuntimeTaskContinuationPolicy.ts";
 
 const AttemptJson = Schema.fromJsonString(RuntimeExecutionAttempt);
@@ -1038,7 +1043,43 @@ const make = Effect.gen(function* () {
         const timestamp = yield* now;
         const attemptId = yield* newAttemptId;
         const threadId = yield* ids.allocate.thread({ projectId });
-        const packetText = buildRuntimeTaskPacket(task, handoff);
+        let continuationOrigin: RuntimeTaskContinuationOrigin | undefined;
+        const continuationMatch = /^cont:v1:([rp]):(.+)$/.exec(input.clientRequestId ?? "");
+        if (continuationMatch !== null) {
+          const kind = continuationMatch[1]!;
+          const source = yield* readAttemptRow(projectId, asAttemptId(continuationMatch[2]!));
+          const sourceHandoff = source.handoffId == null
+            ? null
+            : yield* runtime.readHandoff(projectId, source.handoffId).pipe(
+                Effect.catchTags({ ProjectRuntimeNotFoundError: () => Effect.succeed(null) }),
+              );
+          const roots = yield* sql<{ readonly task_id: string }>`SELECT task_id
+            FROM project_runtime_tasks WHERE project_id = ${projectId}
+              AND json_extract(payload_json, '$.continuation.mode') = 'synthetic'
+              AND (
+                (${kind} = 'r' AND json_extract(payload_json, '$.continuation.reviewTaskId') = ${task.taskId}
+                  AND (task_id = ${source.taskId}
+                    OR json_extract(payload_json, '$.continuation.repairTaskId') = ${source.taskId}))
+                OR
+                (${kind} = 'p' AND json_extract(payload_json, '$.continuation.repairTaskId') = ${task.taskId}
+                  AND json_extract(payload_json, '$.continuation.reviewTaskId') = ${source.taskId})
+              )`;
+          if (roots.length !== 1 || source.status !== "completed" ||
+              !handoffMatchesAttempt(source, sourceHandoff)) {
+            return yield* rejected(
+              projectId,
+              task.taskId,
+              "task_not_executable",
+              "The continuation source is not an authorized, reconciled completion.",
+            );
+          }
+          continuationOrigin = {
+            sourceTaskId: source.taskId,
+            sourceAttemptId: source.attemptId,
+            sourceHandoffId: sourceHandoff.handoffId,
+          };
+        }
+        const packetText = buildRuntimeTaskPacket(task, handoff, continuationOrigin);
         const receipt: RuntimeExecutionRoutingReceipt = {
           route: resolved.resolution,
           launch: resolved.launchPlan,
