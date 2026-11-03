@@ -1,7 +1,16 @@
 # Manager reconciliation — completed browser review of upstream PR #28777
 
 Date: 2026-11-03
-Status: WORKER-REPORTED RUNTIME PASS / LOG AND CORRECTED PATCH INSPECTION PENDING / NO UPSTREAM SUBMISSION
+Status: LOCAL RUNTIME PASS EVIDENCE FETCHED / MANAGER SOURCE REVIEW PASS / NO UPSTREAM SUBMISSION
+
+## Final evidence gate — supersedes earlier access blocker
+
+The local evidence capture reported at 21:59 UTC has been published and checked through the GitHub connector. **This supersedes earlier statements below that corrected patch/log evidence was not accessible.**
+
+- [Corrected patch and local results](manager-pr28777-evidence-review-and-upstream-draft-20261103.md) independently fetched and source-reviewed by Overall Manager. The report contains 34/34 focused tests and exit-0 checks; the patch is a test-only one-file diff and checks the committed parent-run wake cohort. There was no independent execution rerun by the manager.
+- **Current verdict:** local **RUNTIME PASS** supported by worker execution and retrieved evidence; manager **SOURCE REVIEW PASS**; live model-choice / provider-session / MCP request-key qualification NOT RUN.
+- Public upstream communication and merge remain **NOT AUTHORIZED / NOT DONE**. [Ready-to-post but unsent feedback](manager-pr28777-evidence-review-and-upstream-draft-20261103.md) is stored. Next stop is for user approval to post to existing PR; no further local testing is required for the narrow test-only contribution unless the author or maintainer asks.
+- Existing worktrees remain intact. No cleanup authorized.
 
 ## Received handoff and evidence
 
