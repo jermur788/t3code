@@ -607,19 +607,20 @@ const make = Effect.gen(function* () {
       const data = yield* decodeTaskCreateInput(input);
       const { actor } = yield* decodeWriteContext(context);
       yield* requireEnabled(projectId);
+      const timestamp = yield* now;
+      const taskId = ProjectRuntimeTaskId.make(yield* newId);
       // MCP/worker actors cannot self-grant continuation authority.
       if (data.continuation !== undefined && !actor.startsWith("user:")) {
         return yield* new ProjectRuntimeInvalidTransitionError({
           projectId,
-          taskId: ProjectRuntimeTaskId.make("unauthorized-continuation"),
+          taskId,
           violation: "continuation_requires_operator",
         });
       }
-      const timestamp = yield* now;
       const record: ProjectRuntimeTask = {
         ...data,
         projectId,
-        taskId: ProjectRuntimeTaskId.make(yield* newId),
+        taskId,
         owner: data.owner ?? actor,
         status: data.status ?? "planned",
         blocker: data.blocker === undefined ? null : { ...data.blocker, createdAt: timestamp },
