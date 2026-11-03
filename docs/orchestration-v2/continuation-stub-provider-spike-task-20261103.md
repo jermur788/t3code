@@ -1,7 +1,7 @@
 # Bounded spike: T3-native automatic continuation
 
 Date: 2026-11-03
-Status: EXPERIMENT AUTHORIZED FOR ISOLATED STUB-PROVIDER DEVELOPMENT / NOT ACCEPTED PRODUCTION DESIGN / NOT IMPLEMENTED
+Status: DRAFT EXPERIMENT READY AFTER RESEARCH/SPEC GATE / NOT ACCEPTED PRODUCTION DESIGN / NOT IMPLEMENTED
 Owner: T3 Code local isolated worker, with Overall Manager evidence review
 Repository: jermur788/t3code
 Base: current main as of review, revalidate before work (reported d3bedef12a31); use fresh isolated worktree
@@ -18,6 +18,16 @@ Independent reviewer recommends T3-native continuation rather than replacing the
 - DeepSeek Harness's ACP worker entrypoint is already documented by T3. No new provider driver is required for this spike.
 
 The independent reviewer ran no code. This authorizes a **reversible local test**, not adoption of a final product architecture. Option B may be reopened if future APIs, security guarantees or measured effort materially change.
+
+## Pre-implementation research gate (2026-11-03)
+
+Before starting the local code writer, reconcile the source findings from [the comparison with Argus, DeepSeek Superagent, OpenHands and Cloudroom](preimplementation-architecture-reuse-research-20261103.md) with the active governing spec and Current State.
+
+- Confirm T3's existing execution attempt and event outbox/commit mechanisms already cover the intended duplicate-prevention boundary before adding persistence. Do not assume upstream EventSink can take new fork-specific effect types without a compatibility review.
+- Preserve the Argus-style direct fast path (no redundant Manager turn after a clean independent review) and require evidence provenance, revision freshness and scope before admitting any completion.
+- Preserve the DeepSeek-style distinction between an incoming event and an authorization grant.
+- Record which design facts and event seams were source-inspected, and which still need runtime proof.
+- Keep the task a reversible synthetic proof, not a release or policy enablement. This gate may be satisfied by manager source review and a bounded accepted spec; it does not require another full external framework audit.
 
 ## Initial gate: repo and task ownership
 
