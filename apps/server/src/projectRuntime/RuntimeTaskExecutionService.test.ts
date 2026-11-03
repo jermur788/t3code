@@ -6,7 +6,6 @@ import {
   ProjectRuntimeTaskId,
   ProjectRuntimeHandoffId,
   ProviderDriverKind,
-  ThreadId,
   ProviderInstanceId,
   type Project,
   type ProjectRuntimeTask,
