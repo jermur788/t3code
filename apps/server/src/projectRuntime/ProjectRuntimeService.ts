@@ -287,6 +287,10 @@ function applyTaskPatch(
     if (patch.routing === null) delete result.routing;
     else result.routing = patch.routing;
   }
+  if (patch.continuation !== undefined) {
+    if (patch.continuation === null) delete result.continuation;
+    else result.continuation = patch.continuation;
+  }
   return result;
 }
 
@@ -321,6 +325,18 @@ const validateTask = Effect.fn("ProjectRuntimeService.validateTask")(function* (
   projectId: ProjectId,
   task: ProjectRuntimeTask,
 ) {
+  if (
+    task.continuation !== undefined &&
+    (task.continuation.reviewTaskId === task.taskId ||
+      task.continuation.repairTaskId === task.taskId ||
+      task.continuation.repairTaskId === task.continuation.reviewTaskId)
+  ) {
+    return yield* new ProjectRuntimeInvalidTransitionError({
+      projectId,
+      taskId: task.taskId,
+      violation: "continuation_requires_operator",
+    });
+  }
   if (task.status === "blocked" && task.blocker === null) {
     return yield* new ProjectRuntimeInvalidTransitionError({
       projectId,
@@ -591,6 +607,14 @@ const make = Effect.gen(function* () {
       const data = yield* decodeTaskCreateInput(input);
       const { actor } = yield* decodeWriteContext(context);
       yield* requireEnabled(projectId);
+      // MCP/worker actors cannot self-grant continuation authority.
+      if (data.continuation !== undefined && !actor.startsWith("user:")) {
+        return yield* new ProjectRuntimeInvalidTransitionError({
+          projectId,
+          taskId: ProjectRuntimeTaskId.make("unauthorized-continuation"),
+          violation: "continuation_requires_operator",
+        });
+      }
       const timestamp = yield* now;
       const record: ProjectRuntimeTask = {
         ...data,
@@ -635,6 +659,13 @@ const make = Effect.gen(function* () {
       const { actor } = yield* decodeWriteContext(context);
       const existing = yield* readTask(projectId, taskId);
       yield* checkRevision(projectId, "task", existing.revision, expectedRevision, taskId);
+      if (patch.continuation !== undefined && !actor.startsWith("user:")) {
+        return yield* new ProjectRuntimeInvalidTransitionError({
+          projectId,
+          taskId,
+          violation: "continuation_requires_operator",
+        });
+      }
       const timestamp = yield* now;
       const record: ProjectRuntimeTask = {
         ...applyTaskPatch(existing, patch, timestamp),
