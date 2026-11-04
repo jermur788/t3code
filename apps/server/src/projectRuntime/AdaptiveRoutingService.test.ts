@@ -1,3 +1,4 @@
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, it } from "@effect/vitest";
 import {
@@ -526,7 +527,7 @@ it.effect("preserves adaptive records and reconciliation history across a file-b
         }).pipe(Effect.provide(serviceLayer)),
       );
     }),
-  ).pipe(Effect.provide(NodeServices.layer)),
+  ).pipe(Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
 );
 
 it.effect("fails closed on a malformed stored accepted-outcome payload", () =>

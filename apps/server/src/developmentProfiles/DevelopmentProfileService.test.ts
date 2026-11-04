@@ -1,3 +1,4 @@
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, it } from "@effect/vitest";
 import {
@@ -45,7 +46,7 @@ const seedProjects = Effect.gen(function* () {
 
 const layerTest = DevelopmentProfileService.layer.pipe(
   Layer.provideMerge(SqlitePersistence.layerMemory),
-  Layer.provide(NodeServices.layer),
+  Layer.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
 );
 
 it.effect("creates, renames, edits, and rejects stale updates and deletes", () =>
@@ -482,7 +483,7 @@ it.effect("reopens the database with the same profiles and assignments", () =>
         }).pipe(Effect.provide(serviceLayer)),
       );
     }),
-  ).pipe(Effect.provide(NodeServices.layer)),
+  ).pipe(Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
 );
 
 it.effect(

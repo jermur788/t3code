@@ -25,7 +25,7 @@ import {
   resolveProjectProviderInstanceEnabled,
 } from "@t3tools/contracts";
 import * as Context from "effect/Context";
-import * as Crypto from "effect/Crypto";
+import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -217,7 +217,7 @@ export class RuntimeTaskExecutionService extends Context.Service<
 
 const make = Effect.gen(function* () {
   const sql = yield* SqlClient.SqlClient;
-  const crypto = yield* Crypto.Crypto;
+  const random = yield* SecureRandom.SecureRandom;
   const ids = yield* IdAllocator.IdAllocatorV2;
   const runtime = yield* ProjectRuntimeService.ProjectRuntimeService;
   const routing = yield* RuntimeRoutingService.RuntimeRoutingService;
@@ -227,7 +227,7 @@ const make = Effect.gen(function* () {
   const launch = yield* ThreadLaunchService.ThreadLaunchService;
   const threads = yield* ThreadManagementService.ThreadManagementService;
   const lane = yield* Semaphore.make(1);
-  const newAttemptId = crypto.randomUUIDv4().pipe(Effect.map(asAttemptId));
+  const newAttemptId = random.uuidV4().pipe(Effect.map(asAttemptId));
 
   const decodeRow = Effect.fn("RuntimeTaskExecutionService.decodeRow")(function* (row: AttemptRow) {
     const decoded = yield* decodeAttempt(row.payload_json);
@@ -707,7 +707,7 @@ const make = Effect.gen(function* () {
 
         const timestamp = yield* now;
         const commandId = CommandId.make(
-          `command:runtime-execution:${attempt.attemptId}:cancel:${yield* crypto.randomUUIDv4()}`,
+          `command:runtime-execution:${attempt.attemptId}:cancel:${yield* random.uuidV4()}`,
         );
         const dispatched = yield* threads
           .dispatch({

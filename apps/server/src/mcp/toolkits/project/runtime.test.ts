@@ -103,12 +103,12 @@ const layerRuntime = ProjectRuntimeSourceAccess.layer.pipe(
   Layer.provideMerge(layerWorkspace),
   Layer.provideMerge(SqlitePersistence.layerMemory),
   Layer.provide(ServerConfig.ServerConfig.layerTest(process.cwd(), { prefix: "t3-mcp-runtime-" })),
-  Layer.provideMerge(NodeServices.layer),
+  Layer.provideMerge(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
 );
 
 // The toolkit declares services for its other tools, which these tests never call.
 const layerTest = McpHttpServer.layerProjectRegistration.pipe(
-  Layer.provideMerge(McpServer.McpServer.layer),
+  Layer.provideMerge(McpHttpServer.layerInProcessMcpServer),
   Layer.provide(
     Layer.mergeAll(
       NodeCrypto.layer,
@@ -123,7 +123,7 @@ const layerTest = McpHttpServer.layerProjectRegistration.pipe(
       Layer.mock(GitVcsDriver.GitVcsDriver)({}),
       DocumentText.layer,
       ServerConfig.ServerConfig.layerTest(process.cwd(), { prefix: "t3-mcp-runtime-tools-" }),
-    ).pipe(Layer.provide(NodeServices.layer)),
+    ).pipe(Layer.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
   ),
   Layer.provideMerge(layerRuntime),
 );

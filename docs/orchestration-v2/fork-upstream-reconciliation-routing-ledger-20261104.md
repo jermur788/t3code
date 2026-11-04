@@ -10,13 +10,13 @@
 
 ## Stage registry, to append live completion events
 
-| Stage | Scope | Intended route | State at seed | Actual route | Verification |
-| --- | --- | --- | --- | --- | --- |
-| R0 | repo/branch/ownership/disk/runtime preflight | DeepSeek coordinator | READY, not dispatched | Unknown | repo and disk evidence |
-| R1 | current eight-plus conflict reproduction/classification | DeepSeek analyst | WAITING | Unknown | current hunk matrix |
-| R2 | isolated semantic conflict resolution | one writer; stronger model if security-sensitive | WAITING | Unknown | test-backed resolved diff |
-| R3 | merged-tree gate and budget tests | independent local runner | WAITING | Unknown | exact commands/exits |
-| R4 | separate independent reviewer and handoff | Codex/Claude-class | WAITING | Unknown | review acceptance, preserved branch |
+| Stage | Scope                                                   | Intended route                                   | State at seed         | Actual route | Verification                        |
+| ----- | ------------------------------------------------------- | ------------------------------------------------ | --------------------- | ------------ | ----------------------------------- |
+| R0    | repo/branch/ownership/disk/runtime preflight            | DeepSeek coordinator                             | READY, not dispatched | Unknown      | repo and disk evidence              |
+| R1    | current eight-plus conflict reproduction/classification | DeepSeek analyst                                 | WAITING               | Unknown      | current hunk matrix                 |
+| R2    | isolated semantic conflict resolution                   | one writer; stronger model if security-sensitive | WAITING               | Unknown      | test-backed resolved diff           |
+| R3    | merged-tree gate and budget tests                       | independent local runner                         | WAITING               | Unknown      | exact commands/exits                |
+| R4    | separate independent reviewer and handoff               | Codex/Claude-class                               | WAITING               | Unknown      | review acceptance, preserved branch |
 
 ## Routing event 0000 — planned by Overall Manager, NOT a dispatch
 
@@ -32,16 +32,16 @@ UTC timestamp; parent/child task and stage; attempted number; objective/acceptan
 
 ## Conflict resolution matrix — fill from actual latest upstream trial
 
-| File | Upstream intent | Fork intent | Actual conflict | Selected resolution | Safety risk | Test evidence | Reviewer |
-| --- | --- | --- | --- | --- | --- | --- | --- |
-| OrchestratorMcpService.ts | unknown | unknown | to reproduce | none | SECURITY/ROUTING | none | pending |
-| linkOrigin.test.ts | unknown | unknown | to reproduce | none | TEST | none | pending |
-| GrokAdapterV2.test.ts | unknown | unknown | to reproduce | none | PROVIDER | none | pending |
-| OpenCode2AdapterV2.test.ts | unknown | unknown | to reproduce | none | PROVIDER | none | pending |
-| runtimeLayer.test.ts | unknown | unknown | to reproduce | none | EXECUTION | none | pending |
-| PeerForwarding.test.ts | unknown | unknown | to reproduce | none | TEST | none | pending |
-| routeTree.gen.ts | unknown | unknown | to reproduce | none | UI/GENERATED | none | pending |
-| usageLimits.ts | unknown | unknown | to reproduce | none | CAPACITY | none | pending |
+| File                       | Upstream intent | Fork intent | Actual conflict | Selected resolution | Safety risk      | Test evidence | Reviewer |
+| -------------------------- | --------------- | ----------- | --------------- | ------------------- | ---------------- | ------------- | -------- |
+| OrchestratorMcpService.ts  | unknown         | unknown     | to reproduce    | none                | SECURITY/ROUTING | none          | pending  |
+| linkOrigin.test.ts         | unknown         | unknown     | to reproduce    | none                | TEST             | none          | pending  |
+| GrokAdapterV2.test.ts      | unknown         | unknown     | to reproduce    | none                | PROVIDER         | none          | pending  |
+| OpenCode2AdapterV2.test.ts | unknown         | unknown     | to reproduce    | none                | PROVIDER         | none          | pending  |
+| runtimeLayer.test.ts       | unknown         | unknown     | to reproduce    | none                | EXECUTION        | none          | pending  |
+| PeerForwarding.test.ts     | unknown         | unknown     | to reproduce    | none                | TEST             | none          | pending  |
+| routeTree.gen.ts           | unknown         | unknown     | to reproduce    | none                | UI/GENERATED     | none          | pending  |
+| usageLimits.ts             | unknown         | unknown     | to reproduce    | none                | CAPACITY         | none          | pending  |
 
 ## Required final checkpoint
 

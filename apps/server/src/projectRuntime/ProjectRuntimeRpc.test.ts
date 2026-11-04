@@ -1,5 +1,6 @@
 import * as DevelopmentProfileService from "../developmentProfiles/DevelopmentProfileService.ts";
 import { PersistenceSqlError } from "../persistence/Errors.ts";
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, it } from "@effect/vitest";
 import {
@@ -64,7 +65,7 @@ const layer = Layer.merge(
   Layer.provideMerge(EventStoreV2.layer),
   Layer.provideMerge(Sqlite.layerMemory),
   Layer.provide(ServerConfig.ServerConfig.layerTest(process.cwd(), { prefix: "runtime-ui-rpc-" })),
-  Layer.provideMerge(NodeServices.layer),
+  Layer.provideMerge(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
 );
 const a = ProjectId.make("a");
 const b = ProjectId.make("b");
