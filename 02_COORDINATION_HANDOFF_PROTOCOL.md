@@ -38,7 +38,7 @@ Tiny local fixes inside one ongoing worker session do not need separate handoffs
 
 ## Mandatory paste-ready DeepSeek orchestration handoffs (accepted user policy, 2026-11-04)
 
-Whenever the next authorized action needs a T3 Code worker/session, the Overall Manager must provide **one complete, copy-and-paste-ready handoff in the user-facing reply** and preserve the same authoritative packet in Runtime or the branch ledger. Writing or linking a packet never starts a worker. Use the [compact standard handoff template](docs/orchestration-v2/DEEPSEEK_ORCHESTRATOR_HANDOFF_TEMPLATE_V1_PROPOSED.md) with task-specific governing spec, base, scope, verification and stop conditions.
+Whenever the next authorized action needs a T3 Code worker/session, the Overall Manager must provide **one complete, copy-and-paste-ready handoff in the user-facing reply** and preserve the same authoritative packet in Runtime or the branch ledger. Writing or linking a packet never starts a worker. Use the [compact standard handoff template](docs/orchestration-v2/DEEPSEEK_ORCHESTRATOR_HANDOFF_TEMPLATE_V1.md) with task-specific governing spec, base, scope, verification and stop conditions.
 
 **DeepSeek is an orchestration-only resource** for future dispatches: task decomposition, selecting workers, supervising status and usage limits, inspecting evidence, routing bounded repairs/reviews, maintaining authoritative task/ledger records, and completing handoffs. **Do not route implementation, source edits, development test execution or code review to DeepSeek.** Preserve its limited OpenCode subscription for high-leverage coordination. This does not retroactively invalidate already-dispatched P2 work, which ran under the prior task packet.
 
