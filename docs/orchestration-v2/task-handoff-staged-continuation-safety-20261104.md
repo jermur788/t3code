@@ -4,6 +4,7 @@
 **Owner:** DeepSeek/OpenCode as orchestration coordinator; single code writer for the gate; separate independent reviewer. Use Codex/Claude-class when security-sensitive gate and concurrency reasoning justifies it. Record actual routed provider/model, eligibility, reasons, alternatives, retries and outcomes.  
 **Repository:** `jermur788/t3code`.  
 **Governing spec:** [Accepted continuation staged safety spec](continuation-staged-safety-governing-spec-20261104.md).  
+**Routing ledger seed:** [Staged gate/reconciliation routing and attempt ledger](staged-continuation-routing-ledger-20261104.md). Treat every proposed provider/model as NOT DISPATCHED until live T3 resolves it.  
 **Evidence:** [Reviewed overnight checkpoint](https://github.com/jermur788/t3code/blob/overnight/deepseek-continuation-20261104/docs/orchestration-v2/overnight-morning-handoff-20261104.md), [overnight routing ledger](https://github.com/jermur788/t3code/blob/overnight/deepseek-continuation-20261104/docs/orchestration-v2/overnight-deepseek-routing-ledger-20261104.md), [F4 options](https://github.com/jermur788/t3code/blob/overnight/deepseek-continuation-20261104/docs/orchestration-v2/overnight-f4-gate-decision-memo-20261104.md).
 
 ## USER DECISION — already accepted, do not request again
