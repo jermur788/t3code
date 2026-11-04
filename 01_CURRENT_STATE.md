@@ -1,6 +1,6 @@
 # T3 Fork — Current State and Roadmap
 
-**Updated:** 2026-11-04, after the 09:26Z independent local verification handoff and manager source/GitHub reconciliation.  
+**Updated:** 2026-11-04, after the 11:32Z Evidence V0 P2 repair return and independent manager source/promotion review.  
 **Classification:** CURRENT PROJECT STATE — authoritative snapshot for manager continuation, not a code change.  
 **Repository:** [jermur788/t3code](https://github.com/jermur788/t3code)  
 **Maintained on:** `planning/resource-efficient-continuation-20261103` — **not fork main**.  
@@ -30,49 +30,39 @@ The **user decides product policy, significant architecture trade-offs, merges/r
 
 The reconciled candidate is a true fork/upstream merge based on fork main plus pinned upstream v0.1.7. Seven actual conflicts were resolved (the historically reported eighth did not recur). This branch **does not include** the synthetic continuation policy or its gate; those files are absent by design.
 
-## Current milestone — PR #21 verification reconciled; Evidence V0 P2 repair required
+## Current milestone — P2 repair reviewed; PR #21 promotion awaits user authority
 
-**Updated from 2026-11-04 09:26Z independent local verification handoff.** This section supersedes the earlier V1–V5 *not-run* status and the preflight comment; the rest of this file retains its prior scope unless amended below.
+**Manager verdict:** `P2 SOURCE REVIEW PASS / REPAIR ACCEPTED FOR PROMOTION CONSIDERATION / WORKER-REPORTED LOCAL TEST PASS / INDEPENDENT REVIEW RECORDED PASS`. **PR #21 remains OPEN / DRAFT / UNMERGED; fork main unchanged; NOT INTEGRATED; NOT PRODUCTION VERIFIED.** [Full manager source and acceptance review](docs/orchestration-v2/manager-evidence-v0-p2-promotion-review-20261104.md).
 
-**Manager verdict: `REPAIR REQUIRED / REVIEW REQUIRED`; PR #21 `NOT INTEGRATED`, production `NOT VERIFIED`.** Candidate source accepted for bounded repair/continued review; **fork-only merge is not yet manager-recommended** while the demonstrated Evidence V0 completeness issue remains. The user retains final authority to explicitly accept the limitation and authorize merging notwithstanding this recommendation.
+### Exact observed GitHub state
 
-### Live GitHub reconciliation
+- Fork-only [PR #21](https://github.com/jermur788/t3code/pull/21) remains at its existing accepted upstream-reconciliation head. The [isolated P2 repair branch](https://github.com/jermur788/t3code/tree/fix/evidence-v0-pruning-completeness-p2-20261104) is a linear descendant with five commits, three source/test files and two durable evidence documents, **not** promoted to PR #21.
+- Reviewed code/test checkpoint: `a03a8bce92ea2de65a92a112bf9771388673094b`; branch has one later documentation-only handoff change and ends at `0e0c7bc2cb1bb805f273123686303a68e1c2807c`. No upstream orchestration engine, database migrations, synthetic continuation or source routes were changed.
+- Upstream parent of PR #21 is **25 commits past the v0.1.7 tag**; describe it as the release-preparation baseline, not an exact-tag or newest-main integration.
+- [Worker's durable repair handoff](https://github.com/jermur788/t3code/blob/fix/evidence-v0-pruning-completeness-p2-20261104/docs/orchestration-v2/evidence-v0-p2-repair-handoff-20261104.md) and [routing/attempt ledger](https://github.com/jermur788/t3code/blob/fix/evidence-v0-pruning-completeness-p2-20261104/docs/orchestration-v2/evidence-v0-p2-repair-routing-ledger-20261104.md) were inspected through GitHub. Worker-host raw log/fixture bytes were not retrieved and local tests were not independently run by browser manager.
 
-- [Fork-only draft PR #21](https://github.com/jermur788/t3code/pull/21) remains **OPEN / DRAFT / UNMERGED / MERGEABLE** at the unchanged accepted reconciliation checkpoint, still zero commits behind and 330 ahead of fork main. Fork main remains unchanged; no new branch PR or source integration is implied by this update.
-- At manager check, **0 hosted check-runs and status contexts**, with no hosted CI PASS claim. The prior PR thread has a [browser preflight comment](https://github.com/jermur788/t3code/pull/21#issuecomment-6626843132).
-- The actual upstream parent of the reconciliation is **25 commits after the `v0.1.7` tag**, not that exact tag. Current upstream main remains one commit after the incorporated release-preparation parent at manager inspection. Descriptions should say **upstream v0.1.7 release-preparation baseline** rather than exact tag.
-- Continuation default-off experiment remains separate and absent from PR #21. D2 shipping exclusion and D4 production revocation requirements remain unmet and do not ride on this PR.
+### Verified in source / bounded worker evidence
 
-### Independent local host handoff, 09:26Z
+- Evidence V0 now consults the canonical upstream `EVENT_LOG_PRUNED_THROUGH` boundary and emits a deterministic `orchestration-v2-pruned` derived-view marker with `completeness=unknown` when a referenced thread predates the pruning boundary. Missing references and bounded-read truncation remain separate.
+- The manager inspected the actual additive source diff, real-pruning test fixture, file-backed SQLite reopen/isolation coverage, long thread-ID and JSONL/reconstruction decoders, and unchanged upstream engine scope. Review found no new source correctness blocker within the bounded repair.
+- Worker records actual-pruning red→green plus two independently found bound defects and repair, focused **39/39 PASS**, `typecheck` **40/40 PASS**, changed checks **81 files / 2,075 tests PASS**, unchanged MCP context budget at **58,519 bytes**, and web build PASS. Last code change was test-only, followed by focused and typecheck rerun. These are **worker-reported**, not hosted CI.
+- Separate read-only Codex review recorded `CHANGES REQUIRED` in rounds 1–2, `PASS WITH FINDINGS` in round 3, final `PASS` in round 4 after red/green corrections. No hosted checks or fresh live-provider/production qualification were established.
 
-**Evidence class:** user-provided authoritative worker/manager handoff describing local execution. The browser manager independently inspected relevant source and live GitHub, but **has not independently accessed the local screenshots, SQL fixture files, raw receipts or run logs**. Never conflate worker-reported `PASS` with browser-reexecuted tests.
+### Material compatibility limitation for promotion
 
-| Gate | Reported result | Manager disposition |
-| --- | --- | --- |
-| V1 rendered UI | PASS: Chromium fork home/Development/Workspace and copied-thread redirect; clean console except transient pairing WebSocket error | **Worker-reported UI PASS**, screenshots still on local host |
-| V2 file-backed restart/isolation | PASS: two projects, reopen SQLite, cross-project rejection; targeted tests | **Worker-reported RUNTIME PASS**, independent browser rerun not available |
-| V3 Evidence V0 after pruning | PASS WITH **P2**: fully absent V2 history marked unresolved; partially pruned history omitted incompleteness marker | **IMPLEMENTATION DEFECT / UPSTREAM COMPATIBILITY**; needs narrow repair |
-| V4 local verification | PASS: 40-package typecheck, 81 files/2,072 tests, web build 7,430 modules, context-budget snapshot unchanged at 58,519 bytes | **Worker-reported STATIC/RUNTIME PASS**, no hosted CI |
-| V5 independent review | Codex gpt-6.1-sol high, read-only: `CLEAN WITH FINDINGS` | **Review-with-findings**, not sign-off of P2 |
+The `orchestration-evidence/v0` envelope keeps its version identifier but adds a **closed-enum record type** `orchestration-v2-pruned`. Updated consumers can decode it; **old base-commit decoders reject exports containing that marker**. Do **not** claim universal backward decodability. This is an explicit coordinated-upgrade limitation, not an unnoticed regression. Manager considers the repair technically acceptable for a **fork-only** coordinated promotion **if** the user accepts that compatibility constraint; backward support for independent old clients would instead require a separate versioning/negotiation decision.
 
-The local worker reported detached verification worktree on external volume, tracked clean, existing worktrees preserved; reported 52 GB root and 91 GB external remaining at end. The browser manager cannot inspect that local worktree directly.
+Other retained risks: conservative `UNKNOWN` incompleteness markers may be emitted without proven per-thread deletions; detection depends on upstream keeping creation events and stream heads. Production provider/streaming, native/remote clients, hosted CI and release verification remain unproven. Prior pre-merge V1/V2 UI/restart results are worker-reported PASS on the original reconciliation candidate; changed branch is server/contract-only.
 
-**Pruning reproduction:** reported `before=3, remaining=2, after=2, deleted=1, unresolved=2`. Entirely unavailable referenced history fails closed, but a partially pruned referenced history with retained V2 events can appear complete. Browser source inspection confirms Evidence V0 bounded thread reading checks only per-thread read limits, while upstream event maintenance has a published pruning watermark. Source cannot independently prove the local SQL reproduction, but supports the diagnosed omission.
+### Routing policy updated prospectively
 
-**Local evidence locations** (not hosted/persisted in GitHub at this checkpoint): `/tmp/opencode/v017-verification-ledger-20261104.md`, `/tmp/opencode/evidence/`, `/tmp/opencode/evidence/test-packet/`. Publish sanitized exact logs/screenshots/fixture into the task's durable lane record before promoting a stronger independent verification claim.
+**DeepSeek is now reserved for orchestration only** in future tasks; do not use it for implementation, code edits, or development tests. Workers: **Codex GPT-6.1 SOL Medium** or **Claude Sonnet 5.5 Medium**, with **Claude Opus 5.5** escalation only when justified. Track each subscription's observed limits/five-hour reset and resume after provider-confirmed availability where T3 supports it. Durable ledger and paste-ready handoff remain mandatory. See [accepted reusable template](docs/orchestration-v2/DEEPSEEK_ORCHESTRATOR_HANDOFF_TEMPLATE_V1.md) and [Coordination Protocol](02_COORDINATION_HANDOFF_PROTOCOL.md). The completed P2 worker had already been dispatched under the older routing packet, so do not retroactively misclassify its DeepSeek implementation as a new-policy violation.
 
-### Next authorized action — bounded P2 repair, no merge
+### NEXT — explicit PR #21 promotion decision
 
-[Governing Evidence V0 pruning-completeness P2 repair packet](docs/orchestration-v2/task-evidence-v0-pruning-completeness-p2-20261104.md) now supersedes the previous V1–V5 execution task for immediate implementation priority. It requires:
+**Do not advance the PR #21 branch or merge yet.** Request the user's authorization to **promote the reviewed P2 repair onto the existing draft PR #21** as a guarded non-history-rewriting fast-forward, **explicitly accepting the old V0-decoder upgrade limitation**. This would update only the PR's source branch, not fork main, and does not constitute merge approval. If authorized, recheck actual live refs/worktree ownership, advance only on expected base, confirm tests/scope and update canonical state. The **merge remains a separate later user decision**.
 
-1. a fresh independently owned worktree from the unchanged candidate head; no edits to accepted PR branch or fork main;
-2. an additive read-only Evidence V0 incomplete/pruned indicator tied to existing pruning metadata, no synthetic event fabrication and no duplicate event store;
-3. red/green real-pruning regression, no-prune/unrelated-thread cases, restart/isolation/JSONL schema checks; targeted and broad local verification;
-4. distinct-provider read-only review and manager review of exact evidence before possible candidate promotion.
-
-**Routing:** browser manager source reconciliation and task preparation completed here (GPT-6); the isolated remote repair branch [`fix/evidence-v0-pruning-completeness-p2-20261104`](https://github.com/jermur788/t3code/tree/fix/evidence-v0-pruning-completeness-p2-20261104) has been created from PR #21's unchanged candidate head, with **no source edits yet**. Local execution recommended DeepSeek/OpenCode, capacity **UNKNOWN**, with independent Codex/Claude-class review. No local worker has been dispatched by the GitHub task write; the copy/paste DeepSeek orchestrator handoff is published for the local operator. Preserve one writer per code lane and record all routed attempts and verification facts in Runtime or an append-only ledger.
-
-**Stop:** Do not merge PR #21, mark production verified, enable synthetic continuation, rewrite history or modify upstream engine without distinct authority. After repair acceptance, request a **separate user merge decision**. If the user instead expressly accepts P2 as a known limitation, record that decision and the exact risk before any merge action.
+D2 experimental schema/tool-surface shipping exclusion and D4 strict production revocation remain separate release gates; no production enablement.
 
 ## Accepted continuation safety decisions (binding; separate workstream)
 
@@ -95,36 +85,34 @@ Governing spec: [Continuation staged safety](docs/orchestration-v2/continuation-
 
 ## Routing / execution state
 
-**Mandatory orchestrator for new local T3 Code handoffs: DeepSeek.** Always provide a complete **copy/paste-ready handoff directly in the manager's user-facing reply**, plus preserve it in canonical task documents. DeepSeek stays responsible for routing, dispatch, supervision, evidence/ledger updates, independent review and final handoff even when it delegates specialist work. [Current complete P2 handoff](docs/orchestration-v2/handoff-deepseek-orchestrator-evidence-v0-p2-20261104.md) is ready to paste into a real DeepSeek T3 Code session.
+**Accepted user routing directive, 2026-11-04:** DeepSeek only orchestrates future T3 Code tasks; it does **not** implement, edit source or execute development tests. It coordinates worker selection, subscription supervision, attempts, review, state/ledger updates and handoff. All implementation/tests use Codex **GPT-6.1 SOL Medium** or Claude **Sonnet 5.5 Medium**. Escalate genuinely difficult unresolved work to **Claude Opus 5.5** as justified. Use distinct model/provider for independent read-only review. Preserve one writer per overlapping lane; normal two evidence-backed remediation attempts apply before expensive escalation when safe.
 
-Prefer **DeepSeek/OpenCode** for reconnaissance, routine bounded implementation/tests and the first two materially different low-cost repair attempts. Escalate hard bounded work or independent review to **Codex GPT-6.1 SOL** or **Claude Sonnet 5.5**; use **Claude Opus 5.5** when justified by genuinely difficult unresolved issues. Preserve actual provider/model, rejected options, route origin, capacity evidence/UNKNOWN, attempt, cost (when measured), child completion/wake and verification in Project Runtime if exposed; otherwise the task's **append-only GitHub routing ledger**. DeepSeek's orchestrator role is not transferred by these escalations.
+The user reported DeepSeek/OpenCode at **~10% of its 30-day allocation with ~10 days remaining** (user observation at 09:46Z, not telemetry). Reserve that subscription for coordination. Track separately each provider/subscription availability, actual capacity evidence/UNKNOWN, quota and provider-confirmed five-hour reset; checkpoint, safely switch to an available authorized pool, or resume after reset using a real supported T3 host mechanism. If background resumption is unavailable, write a precise continuation handoff; never claim a nonexistent automatic scheduler.
 
-Routine blocker policy: two distinct evidence-backed low-cost attempts before escalation; stronger model up to two additional attempts, max four real solution attempts, unless new evidence/new authorization. **Hard authority/security stops remain immediate.** One writer per overlapping code lane; separate isolated worktrees. Worker and reviewer claims alone are not verification.
+Every future local task handoff must include a **copy/paste-ready DeepSeek instruction** plus a durable source link, using the [accepted compact template](docs/orchestration-v2/DEEPSEEK_ORCHESTRATOR_HANDOFF_TEMPLATE_V1.md). Runtime task/attempt/handoff records are preferred; append-only branch ledger fallback. Record route/attempt/alternatives, exact model/effort, capacity evidence, reason, tests and review, outcomes and next action as events occur. No fabricated costs or reset times.
 
-The previous T3 local hosts reported that Project Runtime task/receipt tools were **not exposed** for overnight coordination, so branch-local ledgers are the authoritative *fallback* for those lanes. Browser manager has GitHub repository access, **not a live local T3 worktree or a verified automatic worker bridge**. No worker is presently known to be running as a result of this manager update.
-
-**Local resource note:** Previous worker reported 48 GB free on root and 92 GB free on `/media/jer/Files` at its last check; other older reports showed a full root volume. Confirm with fresh `df -h` before heavy operations; avoid destructive worktree/cache cleanup.
+The completed P2 repair used DeepSeek V4.1 Flash for orchestration + implementation and Codex review under the prior already-issued packet. The new directive applies **prospectively**; do not retroactively alter its evidence or routing history. Browser manager has GitHub/source access, not a live local T3 worker bridge.
 
 ## Pending gates and required user decisions
 
-| Gate | Current category | Next authority/action |
+| Gate | Current state | Next authority/action |
 | --- | --- | --- |
-| PR #21 V1, V2 and V4 | `WORKER-REPORTED PASS`; browser manager has not retrieved local evidence files | Preserve/publish sanitized receipts; avoid claiming hosted CI |
-| PR #21 Evidence V0 partial-pruning completeness | **`IMPLEMENTATION DEFECT / UPSTREAM COMPATIBILITY` (P2)** | Run narrow repair in isolated branch, red/green fixture, independent review |
-| PR #21 upstream baseline | `REVIEW FINDING`: release-prep parent 25 commits past tag | Correct provenance wording; test on exact candidate, not assumed exact-tag head |
-| Hosted CI | `OPERATIONAL LIMITATION`: zero hosted checks | Rely on explicitly labeled local evidence, not a fictional hosted CI pass |
-| Merge PR #21 to fork main | **`PRODUCT DECISION` / not authorized** | Ask user after P2 repair acceptance, or explicitly accept known limitation |
-| Continuation shipping exclusion (D2) | `DEFERRED` release gate | Design/verify before public shipping |
-| Strict production continuation cancellation (D4) | `PRODUCT DECISION / REVIEW REQUIRED` | Separate architecture review; no upstream engine change yet |
-| Experimental gate integration | `NOT INTEGRATED` | Keep separate; later new gate-on-reconciled-base verification and approval |
-| Documentation V1 final qualification | `DEFERRED` pending golden path | Restore qualification separately after reconciliation |
+| Evidence V0 P2 repair | `SOURCE REVIEW PASS`, local tests/review worker-reported PASS | No further bounded source defect found; preserve branch and compatibility note |
+| V0 closed-enum decoder compatibility | **Known coordinated-upgrade limitation** | User accepts old-decoder upgrade requirement for fork-only promotion, or requests separate compatibility design |
+| **Advance P2 repair onto draft PR #21** | **PRODUCT/INTEGRATION DECISION — NOT AUTHORIZED** | Request explicit approval for guarded fast-forward of existing PR source branch; **not a merge** |
+| Merge PR #21 into fork main | **PRODUCT DECISION — NOT AUTHORIZED** | Separate decision only after accepted PR source/promotion evidence |
+| Hosted CI, production use and live provider execution | `NOT RUN / UNVERIFIED` | Do not infer PASS from local fixtures |
+| Continuation shipping exclusion (D2) | `DEFERRED` | Separate prerelease implementation/verification |
+| Strict production continuation cancellation (D4) | `PRODUCT DECISION / REVIEW REQUIRED` | Separate architecture review, no unilateral engine change |
+| Experimental continuation gate | `NOT INTEGRATED` | Keep separate from PR #21 |
+| Documentation V1 fresh-user qualification | `DEFERRED` | Resume at an authorized milestone |
 
 ## Next manager loop
 
-1. Read the updated [Overall Manager handoff](OVERALL_MANAGER_HANDOFF.md), this Current State, Coordination protocol and the bounded P2 repair packet.
-2. Refresh PR #21/fork-main/upstream heads and any live Runtime tasks/worktree ownership; no user-approved merge exists.
-3. Use the prepared P2 repair task on a **real local T3 host** with a fresh worktree and one writer; writing a GitHub packet does not start a worker.
-4. Review exact red/green pruning fixtures, no-prune and unrelated-thread cases, local gate receipts and independent reviewer findings. Preserve the repair branch and fix normal issues without weakening tests.
-5. Update canonical state and the GitHub/Runtime ledger after acceptance. **Only then request an explicit separate merge decision**, unless the user first chooses to accept the P2 limitation knowingly.
+1. Read Current State, Coordination Protocol, [manager P2 source review](docs/orchestration-v2/manager-evidence-v0-p2-promotion-review-20261104.md) and exact branch/Runtime evidence. Recheck live GitHub refs and any active worktrees before writable work.
+2. **Stop for the user's separate PR #21 source-promotion approval** and explicit old-V0-decoder compatibility disposition. Do not present P2 repair acceptance as merge authorization.
+3. If source promotion is approved, use a guarded non-rewriting update of the existing draft PR source branch only, preserving expected base and one-writer ownership; reconcile checks, branch history and evidence. No new PR or fork-main update.
+4. Publish the updated canonical state and PR review record. Ask separately for the fork-main merge decision when the candidate is accepted.
+5. Keep D2/D4 shipping/production continuation decisions separate. Use the accepted DeepSeek orchestration-only template for future actual local-worker tasks, not as a substitute for dispatch.
 
-**Hard stops:** no merge, release, production continuation, destructive Git operation, material paid use, or substantive upstream engine redesign without distinct authority.
+**Hard stops:** no unauthorized PR head promotion/merge, production continuation, destructive Git operation, paid use, material architecture/security tradeoff or upstream engine redesign.
