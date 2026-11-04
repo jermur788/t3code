@@ -46,6 +46,7 @@ import { type SqlError } from "effect/sql/SqlError";
 import { PersistenceSqlError } from "../persistence/Errors.ts";
 import { ProjectNotFoundError } from "../project/ProjectService.ts";
 import { disabledContext, packContext } from "./ProjectRuntimeContext.ts";
+import { ContinuationGate } from "./RuntimeTaskContinuationGate.ts";
 
 const WriteContext = Schema.Struct({ actor: ProjectRuntimeActor });
 type WriteContext = typeof WriteContext.Type;
@@ -363,6 +364,7 @@ const validateTask = Effect.fn("ProjectRuntimeService.validateTask")(function* (
 
 const make = Effect.gen(function* () {
   const sql = yield* SqlClient.SqlClient;
+  const continuationEnabled = (yield* ContinuationGate).enabled;
   const developmentProfiles = yield* DevelopmentProfileService.DevelopmentProfileService;
   const crypto = yield* Crypto.Crypto;
   const newId = crypto
@@ -609,6 +611,15 @@ const make = Effect.gen(function* () {
       yield* requireEnabled(projectId);
       const timestamp = yield* now;
       const taskId = ProjectRuntimeTaskId.make(yield* newId);
+      // Synthetic continuation is a server-controlled experiment. A task
+      // payload, owner or agent actor can never grant it while the gate is off.
+      if (data.continuation !== undefined && !continuationEnabled) {
+        return yield* new ProjectRuntimeInvalidTransitionError({
+          projectId,
+          taskId,
+          violation: "continuation_disabled",
+        });
+      }
       // MCP/worker actors cannot self-grant continuation authority.
       if (data.continuation !== undefined && !actor.startsWith("user:")) {
         return yield* new ProjectRuntimeInvalidTransitionError({
@@ -658,6 +669,15 @@ const make = Effect.gen(function* () {
     function* (projectId, input, context) {
       const { taskId, expectedRevision, ...patch } = yield* decodeTaskUpdateInput(input);
       const { actor } = yield* decodeWriteContext(context);
+      // Explicit removal (`continuation: null`) and unrelated edits stay
+      // available so an operator can revoke stale policy while the gate is off.
+      if (patch.continuation !== undefined && patch.continuation !== null && !continuationEnabled) {
+        return yield* new ProjectRuntimeInvalidTransitionError({
+          projectId,
+          taskId,
+          violation: "continuation_disabled",
+        });
+      }
       const existing = yield* readTask(projectId, taskId);
       yield* checkRevision(projectId, "task", existing.revision, expectedRevision, taskId);
       if (patch.continuation !== undefined && !actor.startsWith("user:")) {

@@ -22,6 +22,7 @@ import * as TestClock from "effect/testing/TestClock";
 
 import * as SqlitePersistence from "../persistence/Sqlite.ts";
 import * as ProjectRuntimeService from "./ProjectRuntimeService.ts";
+import * as ContinuationGate from "./RuntimeTaskContinuationGate.ts";
 
 const projectA = ProjectId.make("runtime-a");
 const projectB = ProjectId.make("runtime-b");
@@ -80,6 +81,7 @@ const setup = Effect.gen(function* () {
 });
 const layerTest = ProjectRuntimeService.layer.pipe(
   Layer.provideMerge(DevelopmentProfileService.layer),
+  Layer.provideMerge(ContinuationGate.layer(true)),
   Layer.provideMerge(SqlitePersistence.layerMemory),
   Layer.provide(NodeServices.layer),
 );
@@ -1233,6 +1235,7 @@ it.effect("reopens the database with the same Runtime state and domain records",
       const serviceLayer = ProjectRuntimeService.layer.pipe(
         Layer.provide(DevelopmentProfileService.layer),
         Layer.provideMerge(database),
+        Layer.provide(ContinuationGate.layer(true)),
       );
       const records = yield* Effect.scoped(
         Effect.gen(function* () {

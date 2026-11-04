@@ -51,6 +51,7 @@ import * as RuntimeRoutingService from "../runtimeRouting/RuntimeRoutingService.
 import * as ServerSettingsService from "../serverSettings.ts";
 
 import * as ProjectRuntimeService from "./ProjectRuntimeService.ts";
+import { ContinuationGate } from "./RuntimeTaskContinuationGate.ts";
 import {
   buildRuntimeTaskPacket,
   RUNTIME_TASK_PACKET_VERSION,
@@ -256,6 +257,7 @@ export class RuntimeTaskExecutionService extends Context.Service<
 
 const make = Effect.gen(function* () {
   const sql = yield* SqlClient.SqlClient;
+  const continuationEnabled = (yield* ContinuationGate).enabled;
   const crypto = yield* Crypto.Crypto;
   const ids = yield* IdAllocator.IdAllocatorV2;
   const runtime = yield* ProjectRuntimeService.ProjectRuntimeService;
@@ -695,11 +697,43 @@ const make = Effect.gen(function* () {
     });
   });
 
+  const threadPresence = Effect.fn("RuntimeTaskExecutionService.threadPresence")(function* (
+    threadId: RuntimeExecutionAttempt["threadId"],
+  ) {
+    const shell = yield* threads.getThreadShell(threadId).pipe(
+      Effect.asSome,
+      Effect.orElseSucceed(() => Option.none()),
+    );
+    // A failed read is ambiguous, not proof that the thread is absent.
+    if (Option.isNone(shell)) return "unknown" as const;
+    return shell.value === null ? ("absent" as const) : ("present" as const);
+  });
+
   const launchAttempt = Effect.fn("RuntimeTaskExecutionService.launchAttempt")(function* (
     attempt: RuntimeExecutionAttempt,
   ) {
     const requestKey = yield* requestKeyForAttempt(attempt.projectId, attempt.attemptId);
     if (requestKey !== null && isReservedContinuationRequestKey(requestKey)) {
+      // A disabled gate is checked before any authorization or launch. Replay of
+      // a saved continuation receipt must never become an enablement path.
+      if (!continuationEnabled) {
+        const presence = yield* threadPresence(attempt.threadId);
+        yield* Effect.logWarning("runtime-execution.continuation-disabled", {
+          attemptId: attempt.attemptId,
+          threadPresent: presence === "present",
+          threadPresence: presence,
+          packetTaskRevision: attempt.receipt.packet.taskRevision,
+        });
+        return yield* updateAttempt({
+          attempt,
+          status: presence === "absent" ? "cancelled" : "reconcile_required",
+          runId: attempt.runId,
+          failure:
+            presence === "absent"
+              ? "Synthetic continuation is disabled on this server; no work was started."
+              : "Synthetic continuation is disabled on this server. Reconcile this attempt; no new turn was started.",
+        });
+      }
       // A pending receipt replays the packet that was authorized for one exact
       // target revision. If the operator edited that task after insertion, the
       // stored instructions are stale and must not launch.
@@ -725,24 +759,22 @@ const make = Effect.gen(function* () {
       // pending replay after restart). A launched thread is reconciled, never
       // discarded.
       if (authorization === null) {
-        const shell = yield* threads.getThreadShell(attempt.threadId).pipe(
-          Effect.asSome,
-          Effect.orElseSucceed(() => Option.none()),
-        );
-        const threadExists = Option.isSome(shell) && shell.value !== null;
+        const presence = yield* threadPresence(attempt.threadId);
         yield* Effect.logWarning("runtime-execution.continuation-revoked", {
           attemptId: attempt.attemptId,
-          threadExists,
+          threadPresent: presence === "present",
+          threadPresence: presence,
           packetTaskRevision: attempt.receipt.packet.taskRevision,
           currentTaskRevision: target?.revision ?? null,
         });
         return yield* updateAttempt({
           attempt,
-          status: threadExists ? "reconcile_required" : "cancelled",
+          status: presence === "absent" ? "cancelled" : "reconcile_required",
           runId: attempt.runId,
-          failure: threadExists
-            ? "Continuation authorization was withdrawn or superseded before launch. Reconcile this attempt; no new turn was started."
-            : "Continuation authorization was withdrawn or superseded before launch; no work was started.",
+          failure:
+            presence === "absent"
+              ? "Continuation authorization was withdrawn or superseded before launch; no work was started."
+              : "Continuation authorization was withdrawn or superseded before launch. Reconcile this attempt; no new turn was started.",
         });
       }
     }
@@ -929,6 +961,15 @@ const make = Effect.gen(function* () {
    * reviewer wording, drive each link, and the existing receipt replays its ids. */
   const advanceContinuation = Effect.fn("RuntimeTaskExecutionService.advanceContinuation")(
     function* (projectId: ProjectId, sourceTaskId: ProjectRuntimeTaskId) {
+      // Disabled means inert: no automatic review, repair, blocked-state write
+      // or launch. Ordinary task execution and reconciliation are unaffected.
+      if (!continuationEnabled) {
+        yield* Effect.logDebug("runtime-execution.continuation-disabled", {
+          projectId,
+          sourceTaskId,
+        });
+        return;
+      }
       const sourceTask = yield* runtime.readTask(projectId, sourceTaskId);
       const policy = sourceTask.continuation;
       if (
@@ -1340,6 +1381,17 @@ const make = Effect.gen(function* () {
         const status = yield* runtime.getStatus(projectId);
         if (!status.enabled) return yield* new ProjectRuntimeDisabledError({ projectId });
 
+        // Defense in depth: only the internal dispatcher can request a
+        // continuation, and only while the server gate is explicitly enabled.
+        if (continuation !== null && !continuationEnabled) {
+          return yield* rejected(
+            projectId,
+            input.taskId,
+            "task_not_executable",
+            "Synthetic continuation is disabled on this server.",
+          );
+        }
+
         // Defense in depth for the public entry point: the entire continuation
         // namespace is reserved, including malformed keys that never parse.
         if (
@@ -1527,6 +1579,14 @@ const make = Effect.gen(function* () {
       readonly requestKey: string;
       readonly expectedTargetRevision: number;
     }) {
+      if (!continuationEnabled) {
+        yield* Effect.logWarning("runtime-execution.continuation-disabled", {
+          projectId: input.projectId,
+          sourceTaskId: input.sourceTaskId,
+          targetTaskId: input.targetTaskId,
+        });
+        return null;
+      }
       const authorization = yield* authorizeContinuationDispatch({
         projectId: input.projectId,
         sourceTaskId: input.sourceTaskId,

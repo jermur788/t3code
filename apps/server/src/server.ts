@@ -113,6 +113,7 @@ import * as RepositoryIdentityResolver from "./project/RepositoryIdentityResolve
 import * as OrchestrationEvidenceService from "./projectRuntime/OrchestrationEvidenceService.ts";
 import * as ProjectRuntimeService from "./projectRuntime/ProjectRuntimeService.ts";
 import * as ProjectRuntimeSourceAccess from "./projectRuntime/ProjectRuntimeSourceAccess.ts";
+import { layerFromEnvironment as continuationGateLayer } from "./projectRuntime/RuntimeTaskContinuationGate.ts";
 import * as RuntimeTaskExecutionService from "./projectRuntime/RuntimeTaskExecutionService.ts";
 import * as RuntimeRoutingProviderView from "./runtimeRouting/RuntimeRoutingProviderView.ts";
 import * as RuntimeRoutingService from "./runtimeRouting/RuntimeRoutingService.ts";
@@ -776,6 +777,9 @@ const layerProjectRuntime = ProjectRuntimeSourceAccess.layer.pipe(
   Layer.provideMerge(
     RuntimeRoutingService.layer.pipe(Layer.provideMerge(RuntimeRoutingProviderView.layer)),
   ),
+  // The experimental continuation gate is server startup configuration and is
+  // off unless the operator sets T3CODE_EXPERIMENTAL_CONTINUATION=1.
+  Layer.provideMerge(continuationGateLayer()),
 );
 const layerRuntimeTaskExecution = RuntimeTaskExecutionService.layer.pipe(
   Layer.provide(layerProjectRuntime),

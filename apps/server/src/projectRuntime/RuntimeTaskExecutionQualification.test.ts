@@ -21,6 +21,7 @@ import * as SqlClient from "effect/sql/SqlClient";
 
 import * as SqlitePersistence from "../persistence/Sqlite.ts";
 import * as ProjectRuntimeService from "./ProjectRuntimeService.ts";
+import * as ContinuationGate from "./RuntimeTaskContinuationGate.ts";
 import * as RuntimeTaskExecutionService from "./RuntimeTaskExecutionService.ts";
 import * as ThreadLaunchService from "../orchestration-v2/ThreadLaunchService.ts";
 import * as ThreadManagementService from "../orchestration-v2/ThreadManagementService.ts";
@@ -189,6 +190,7 @@ const seedDatabase = Effect.gen(function* () {
 
 const makeLayer = (state: State) =>
   RuntimeTaskExecutionService.layer.pipe(
+    Layer.provideMerge(ContinuationGate.layer(false)),
     Layer.provideMerge(
       Layer.mock(ProjectRuntimeService.ProjectRuntimeService)({
         getStatus: () => Effect.succeed({ enabled: true, version: 1 as const, revision: 1 }),

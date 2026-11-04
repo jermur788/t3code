@@ -25,6 +25,7 @@ import * as WorkspaceEntries from "../workspace/WorkspaceEntries.ts";
 import * as WorkspaceFileSystem from "../workspace/WorkspaceFileSystem.ts";
 import * as WorkspacePaths from "../workspace/WorkspacePaths.ts";
 import * as Runtime from "./ProjectRuntimeService.ts";
+import * as ContinuationGate from "./RuntimeTaskContinuationGate.ts";
 import * as Sources from "./ProjectRuntimeSourceAccess.ts";
 import * as OrchestrationEvidenceService from "./OrchestrationEvidenceService.ts";
 import * as RuntimeRoutingService from "../runtimeRouting/RuntimeRoutingService.ts";
@@ -53,7 +54,12 @@ const routingProviderView = Layer.succeed(RuntimeRoutingProviderView.RuntimeRout
 });
 const layer = Layer.merge(
   Sources.layer.pipe(
-    Layer.provideMerge(Runtime.layer.pipe(Layer.provide(DevelopmentProfileService.layer))),
+    Layer.provideMerge(
+      Runtime.layer.pipe(
+        Layer.provide(DevelopmentProfileService.layer),
+        Layer.provide(ContinuationGate.layer(false)),
+      ),
+    ),
     Layer.provideMerge(RuntimeRoutingService.layer.pipe(Layer.provide(routingProviderView))),
     Layer.provideMerge(Layer.mock(RuntimeTaskExecutionService.RuntimeTaskExecutionService)({})),
     Layer.provideMerge(ProjectStore.layer),

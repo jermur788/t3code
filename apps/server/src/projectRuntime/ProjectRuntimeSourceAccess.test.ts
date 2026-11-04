@@ -25,6 +25,7 @@ import * as WorkspaceEntries from "../workspace/WorkspaceEntries.ts";
 import * as WorkspaceFileSystem from "../workspace/WorkspaceFileSystem.ts";
 import * as WorkspacePaths from "../workspace/WorkspacePaths.ts";
 import * as ProjectRuntimeService from "./ProjectRuntimeService.ts";
+import * as ContinuationGate from "./RuntimeTaskContinuationGate.ts";
 import * as ProjectRuntimeSourceAccess from "./ProjectRuntimeSourceAccess.ts";
 
 const projectA = ProjectId.make("access-a");
@@ -63,7 +64,10 @@ const layerSourceAccess = <E, R>(
         ).pipe(Layer.provideMerge(files));
   return ProjectRuntimeSourceAccess.layer.pipe(
     Layer.provideMerge(
-      ProjectRuntimeService.layer.pipe(Layer.provide(DevelopmentProfileService.layer)),
+      ProjectRuntimeService.layer.pipe(
+        Layer.provide(DevelopmentProfileService.layer),
+        Layer.provide(ContinuationGate.layer(false)),
+      ),
     ),
     Layer.provideMerge(ProjectStore.layer),
     Layer.provideMerge(observed),

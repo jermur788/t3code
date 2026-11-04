@@ -26,6 +26,7 @@ import * as RuntimeRoutingService from "../runtimeRouting/RuntimeRoutingService.
 import { RuntimeRoutingProviderView } from "../runtimeRouting/RuntimeRoutingProviderView.ts";
 import * as ServerSettingsService from "../serverSettings.ts";
 import * as ProjectRuntimeService from "./ProjectRuntimeService.ts";
+import * as ContinuationGate from "./RuntimeTaskContinuationGate.ts";
 import * as RuntimeTaskExecutionService from "./RuntimeTaskExecutionService.ts";
 
 /**
@@ -123,6 +124,7 @@ const makeLayer = (state: State, dbPath: string) =>
       ProjectRuntimeService.layer.pipe(
         Layer.provideMerge(DevelopmentProfileService.layer),
         Layer.provideMerge(SqlitePersistence.layerFromPath(dbPath)),
+        Layer.provideMerge(ContinuationGate.layer(true)),
         Layer.provide(NodeServices.layer),
       ),
     ),

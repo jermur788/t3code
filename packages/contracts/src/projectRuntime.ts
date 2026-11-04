@@ -754,6 +754,7 @@ export const ProjectRuntimeTransitionViolation = Schema.Literals([
   "milestone_requires_passing_evidence",
   "verified_forbids_failing_evidence",
   "continuation_requires_operator",
+  "continuation_disabled",
 ]);
 export type ProjectRuntimeTransitionViolation = typeof ProjectRuntimeTransitionViolation.Type;
 
