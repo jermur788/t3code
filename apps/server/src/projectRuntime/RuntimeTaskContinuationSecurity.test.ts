@@ -126,6 +126,16 @@ interface State {
   readonly routes: Map<string, RuntimeRouteResolution>;
   gate: Gate | null;
   runtimeGate: RuntimeGate | null;
+  /**
+   * Pauses the external launch call itself. Reaching this point means the final
+   * authorization recheck has already passed; a revocation committed here
+   * exposes the residual last-check-to-launch window.
+   */
+  launchGate: {
+    armed: boolean;
+    readonly entered: Deferred.Deferred<void>;
+    readonly release: Deferred.Deferred<void>;
+  } | null;
 }
 
 const makeState = (): State => ({
@@ -134,6 +144,7 @@ const makeState = (): State => ({
   routes: new Map(),
   gate: null,
   runtimeGate: null,
+  launchGate: null,
 });
 
 const makeLayer = (state: State, dbPath: string) => {
@@ -208,7 +219,13 @@ const makeLayer = (state: State, dbPath: string) => {
     Layer.provideMerge(
       Layer.mock(ThreadLaunchService.ThreadLaunchService)({
         launch: ((input: ThreadLaunchInput) =>
-          Effect.sync(() => {
+          Effect.gen(function* () {
+            const gate = state.launchGate;
+            if (gate !== null && gate.armed) {
+              gate.armed = false;
+              yield* Deferred.succeed(gate.entered, undefined);
+              yield* Deferred.await(gate.release);
+            }
             state.launches.push(input);
             const runId = `run-${state.launches.length}`;
             state.runs.set(input.threadId ?? "", [{ id: runId, status: "running" }]);
@@ -1605,4 +1622,187 @@ it.effect("still accepts an ordinary key on the same repair task", () =>
       assert.equal(state.launches.length, 1);
     }),
   ).pipe(Effect.provide(NodeServices.layer)),
+);
+
+/**
+ * A reconciliation that started before its peer committed the review receipt
+ * must not insert a second receipt or launch a second reviewer.
+ */
+it.effect("dispatches one review when a delayed reconciliation overlaps a completed one", () =>
+  Effect.scoped(
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const dir = yield* fs.makeTempDirectoryScoped();
+      const dbPath = `${dir}/continuation.sqlite`;
+      const state = makeState();
+      const created = yield* process(
+        state,
+        dbPath,
+        Effect.gen(function* () {
+          const service = yield* RuntimeTaskExecutionService.RuntimeTaskExecutionService;
+          const sql = yield* SqlClient.SqlClient;
+          const tasks = yield* seedAndCreateTasks(state);
+          const worker = yield* service.execute(projectId, {
+            taskId: tasks.source.taskId,
+            expectedTaskRevision: tasks.source.revision,
+          });
+          yield* appendHandoff(worker, { milestone: "none", result: "none" });
+          completeRun(state, worker.threadId);
+          // Settle the attempt directly so no reconciliation has advanced the
+          // chain yet; both racing callers start from the same durable state.
+          yield* sql`UPDATE project_runtime_execution_attempts
+            SET status = 'completed', payload_json = json_set(payload_json, '$.status', 'completed')
+            WHERE project_id = ${projectId} AND attempt_id = ${worker.attemptId}`;
+          return { ...tasks, worker };
+        }),
+      );
+      assert.equal(state.launches.length, 1);
+
+      const gate: RuntimeGate = {
+        taskId: created.source.taskId,
+        armed: true,
+        entered: yield* Deferred.make<void>(),
+        release: yield* Deferred.make<void>(),
+      };
+      state.runtimeGate = gate;
+      const delayed = yield* Effect.forkChild(
+        process(
+          state,
+          dbPath,
+          Effect.gen(function* () {
+            const service = yield* RuntimeTaskExecutionService.RuntimeTaskExecutionService;
+            return yield* service.reconcileAttempt(projectId, created.worker.attemptId);
+          }),
+        ),
+      );
+      yield* Deferred.await(gate.entered);
+      // The peer layer must build without the gate so it can complete the
+      // dispatch while the delayed caller is suspended.
+      state.runtimeGate = null;
+      const first = yield* process(
+        state,
+        dbPath,
+        Effect.gen(function* () {
+          const service = yield* RuntimeTaskExecutionService.RuntimeTaskExecutionService;
+          return yield* service.reconcileAttempt(projectId, created.worker.attemptId);
+        }),
+      );
+      yield* Deferred.succeed(gate.release, undefined);
+      const delayedResult = yield* Fiber.join(delayed);
+
+      assert.equal(first.status, "completed");
+      assert.equal(delayedResult.status, "completed");
+      // Exactly one review receipt and one review launch survived the overlap.
+      const reviews = yield* process(
+        state,
+        dbPath,
+        Effect.gen(function* () {
+          const service = yield* RuntimeTaskExecutionService.RuntimeTaskExecutionService;
+          return yield* service.listAttempts(projectId, { taskId: created.review.taskId });
+        }),
+      );
+      assert.equal(reviews.attempts.length, 1);
+      assert.equal(state.launches.length, 2);
+    }),
+  ).pipe(Effect.provide(NodeServices.layer)),
+);
+
+/**
+ * CHARACTERIZATION ONLY, not a pass claim: authorization recheck and external
+ * launch are not atomic, so a turn can still start after withdrawal. The
+ * revocation contract and F4 shipping gate remain open PRODUCT DECISIONS.
+ */
+it.effect(
+  "characterizes a turn that starts when continuation is withdrawn during the launch call",
+  () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const fs = yield* FileSystem.FileSystem;
+        const dir = yield* fs.makeTempDirectoryScoped();
+        const dbPath = `${dir}/continuation.sqlite`;
+        const state = makeState();
+        const created = yield* process(
+          state,
+          dbPath,
+          Effect.gen(function* () {
+            const service = yield* RuntimeTaskExecutionService.RuntimeTaskExecutionService;
+            const sql = yield* SqlClient.SqlClient;
+            const tasks = yield* seedAndCreateTasks(state);
+            const worker = yield* service.execute(projectId, {
+              taskId: tasks.source.taskId,
+              expectedTaskRevision: tasks.source.revision,
+            });
+            yield* appendHandoff(worker, { milestone: "none", result: "none" });
+            completeRun(state, worker.threadId);
+            yield* sql`UPDATE project_runtime_execution_attempts
+            SET status = 'completed', payload_json = json_set(payload_json, '$.status', 'completed')
+            WHERE project_id = ${projectId} AND attempt_id = ${worker.attemptId}`;
+            return { ...tasks, worker };
+          }),
+        );
+
+        state.launchGate = {
+          armed: true,
+          entered: yield* Deferred.make<void>(),
+          release: yield* Deferred.make<void>(),
+        };
+        const reconciler = yield* Effect.forkChild(
+          process(
+            state,
+            dbPath,
+            Effect.gen(function* () {
+              const service = yield* RuntimeTaskExecutionService.RuntimeTaskExecutionService;
+              return yield* service.reconcileAttempt(projectId, created.worker.attemptId);
+            }),
+          ),
+        );
+        yield* Deferred.await(state.launchGate.entered);
+
+        // Revocation commits after the final authorization recheck has passed.
+        const withdrawn = yield* process(
+          state,
+          dbPath,
+          Effect.gen(function* () {
+            const runtime = yield* ProjectRuntimeService.ProjectRuntimeService;
+            const current = yield* runtime.readTask(projectId, created.source.taskId);
+            return yield* runtime.updateTask(
+              projectId,
+              {
+                taskId: created.source.taskId,
+                expectedRevision: current.revision,
+                continuation: null,
+              },
+              { actor: "user:maintainer" },
+            );
+          }),
+        );
+        assert.isUndefined(withdrawn.continuation);
+        yield* Deferred.succeed(state.launchGate.release, undefined);
+        yield* Fiber.join(reconciler);
+
+        const review = yield* process(
+          state,
+          dbPath,
+          Effect.gen(function* () {
+            const service = yield* RuntimeTaskExecutionService.RuntimeTaskExecutionService;
+            const attempts = yield* service.listAttempts(projectId, {
+              taskId: created.review.taskId,
+            });
+            return attempts.attempts[0] ?? null;
+          }),
+        );
+        assert.equal(state.launches.length, 2);
+        assert.equal(review?.status, "launched");
+        const source = yield* process(
+          state,
+          dbPath,
+          Effect.gen(function* () {
+            const runtime = yield* ProjectRuntimeService.ProjectRuntimeService;
+            return yield* runtime.readTask(projectId, created.source.taskId);
+          }),
+        );
+        assert.isUndefined(source.continuation);
+        assert.equal(source.status, "ready");
+      }),
+    ).pipe(Effect.provide(NodeServices.layer)),
 );
