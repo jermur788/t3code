@@ -1,3 +1,18 @@
+# CURRENT MANAGER STATE — fork/upstream v0.1.7 trial accepted, not integrated (2026-11-04 ~08:17 Dublin)
+
+**Supersedes earlier “eight conflicts blocked” status below.** The isolated fork/upstream reconciliation trial has now **resolved seven actual conflicts** against pinned upstream v0.1.7. The historical eighth did not recur. All conflicts were resolved in [isolated branch](https://github.com/jermur788/t3code/tree/integration/fork-upstream-reconciliation-trial-20261104), which is a **clean descendant of fork main** and contains the true two-parent upstream merge. Fork main still unchanged. The gate experiment is **not** part of this branch.
+
+**Evidence:** user-provided worker handoff and committed [routing/verification ledger](https://github.com/jermur788/t3code/blob/integration/fork-upstream-reconciliation-trial-20261104/docs/orchestration-v2/fork-upstream-reconciliation-routing-ledger-20261104.md). Local worker reports 40-package typecheck, web build, 81 files/2072 tests in check:changed and context-budget snapshot 58519 bytes, all final PASS; independent Codex reviewer returned CLEAN. Manager inspected core MCP and capacity merges, test-layer union and branch ancestry; **did not rerun tests**. No GitHub-hosted branch checks found; don't invent CI PASS. [Detailed manager acceptance](manager-fork-upstream-reconciliation-acceptance-20261104.md).
+
+**Decision:** isolated reconciliation candidate **REVIEW PASS / ACCEPTED FOR NEXT INTEGRATION GATE**, **NOT INTEGRATED into fork main**, **NOT production VERIFIED**. Still need rendered UI route inspection, restart/cross-project isolation with new recovery internals, Evidence V0 after upstream pruning, and final main-promotion review. [Bounded read-only/isolated verification handoff](task-verify-reconciled-v017-before-main-20261104.md) prepared; no worker dispatched by browser manager.
+
+**Latest upstream:** current main was one additional commit ahead of pinned v0.1.7 at browser check. Maintain pinned release baseline for this candidate; do not mislabel as fresh upstream main. Newer changes need separate future sync if adopted.
+
+**Product authority:** User explicitly approved default-off experimental gate D1, best-effort only in isolated experiments D3, shipping exclusion D2 and strict production revocation D4. User has **not** approved a new fork-main PR or direct main update. **Recommended next user choice: fork-only draft PR against main** (review and CI surface, not merge) vs direct fast-forward. Manager recommends draft PR due extensive upstream changes and missing UI/restart qualification. No PR has been created.
+
+**Status:** IMPLEMENTED (reconciled branch) / STATIC+RUNTIME PASS (local worker reports) / REVIEW PASS (narrow independent source) / INTEGRATED NO / PRODUCTION VERIFIED NO. Separate continuation gate branch remains reviewed but isolated.
+
+---
 # CURRENT MANAGER STATE — 2026-11-04 after default-off gate review
 
 **This section is current and supersedes older T0–T5 “ready” or decision-pending language below.** User-approved D1/D3 work was implemented and reviewed in the isolated gate branch; D2/D4 remain binding release requirements.
