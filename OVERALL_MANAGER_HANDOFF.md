@@ -1,6 +1,6 @@
 # Overall Manager — Authoritative Continuation Handoff
 
-**Updated:** 2026-11-04 after 11:32Z P2 repair return and independent manager promotion/source review.
+**Updated:** 2026-11-04 after 11:44Z Option A acceptance and verified guarded PR #21 source promotion.
 **Classification:** MANAGER HANDOFF / CURRENT CONTINUATION ENTRYPOINT.  
 **Status:** Documentation published on the shared fork's **planning branch**, not fork main. No code merge, provider execution or production configuration change is effected by this file.
 
@@ -17,33 +17,33 @@ Historical chats are supporting evidence; do not treat them as authoritative if 
 
 ## Situation in one paragraph
 
-The bounded P2 Evidence V0 pruning repair has returned on its **isolated** branch and passed an independent GitHub/source review by the Overall Manager. The worker reports local focused/broad tests PASS and four independent Codex reviews ending PASS. The code adds a read-only `orchestration-v2-pruned` incompleteness marker without modifying upstream event pruning or production execution. The **known compatibility caveat** is that the unchanged V0 envelope has a new closed-enum literal: old decoders reject exports containing the new marker, so a coordinated decoder upgrade is required. Manager decision: **SOURCE REVIEW PASS / READY FOR SEPARATE PR #21 SOURCE-PROMOTION DECISION WITH EXPLICIT COMPATIBILITY ACCEPTANCE**; **PR #21 remains OPEN/DRAFT/UNMERGED**, fork main unchanged. The previous user-approved default-off continuation experiment remains separate, and D2/D4 release requirements are still unmet. New prospective routing policy reserves DeepSeek for orchestration only, with Codex GPT-6.1 SOL Medium or Claude Sonnet 5.5 Medium performing all implementation and tests.
+**Option A approved and executed.** User on 2026-11-04 11:44Z accepted the old-Evidence-V0 decoder upgrade limitation and authorized promoting the accepted P2 repair onto draft PR #21's source branch. The Overall Manager completed a **guarded non-force, expected-head fast-forward** to the reviewed repair's final checkpoint. [PR #21](https://github.com/jermur788/t3code/pull/21) is now **OPEN / DRAFT / UNMERGED / MERGEABLE / clean**, with the P2 repair in its source; fork `main` remains unchanged. This is `PROMOTED TO DRAFT PR`, not `INTEGRATED` into main or `PRODUCTION VERIFIED`. Reported local tests/review remain bounded; no hosted CI. The remaining next gate is the user's **separate PR #21 fork-main merge decision**. Default-off continuation experiment and D2/D4 public-release safety gates remain separate and unmet.
 
 ## BASE / CHECKPOINT
 
-- Fork repo: `jermur788/t3code`. Existing draft PR #21 source head remains `70203ed5a95dbe1762da1ad2a46c4f153f910492`; fork `main` at `d3bedef12a31f368e5c5a6b279445bea39a6a13a`.
-- Repair branch `fix/evidence-v0-pruning-completeness-p2-20261104`: reviewed code/test checkpoint `a03a8bce92ea2de65a92a112bf9771388673094b`; final documentation-only branch head `0e0c7bc2cb1bb805f273123686303a68e1c2807c`. GitHub comparison confirms a linear five-commit successor with only three source/test files plus two durable evidence documents changed.
-- [Independent manager source review](docs/orchestration-v2/manager-evidence-v0-p2-promotion-review-20261104.md), [repair handoff](https://github.com/jermur788/t3code/blob/fix/evidence-v0-pruning-completeness-p2-20261104/docs/orchestration-v2/evidence-v0-p2-repair-handoff-20261104.md), [repair routing ledger](https://github.com/jermur788/t3code/blob/fix/evidence-v0-pruning-completeness-p2-20261104/docs/orchestration-v2/evidence-v0-p2-repair-routing-ledger-20261104.md).
-- PR #21 upstream merge parent is 25 commits past the `v0.1.7` tag, one commit behind then-current upstream main. No experimental continuation code is present in PR #21.
-- Local worker reports repair worktree clean; no browser-manager ability to inspect its disk directly. No provider limits/cost were directly reported.
+- Repo `jermur788/t3code`; fork `main` at `d3bedef12a31f368e5c5a6b279445bea39a6a13a` after source promotion.
+- Existing draft PR #21 branch `integration/fork-upstream-reconciliation-trial-20261104` **now** at `0e0c7bc2cb1bb805f273123686303a68e1c2807c`. Previously at `70203ed5a95dbe1762da1ad2a46c4f153f910492`; verified five commits ahead, zero behind, all source changes limited to three service/contract/test files plus two repair evidence documents.
+- The isolated `fix/evidence-v0-pruning-completeness-p2-20261104` branch remains intact; exact reviewed code/test checkpoint `a03a8bce92ea2de65a92a112bf9771388673094b`, final one docs-only commit later.
+- [Manager source review](docs/orchestration-v2/manager-evidence-v0-p2-promotion-review-20261104.md), [repair handoff](https://github.com/jermur788/t3code/blob/fix/evidence-v0-pruning-completeness-p2-20261104/docs/orchestration-v2/evidence-v0-p2-repair-handoff-20261104.md), [routing ledger](https://github.com/jermur788/t3code/blob/fix/evidence-v0-pruning-completeness-p2-20261104/docs/orchestration-v2/evidence-v0-p2-repair-routing-ledger-20261104.md).
+- Upstream reconciliation parent is **25 commits after** the `v0.1.7` tag, not exact tag or most recent upstream main. No experimental continuation source in PR #21.
 
 ## VERDICT / RESULT / VERIFICATION
 
-**P2 repair: `IMPLEMENTED / MANAGER SOURCE REVIEW PASS / WORKER-REPORTED LOCAL TEST PASS / INDEPENDENT REVIEW RECORDED PASS`, `NOT INTEGRATED / NOT PRODUCTION VERIFIED`.**
+**Status:** `P2 IMPLEMENTED / MANAGER SOURCE REVIEW PASS / WORKER-REPORTED LOCAL TEST PASS / CODEX INDEPENDENT REVIEW RECORDED PASS / PROMOTED TO PR DRAFT`. **NOT INTEGRATED** into fork main, **NOT PRODUCTION VERIFIED**.
 
-Manager inspected actual GitHub comparison, all three changed source/test files, runtime dependency/wiring evidence, all fixture tests and four-round independent-review ledger. The source diff uses existing pruning metadata, conservative `incomplete/unknown` semantics, hashed stable marker IDs and bounded output. It preserves unresolved/truncation and cross-project read boundaries. No upstream engine, schema migration, experimental continuation policy or app UI code changed.
+The manager independently inspected GitHub source and tests and confirmed the bounded repair: read existing pruning watermark, emit conservative `incomplete/unknown` `orchestration-v2-pruned` derived marker for potentially incomplete referenced history; keep unresolved/truncation distinct; bounded hash ID for long threads; no upstream execution/pruning/migration modifications.
 
-Reported local tests: 39/39 focused, 40/40 including AgentContextBudget, 40/40 packages typecheck, changed-file broad 81 files/2,075 tests, web build PASS, MCP context snapshot 58,519 bytes. Reviewer Codex `gpt-6.1-sol` read-only rounds 1–4: CHANGES REQUIRED → CHANGES REQUIRED → PASS WITH FINDINGS → PASS after red/green summary-bound, marker-ID and reconstruction-decode coverage fixes. **Browser manager did not execute local commands or inspect raw logs**; hosted CI, real provider execution and production qualification were not performed.
+Local worker-reported checks: red→green actual-pruning regression, 39/39 focused, 40/40 typecheck packages, 81 changed files/2,075 tests, web build, context snapshot 58,519 bytes, four independent Codex review rounds ending PASS. The browser manager did not independently run local checks or inspect raw host receipts. GitHub shows **zero hosted check-runs**, and no live provider/production validation is claimed.
 
-**Compatibility:** the unchanged `orchestration-evidence/v0` schema adds the closed-enum `orchestration-v2-pruned` literal. Updated decoders work; older decoders reject exports containing it. No universal backward compatibility may be claimed. The manager accepts the repair's bounded source correctness for **fork-only coordinated upgrade** if the user expressly accepts that compatibility constraint; version negotiation for standalone old decoders requires a separate design.
+**Compatibility policy (user accepted for fork-only promotion):** adding `orchestration-v2-pruned` to the closed `orchestration-evidence/v0` enum causes older strict V0 decoders to reject exports containing the new type. Readers must upgrade together. Never claim backward decodability with unchanged old readers; establish version evolution before a public stable cross-version consumer contract.
 
 ## NEXT — exact action and authority gate
 
-**No local code task is now required for the bounded P2 repair** unless the user requires old-decoder compatibility. The immediate next decision is **approval to promote the accepted isolated repair onto the existing draft PR #21's source branch**, using a guarded fast-forward of the current PR head if still unchanged. This promotion is **not a merge**, and has not been approved or performed. Do **not** push to PR #21 or fork main without authorization.
+**No worker task and no additional PR source promotion are pending.** The already-authorized source fast-forward has completed. **The next decision is whether to merge draft PR #21 into fork `main`**. This is **separate user authorization**; Option A did not grant it.
 
-If the user approves PR-source promotion with the documented V0-decoder upgrade limitation, the Overall Manager should re-fetch exact refs, inspect ownership and unrelated changes, advance the PR source branch non-destructively and verify the resulting source/ledger. Update Current State and PR discussion. **Only then ask a separate user question for merging PR #21 to fork main.** If the user does not accept old-decoder breakage, keep PR unchanged and prepare a version-compatibility design for their decision.
+Before any merge, re-fetch PR's head/base, validate mergeability and worktree/branch ownership, preserve unrelated edits, prefer a non-destructive GitHub merge, then verify resulting fork main and project-state ledger. If user declines or defers merge, leave PR draft/open/unmerged and keep working on other independently authorized tasks. Conflicts or material security integration concerns require review and a new decision.
 
-**New prospective routing policy (accepted):** [paste-ready DeepSeek orchestration-only template](docs/orchestration-v2/DEEPSEEK_ORCHESTRATOR_HANDOFF_TEMPLATE_V1.md). DeepSeek supervises but does **not** implement or run tests. Codex GPT-6.1 SOL Medium or Claude Sonnet 5.5 Medium implement/test; Opus 5.5 only for justified escalation. Monitor each subscription's actual usage-limit/window, checkpoint/switch safely and resume after provider-confirmed reset only when supported by T3. All events go into Runtime or an append-only ledger. The just-completed DeepSeek implementation used the older already-dispatched packet and must not be falsely described as a future-policy violation.
+**Future DeepSeek routing:** user-approved [orchestration-only template](docs/orchestration-v2/DEEPSEEK_ORCHESTRATOR_HANDOFF_TEMPLATE_V1.md); Codex GPT-6.1 SOL Medium / Claude Sonnet 5.5 Medium for all implementation/testing, Opus 5.5 only when justified, with per-subscription cooldown/resumption and ledger supervision. Do not rewrite historical P2 DeepSeek implementation as if it followed this future policy.
 
 ## USER-ACCEPTED DECISIONS (do not re-ask)
 
@@ -66,5 +66,5 @@ If the user approves PR-source promotion with the documented V0-decoder upgrade 
 
 ## STOP / TRANSITION
 
-No PR #21 source update, fork-main merge, public upstream action, production continuation enablement, destructive Git operation, material paid use, or substantive V2 engine redesign without distinct authority. At manager change, keep **Current State**, this handoff, active task/ledger and repo base synchronized. The present gate is the user's **separate PR-source promotion and V0 decoder compatibility acceptance decision**, not a request to rerun an already-accepted bounded repair.
+PR #21 **source promotion is complete and user-approved**. No fork-main merge, public upstream action, production continuation enablement, destructive Git operation, material paid use, or substantive V2 engine redesign without distinct authority. At manager change, keep Current State, this handoff, active task/ledger and repo base synchronized. The present gate is the user's **separate fork-main merge decision**, not another source-promotion request.
 
