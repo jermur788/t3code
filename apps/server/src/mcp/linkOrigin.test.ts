@@ -127,7 +127,7 @@ const layerTools = Layer.mergeAll(
       Layer.mock(ProjectRuntimeSourceAccess.ProjectRuntimeSourceAccess)({}),
     ),
   ),
-  Layer.provideMerge(McpServer.McpServer.layer),
+  Layer.provideMerge(McpHttpServer.layerInProcessMcpServer),
   Layer.provide(layerLaunches),
   Layer.provide(NodeCrypto.layer),
   Layer.provide(

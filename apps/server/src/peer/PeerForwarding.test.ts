@@ -279,7 +279,7 @@ const makeLaptop = Effect.gen(function* () {
         Layer.mock(ProjectRuntimeSourceAccess.ProjectRuntimeSourceAccess)({}),
       ),
     ),
-    Layer.provideMerge(McpServer.McpServer.layer),
+    Layer.provideMerge(McpHttpServer.layerInProcessMcpServer),
     Layer.provide(Layer.mock(ThreadSearch.ThreadSearch)({})),
     Layer.provide(Layer.mock(ThreadLaunch.ThreadLaunchService)({})),
     Layer.provide(

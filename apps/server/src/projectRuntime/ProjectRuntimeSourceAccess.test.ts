@@ -1,4 +1,5 @@
 import * as DevelopmentProfileService from "../developmentProfiles/DevelopmentProfileService.ts";
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, it } from "@effect/vitest";
 import {
@@ -71,7 +72,7 @@ const layerSourceAccess = <E, R>(
     Layer.provide(
       ServerConfig.ServerConfig.layerTest(process.cwd(), { prefix: "t3-runtime-access-" }),
     ),
-    Layer.provideMerge(NodeServices.layer),
+    Layer.provideMerge(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
   );
 };
 const layerRealEntries = WorkspaceEntries.layer.pipe(Layer.provide(WorkspacePaths.layer));

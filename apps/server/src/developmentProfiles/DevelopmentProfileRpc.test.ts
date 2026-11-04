@@ -1,3 +1,4 @@
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, it } from "@effect/vitest";
 import {
@@ -21,7 +22,7 @@ import { makeHandlers } from "./DevelopmentProfileRpc.ts";
 const group = RpcGroup.make(...DEVELOPMENT_PROFILE_RPCS).middleware(RpcScopeAuthorization);
 const layer = Profiles.layer.pipe(
   Layer.provideMerge(Sqlite.layerMemory),
-  Layer.provide(NodeServices.layer),
+  Layer.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
 );
 const projectId = ProjectId.make("profile-rpc-project");
 const setup = Effect.gen(function* () {

@@ -21,7 +21,7 @@ import {
   TrimmedNonEmptyString,
 } from "@t3tools/contracts";
 import * as Context from "effect/Context";
-import * as Crypto from "effect/Crypto";
+import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -174,9 +174,9 @@ export const formatEffectiveInstructions = (
 
 const make = Effect.gen(function* () {
   const sql = yield* SqlClient.SqlClient;
-  const crypto = yield* Crypto.Crypto;
-  const newId = crypto
-    .randomUUIDv4()
+  const random = yield* SecureRandom.SecureRandom;
+  const newId = random
+    .uuidV4()
     .pipe(Effect.mapError((cause) => new DevelopmentProfileIdGenerationError({ cause })));
   const now = DateTime.now.pipe(Effect.map(DateTime.formatIso));
   const sqlErrors = <A, R>(effect: Effect.Effect<A, ServiceError | SqlError, R>) =>

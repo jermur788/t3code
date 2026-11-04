@@ -1,4 +1,5 @@
 import * as DevelopmentProfileService from "../developmentProfiles/DevelopmentProfileService.ts";
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, it } from "@effect/vitest";
 import {
@@ -81,7 +82,7 @@ const setup = Effect.gen(function* () {
 const layerTest = ProjectRuntimeService.layer.pipe(
   Layer.provideMerge(DevelopmentProfileService.layer),
   Layer.provideMerge(SqlitePersistence.layerMemory),
-  Layer.provide(NodeServices.layer),
+  Layer.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
 );
 
 it.effect("starts disabled at revision zero and rejects unknown or deleted projects", () =>
@@ -1280,7 +1281,7 @@ it.effect("reopens the database with the same Runtime state and domain records",
         }).pipe(Effect.provide(serviceLayer)),
       );
     }),
-  ).pipe(Effect.provide(NodeServices.layer)),
+  ).pipe(Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
 );
 
 it.effect("reads an empty disabled context that keeps the revision", () =>

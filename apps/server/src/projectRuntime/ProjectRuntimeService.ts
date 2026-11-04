@@ -36,7 +36,7 @@ import {
 } from "@t3tools/contracts";
 import * as Context from "effect/Context";
 import * as DateTime from "effect/DateTime";
-import * as Crypto from "effect/Crypto";
+import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
@@ -348,9 +348,9 @@ const validateTask = Effect.fn("ProjectRuntimeService.validateTask")(function* (
 const make = Effect.gen(function* () {
   const sql = yield* SqlClient.SqlClient;
   const developmentProfiles = yield* DevelopmentProfileService.DevelopmentProfileService;
-  const crypto = yield* Crypto.Crypto;
-  const newId = crypto
-    .randomUUIDv4()
+  const random = yield* SecureRandom.SecureRandom;
+  const newId = random
+    .uuidV4()
     .pipe(Effect.mapError((cause) => new ProjectRuntimeIdGenerationError({ cause })));
   const sqlErrors = <A, R>(effect: Effect.Effect<A, RuntimeError | SqlError, R>) =>
     effect.pipe(
