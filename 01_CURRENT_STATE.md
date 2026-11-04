@@ -1,6 +1,6 @@
 # T3 Fork — Current State and Roadmap
 
-**Updated:** 2026-11-04, after the 08:37 Europe/Dublin Overall Manager transfer request.  
+**Updated:** 2026-11-04, after the 09:26Z independent local verification handoff and manager source/GitHub reconciliation.  
 **Classification:** CURRENT PROJECT STATE — authoritative snapshot for manager continuation, not a code change.  
 **Repository:** [jermur788/t3code](https://github.com/jermur788/t3code)  
 **Maintained on:** `planning/resource-efficient-continuation-20261103` — **not fork main**.  
@@ -30,28 +30,49 @@ The **user decides product policy, significant architecture trade-offs, merges/r
 
 The reconciled candidate is a true fork/upstream merge based on fork main plus pinned upstream v0.1.7. Seven actual conflicts were resolved (the historically reported eighth did not recur). This branch **does not include** the synthetic continuation policy or its gate; those files are absent by design.
 
-## Current milestone — pre-merge verification for PR #21
+## Current milestone — PR #21 verification reconciled; Evidence V0 P2 repair required
 
-**State:** `IMPLEMENTED` reconciled branch; worker-reported `STATIC PASS / RUNTIME PASS` for bounded suites; independent Codex and manager source-level `REVIEW PASS` for conflict resolutions; `NOT INTEGRATED`; **required verification remains**.
+**Updated from 2026-11-04 09:26Z independent local verification handoff.** This section supersedes the earlier V1–V5 *not-run* status and the preflight comment; the rest of this file retains its prior scope unless amended below.
 
-**Local worker evidence, documented in [routing/conflict ledger](https://github.com/jermur788/t3code/blob/integration/fork-upstream-reconciliation-trial-20261104/docs/orchestration-v2/fork-upstream-reconciliation-routing-ledger-20261104.md):**
+**Manager verdict: `REPAIR REQUIRED / REVIEW REQUIRED`; PR #21 `NOT INTEGRATED`, production `NOT VERIFIED`.** Candidate source accepted for bounded repair/continued review; **fork-only merge is not yet manager-recommended** while the demonstrated Evidence V0 completeness issue remains. The user retains final authority to explicitly accept the limitation and authorize merging notwithstanding this recommendation.
 
-- Seven conflicts: `OrchestratorMcpService.ts`, `linkOrigin.test.ts`, `PeerForwarding.test.ts`, `GrokAdapterV2.test.ts`, `runtimeLayer.test.ts`, regenerated `routeTree.gen.ts`, `usageLimits.ts`.
-- Preserved upstream project-scoped provider enablement, fork eligibility/capacity semantics, both test layer provisions, both routes, upstream effect service changes and fork Evidence V0 wiring.
-- Web build passed (7,430 modules), repo typecheck passed (40 packages), `vp run check:changed upstream/main` passed (2,072 tests across 81 files plus other gates), context-budget test passed.
-- Reconciled MCP tool-list snapshot **58,519 bytes**, no new increase from this merge.
-- Independent Codex reviewer returned `CLEAN`; Overall Manager inspected GitHub source, merge ancestry, branch and PR. **Manager did not rerun local tests.**
-- At last manager check PR #21 had **no hosted GitHub checks**. Absence is not CI PASS. The PR's very large changed-file count reflects upstream merge history, not 29,000 independently inspected manual changes.
-- Current upstream moved one commit after the pinned v0.1.7 baseline as of last check. Never claim the PR is rebased against *latest upstream main*.
+### Live GitHub reconciliation
 
-**Exact next authorized task:** [V1–V5 pre-merge verification packet](docs/orchestration-v2/task-verify-reconciled-v017-before-main-20261104.md), performed in a **fresh isolated external-volume worktree** without merging/rewriting the accepted branch:
-1. **V1 UI**: inspect rendered `/_chat/home` and `/threads/$environmentId/$threadId` routes and console/navigation using a browser; retain screenshot/test evidence. Build-only is insufficient.
-2. **V2 persistence/recovery**: run file-backed SQLite restart/recovery, idempotency and **two-project isolation** scenarios on the reconciled code with stub providers, noting updated upstream V2 internals.
-3. **V3 Evidence V0**: qualify export/reconstruction after upstream history pruning; record expected fail-closed cases.
-4. **V4 checks**: affected suites/typecheck/`check:changed upstream/main`/context-budget on the actual verified branch; distinguish local from hosted CI evidence.
-5. **V5 independent review**: reconcile results with spec and Git truth; return a complete durable manager handoff.
+- [Fork-only draft PR #21](https://github.com/jermur788/t3code/pull/21) remains **OPEN / DRAFT / UNMERGED / MERGEABLE** at the unchanged accepted reconciliation checkpoint, still zero commits behind and 330 ahead of fork main. Fork main remains unchanged; no new branch PR or source integration is implied by this update.
+- At manager check, **0 hosted check-runs and status contexts**, with no hosted CI PASS claim. The prior PR thread has a [browser preflight comment](https://github.com/jermur788/t3code/pull/21#issuecomment-6626843132).
+- The actual upstream parent of the reconciliation is **25 commits after the `v0.1.7` tag**, not that exact tag. Current upstream main remains one commit after the incorporated release-preparation parent at manager inspection. Descriptions should say **upstream v0.1.7 release-preparation baseline** rather than exact tag.
+- Continuation default-off experiment remains separate and absent from PR #21. D2 shipping exclusion and D4 production revocation requirements remain unmet and do not ride on this PR.
 
-**No new user decision is needed to run this bounded verification.** If real defects require source changes, create an isolated one-writer repair lane and re-review. A **separate user approval is required before merging PR #21**.
+### Independent local host handoff, 09:26Z
+
+**Evidence class:** user-provided authoritative worker/manager handoff describing local execution. The browser manager independently inspected relevant source and live GitHub, but **has not independently accessed the local screenshots, SQL fixture files, raw receipts or run logs**. Never conflate worker-reported `PASS` with browser-reexecuted tests.
+
+| Gate | Reported result | Manager disposition |
+| --- | --- | --- |
+| V1 rendered UI | PASS: Chromium fork home/Development/Workspace and copied-thread redirect; clean console except transient pairing WebSocket error | **Worker-reported UI PASS**, screenshots still on local host |
+| V2 file-backed restart/isolation | PASS: two projects, reopen SQLite, cross-project rejection; targeted tests | **Worker-reported RUNTIME PASS**, independent browser rerun not available |
+| V3 Evidence V0 after pruning | PASS WITH **P2**: fully absent V2 history marked unresolved; partially pruned history omitted incompleteness marker | **IMPLEMENTATION DEFECT / UPSTREAM COMPATIBILITY**; needs narrow repair |
+| V4 local verification | PASS: 40-package typecheck, 81 files/2,072 tests, web build 7,430 modules, context-budget snapshot unchanged at 58,519 bytes | **Worker-reported STATIC/RUNTIME PASS**, no hosted CI |
+| V5 independent review | Codex gpt-6.1-sol high, read-only: `CLEAN WITH FINDINGS` | **Review-with-findings**, not sign-off of P2 |
+
+The local worker reported detached verification worktree on external volume, tracked clean, existing worktrees preserved; reported 52 GB root and 91 GB external remaining at end. The browser manager cannot inspect that local worktree directly.
+
+**Pruning reproduction:** reported `before=3, remaining=2, after=2, deleted=1, unresolved=2`. Entirely unavailable referenced history fails closed, but a partially pruned referenced history with retained V2 events can appear complete. Browser source inspection confirms Evidence V0 bounded thread reading checks only per-thread read limits, while upstream event maintenance has a published pruning watermark. Source cannot independently prove the local SQL reproduction, but supports the diagnosed omission.
+
+**Local evidence locations** (not hosted/persisted in GitHub at this checkpoint): `/tmp/opencode/v017-verification-ledger-20261104.md`, `/tmp/opencode/evidence/`, `/tmp/opencode/evidence/test-packet/`. Publish sanitized exact logs/screenshots/fixture into the task's durable lane record before promoting a stronger independent verification claim.
+
+### Next authorized action — bounded P2 repair, no merge
+
+[Governing Evidence V0 pruning-completeness P2 repair packet](docs/orchestration-v2/task-evidence-v0-pruning-completeness-p2-20261104.md) now supersedes the previous V1–V5 execution task for immediate implementation priority. It requires:
+
+1. a fresh independently owned worktree from the unchanged candidate head; no edits to accepted PR branch or fork main;
+2. an additive read-only Evidence V0 incomplete/pruned indicator tied to existing pruning metadata, no synthetic event fabrication and no duplicate event store;
+3. red/green real-pruning regression, no-prune/unrelated-thread cases, restart/isolation/JSONL schema checks; targeted and broad local verification;
+4. distinct-provider read-only review and manager review of exact evidence before possible candidate promotion.
+
+**Routing:** browser manager source reconciliation and task preparation completed here (GPT-6); local execution recommended DeepSeek/OpenCode, capacity **UNKNOWN**, with independent Codex/Claude-class review. No local worker has been dispatched by the GitHub task write. Preserve one writer per code lane and record all routed attempts and verification facts in Runtime or an append-only ledger.
+
+**Stop:** Do not merge PR #21, mark production verified, enable synthetic continuation, rewrite history or modify upstream engine without distinct authority. After repair acceptance, request a **separate user merge decision**. If the user instead expressly accepts P2 as a known limitation, record that decision and the exact risk before any merge action.
 
 ## Accepted continuation safety decisions (binding; separate workstream)
 
@@ -86,20 +107,22 @@ The previous T3 local hosts reported that Project Runtime task/receipt tools wer
 
 | Gate | Current category | Next authority/action |
 | --- | --- | --- |
-| PR #21 rendered UI, restart, cross-project and Evidence V0 qualification | `VERIFICATION FAILURE` **not asserted**; `REVIEW REQUIRED` / **NOT RUN** | Run already-authorized V1–V5 packet; repair ordinary issues with evidence |
-| PR #21 hosted CI | `OPERATIONAL BLOCKER` / no GitHub checks observed | Inspect checks after new run or rely on documented local evidence without claiming hosted pass |
-| Merge PR #21 to fork main | `PRODUCT DECISION` / **not authorized** | Ask user only after required acceptance |
-| Continuation shipping exclusion (D2) | `DEFERRED` release gate | Design and verify on future shipping base |
-| Strict production continuation cancellation (D4) | `PRODUCT DECISION / REVIEW REQUIRED` | Decide run-creation vs provider-start semantics after architecture review; no upstream engine change yet |
+| PR #21 V1, V2 and V4 | `WORKER-REPORTED PASS`; browser manager has not retrieved local evidence files | Preserve/publish sanitized receipts; avoid claiming hosted CI |
+| PR #21 Evidence V0 partial-pruning completeness | **`IMPLEMENTATION DEFECT / UPSTREAM COMPATIBILITY` (P2)** | Run narrow repair in isolated branch, red/green fixture, independent review |
+| PR #21 upstream baseline | `REVIEW FINDING`: release-prep parent 25 commits past tag | Correct provenance wording; test on exact candidate, not assumed exact-tag head |
+| Hosted CI | `OPERATIONAL LIMITATION`: zero hosted checks | Rely on explicitly labeled local evidence, not a fictional hosted CI pass |
+| Merge PR #21 to fork main | **`PRODUCT DECISION` / not authorized** | Ask user after P2 repair acceptance, or explicitly accept known limitation |
+| Continuation shipping exclusion (D2) | `DEFERRED` release gate | Design/verify before public shipping |
+| Strict production continuation cancellation (D4) | `PRODUCT DECISION / REVIEW REQUIRED` | Separate architecture review; no upstream engine change yet |
 | Experimental gate integration | `NOT INTEGRATED` | Keep separate; later new gate-on-reconciled-base verification and approval |
-| Documentation V1 final qualification | `DEFERRED` pending golden path | Restore verification after reconciliation when safe |
+| Documentation V1 final qualification | `DEFERRED` pending golden path | Restore qualification separately after reconciliation |
 
-## Next manager loop (do not ask user to repeat prior decisions)
+## Next manager loop
 
-1. Read [Overall Manager handoff](OVERALL_MANAGER_HANDOFF.md), this Current State, [Coordination protocol](02_COORDINATION_HANDOFF_PROTOCOL.md), active specs and latest relevant ledger/branch truth.
-2. Verify PR #21 source/base, fork main and current upstream heads; check for new hosted checks/PR review, but **do not merge**.
-3. Dispatch/explain existing [pre-main verification packet](docs/orchestration-v2/task-verify-reconciled-v017-before-main-20261104.md) to a **real T3 local host**, if one is available; never claim dispatch based solely on a written handoff.
-4. Inspect returned evidence; classify failures, repair ordinary defects in isolated branch, rerun/re-review.
-5. Update this file, active Runtime/ledger and manager handoff after any transition; ask user for merge authority only when the required gate is met.
+1. Read the updated [Overall Manager handoff](OVERALL_MANAGER_HANDOFF.md), this Current State, Coordination protocol and the bounded P2 repair packet.
+2. Refresh PR #21/fork-main/upstream heads and any live Runtime tasks/worktree ownership; no user-approved merge exists.
+3. Use the prepared P2 repair task on a **real local T3 host** with a fresh worktree and one writer; writing a GitHub packet does not start a worker.
+4. Review exact red/green pruning fixtures, no-prune and unrelated-thread cases, local gate receipts and independent reviewer findings. Preserve the repair branch and fix normal issues without weakening tests.
+5. Update canonical state and the GitHub/Runtime ledger after acceptance. **Only then request an explicit separate merge decision**, unless the user first chooses to accept the P2 limitation knowingly.
 
-**Stop:** no main merge, public release, production continuation, irreversible Git operation, material paid use or material upstream orchestration-engine redesign without distinct authority.
+**Hard stops:** no merge, release, production continuation, destructive Git operation, material paid use, or substantive upstream engine redesign without distinct authority.
