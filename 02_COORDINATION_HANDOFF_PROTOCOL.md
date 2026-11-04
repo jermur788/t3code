@@ -36,6 +36,19 @@ Create a handoff automatically after any substantial:
 
 Tiny local fixes inside one ongoing worker session do not need separate handoffs unless they materially change accepted state.
 
+## Mandatory paste-ready DeepSeek orchestration handoffs (user direction, 2026-11-04)
+
+Whenever the next authorized action requires another T3 Code session or worker, the Overall Manager must provide **a complete, copy-and-paste-ready handoff in the user-facing reply**, not just a repository link or an internal task packet. Also preserve the same handoff durably with the task/spec/ledger. Do not claim that a published handoff automatically starts a worker.
+
+- **Orchestrator:** DeepSeek must lead the local task end-to-end: routing, dispatch, liveness, evidence reconciliation, bounded repair loops, review orchestration and ledger updates. DeepSeek is not replaced as orchestrator simply because a strong-model specialist is called.
+- **Execution routing:** Use DeepSeek/OpenCode for routine work and cost-efficient first attempts. For ordinary defects make two materially different, evidence-backed low-cost attempts before escalation; do not waste identical retries or delay hard security/architecture stops.
+- **Escalation:** Assign bounded hard subtasks or independent review to Codex **GPT-6.1 SOL** (high as justified), **Claude Sonnet 5.5** (medium by default), and **Claude Opus 5.5** (low/medium initially for genuinely difficult unresolved work). Select by task, availability and evidence; record actual resolved model and any substitution. Escalation does not grant authority to merge, redesign core execution semantics or incur material costs.
+- **Ledger:** The DeepSeek orchestrator must create/maintain the active Runtime task/handoff ledger when available, or an append-only branch-local ledger fallback. Record provider/model, candidate alternatives, actual capacity/UNKNOWN, route reason, attempts, failures, worktree ownership, tests, independent review and exact next action **as events occur**, not from retrospective guesswork.
+- **Required paste-ready contents:** start instruction addressed to DeepSeek; goal and governing spec; pinned branch/PR/checkpoint instructions; safety/one-writer boundaries; routing and escalation ladder; acceptance and test plan; independent review; ledger destination and contents; terminal handoff and stop conditions. Supply enough detail to run without rereading the manager chat.
+- If T3 Runtime or worker tools are unavailable, provide the executable local paste-ready handoff and mark **NOT DISPATCHED** rather than implying work has started.
+
+This routing/communication policy applies to future authorized handoffs until superseded by a later user instruction. It is **not** authority to merge, publish, bypass limits or modify existing product decisions.
+
 ## Worker end-of-task protocol
 
 Before ending substantial work, the worker should:
