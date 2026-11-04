@@ -3,7 +3,7 @@
 **Branch:** `experiment/continuation-default-off-gate-20261104`
 **Worktree:** `/home/jer/dev/t3code-continuation-gate-20261104`
 **Base:** `776558e7ab` (fork `overnight/deepseek-continuation-20261104` head)
-**Status:** IN PROGRESS — NOT INTEGRATED, NOT PRODUCTION ENABLED
+**Status:** EXPERIMENTAL CHECKPOINT PUSHED — NOT INTEGRATED, NOT PRODUCTION ENABLED
 **Fallback note:** Project Runtime task store was not used to persist routing; this append-only
 file is the authoritative fallback state for this lane.
 
@@ -175,3 +175,20 @@ T2 review A reviewer transcript: T3 delegated child task
 `…%3A433e7e85-…`. T5 acceptance: `…%3A95a8676d-…` (Codex `gpt-6.1-sol`). The first T5 attempt
 with `claude-opus-5-5` failed before work with "Claude API rate limit reached"; no review evidence
 was produced by it.
+
+## Event 0009 — experimental checkpoint push (actual)
+
+- **Pre-push checks:** `vp run fmt` exit 0; `vp run typecheck` exit 0 (39/39);
+  `vp test run apps/server/src/projectRuntime` exit 0 (13 files, 192 tests);
+  `vp test run apps/server/src/provider/AgentContextBudget.test.ts` exit 0;
+  `vp run check:changed` exit 0 (format, lint, knip 2/2, graphql, typecheck, 14 test files).
+- **Push:** `git push origin experiment/continuation-default-off-gate-20261104` exit 0,
+  fast-forward `776558e7ab..7e5401b8ba`. No force, no PR, no main or upstream write.
+- **Remote verified:** `HEAD == origin/experiment/continuation-default-off-gate-20261104 ==
+  7e5401b8ba12950a4be85482d6ba6b94c1a74862`. Worktree clean.
+- **Trial worktree:** `/media/jer/Files/Worktrees/t3-continuation-upstream-trial-20261104`
+  remains clean and detached at `upstream/main` `a185dd9248`; no merge in progress.
+- **Final state:** T0 pass; T1 `IMPLEMENTED` + `RUNTIME PASS`; T2 `REVIEW PASS`; T5 `REVIEW PASS`
+  (Codex acceptance); T3 `BLOCKED` on pre-existing fork-main conflicts; T4 `DESIGN ONLY`.
+  Integration: `NOT INTEGRATED`. Production gates: strict revocation, upstream reconciliation,
+  shipping exclusion.
