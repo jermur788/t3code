@@ -1,3 +1,5 @@
+> **CURRENT AUTHORITY UPDATE — draft PR already opened, 2026-11-04:** The user approved and the manager created [fork-only draft PR #21](https://github.com/jermur788/t3code/pull/21). It is OPEN / DRAFT / UNMERGED. This task is still authorized **for verification only**. Do **not** open another PR, ask again for draft-PR permission, merge PR #21, or edit fork main. Later **merge approval** remains separate. Follow [current state](../../01_CURRENT_STATE.md) and [manager handoff](../../OVERALL_MANAGER_HANDOFF.md) if any older line below conflicts.
+
 # T3 Code — independent pre-main validation of accepted v0.1.7 reconciliation
 
 **Issued:** 2026-11-04 by Overall Manager, under authorized bounded verification.  
