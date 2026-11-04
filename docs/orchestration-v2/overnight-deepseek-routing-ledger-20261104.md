@@ -213,3 +213,27 @@ Authority: handoff above. Coordinator model resolved from host: `opencode-go/dee
 | no-op probe  | completion-channel proof | opencode/deepseek-v4.1-flash            | shared            | DONE  | 00:24Z          | none                        |
 | O5 review #1 | independent review       | claudeAgent/claude-sonnet-5-5           | shared, read-only | DONE  | 00:33Z          | findings repaired           |
 | O5 review #2 | bounded re-review        | claudeAgent/claude-sonnet-5-5 (planned) | shared, read-only | READY | —               | dispatch after green checks |
+
+## Routing event 0009 — O5 re-review (dispatch, pre-result)
+
+- **UTC:** 2026-11-04T00:40Z. **Attempt:** 2 (bounded re-check, not a new issue). **Type:** independent re-review.
+- **Route:** `claudeAgent` / `claude-sonnet-5-5`, effort high, role review, read-only. Same reviewer as #0008, which is appropriate for verifying its own findings; it wrote no code, so the no-self-approval rule is not violated.
+- **Rejected:** Haiku 5.5 (cheaper, but the SQLite case-sensitivity check benefits from the reviewer's prior context and reasoning); DeepSeek (would review its own repair); Opus (capability exceeds a 4-item delta).
+- **Delta:** `a9854640d5..f930d946cd`.
+- **Local pre-checks before dispatch (all exit 0):** focused 42/42; projectRuntime 182/182; typecheck 39/39; `check:changed` exit 0 (format/lint/knip/graphql/typecheck/test 8 files). Logs `/tmp/opencode/o5-*.log`.
+- **State:** RUNNING; completion wakes the coordinator. Next: final morning handoff.
+
+## Routing event 0010 — O5 re-review result (final)
+
+- **UTC:** 2026-11-04T00:43Z.
+- **Route:** `claudeAgent` / `claude-sonnet-5-5`, effort high.
+- **Verdict:** **REPAIRS PASS** — all five actionable findings FIXED; no new defect from the delta.
+- **Reviewer-verified details:** guard at `RuntimeTaskExecutionService.ts:159-161` runs before any
+  receipt insert; `GLOB` at `:366` is case-sensitive; no other case-insensitive path; the regression
+  test would fail before the fix; docs numbers match git (47,538 at merge base and upstream, 58,519
+  fork-before, 59,165 candidate); handoff and test rename correct; compat worktree/branch gone;
+  comment now says "narrows, but does not close".
+- **Reviewer commands actually run:** git log/diff/show/merge-base, grep, worktree/branch list,
+  `vp test run RuntimeTaskContinuationSecurity.test.ts` → 25/25. It did not re-run the full suite.
+- **Local check:changed** was already exit 0 after the fix (00:39Z); reviewer read the log.
+- **Outcome:** O5 closed as REVIEW PASS. Morining handoff written. Nothing merged/pushed.
