@@ -1556,6 +1556,69 @@ it.effect("keeps the pruning marker and project isolation after a file-backed re
   ).pipe(Effect.provide(NodeServices.layer)),
 );
 
+it.effect("keeps pruned markers decodable for long thread identifiers", () =>
+  Effect.gen(function* () {
+    const sink = yield* EventSink.EventSinkV2;
+    const maintenance = yield* ProjectionMaintenance.ProjectionMaintenanceV2;
+    const evidence = yield* OrchestrationEvidenceService.OrchestrationEvidenceService;
+    const longThreadId = ThreadId.make(`thread:${"x".repeat(400)}`);
+    const longRunId = RunId.make(`run:${"r".repeat(400)}`);
+
+    yield* seedRuntime;
+    yield* sink.write({
+      events: [
+        v2ThreadCreated(longThreadId, "Long identifier thread"),
+        v2RunCreatedFor(longThreadId, longRunId),
+      ],
+    });
+    for (let index = 0; index < 3; index += 1) {
+      yield* sink.write({
+        events: [
+          v2NodeUpdated(
+            NodeId.make(`node:ev0-long-${index}`),
+            createdAttempt,
+            longThreadId,
+            longRunId,
+          ),
+        ],
+      });
+    }
+    assert.equal((yield* maintenance.pruneEventStore()).deletedEventCount, 0);
+    yield* TestClock.adjust("1 day");
+    assert.isAbove((yield* maintenance.pruneEventStore()).deletedEventCount, 0);
+    yield* insertAttemptRow({
+      ...attempt,
+      attemptId: RuntimeExecutionAttemptId.make("ev0-attempt-long"),
+      threadId: longThreadId,
+      runId: longRunId,
+    });
+
+    const exported = yield* evidence.exportTask(projectId, taskId);
+    const marker = exported.events.find(
+      (item) => item.recordType === "orchestration-v2-pruned" && item.threadId === longThreadId,
+    );
+    assert.isDefined(marker);
+    assert.isAtMost(marker!.summary.length, 512);
+
+    const decoded = (yield* evidence.exportTaskJsonl(projectId, taskId))
+      .split("\n")
+      .filter(Boolean)
+      .map((line) => decodeEvent(line));
+    assert.isTrue(
+      decoded.some(
+        (item) => item.recordType === "orchestration-v2-pruned" && item.threadId === longThreadId,
+      ),
+      "the bounded summary keeps JSONL decodable",
+    );
+    const reconstruction = yield* evidence.reconstructTaskHistory(projectId, taskId);
+    assert.isTrue(
+      reconstruction.events.some(
+        (item) => item.recordType === "orchestration-v2-pruned" && item.threadId === longThreadId,
+      ),
+    );
+  }).pipe(Effect.provide(layerPruneTest)),
+);
+
 it.effect("marks a bounded V2 thread read as incomplete instead of complete", () =>
   Effect.gen(function* () {
     yield* seedAll;

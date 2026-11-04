@@ -1048,7 +1048,7 @@ const v2PrunedEvent = (
     runId: null,
     occurredAt: null,
     recordedAt: null,
-    summary: `V2 thread ${threadId} has retained events at or below pruning boundary ${prunedThroughSequence}; earlier history may be missing and completeness is UNKNOWN`,
+    summary: `V2 thread history may predate pruning boundary ${prunedThroughSequence}; completeness is UNKNOWN`,
     unknownFields: ["occurredAt", "recordedAt", "completeness"],
     references: [{ recordType: "orchestration-v2-thread", recordId: threadId }],
     facts: facts([

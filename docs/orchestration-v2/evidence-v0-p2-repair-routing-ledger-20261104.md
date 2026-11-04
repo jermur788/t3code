@@ -110,3 +110,29 @@ Strict `<` is deliberate: pruning retains `thread.created`, so a thread created 
 **ORCHESTRATOR CLAIM — selection.** Selected Codex `gpt-6.1-sol` at `high` reasoning for the independent read-only review. Reasons: the review must test evidence-integrity semantics, a boundary race, false-positive behavior, and upstream compatibility; Codex at high reasoning is a different provider/model from the DeepSeek implementer and is the strongest available bounded reviewer for this task.
 **Alternatives considered:** Claude Sonnet 5.5 at medium (capable, but the task specifically stresses correctness of a subtle completeness invariant and a pruning race, where the higher-reasoning Codex route is preferable); Claude Opus 5.5 (not justified yet — no evidence of a materially hard unresolved issue). Opus remains the escalation route if review finds a genuine architectural/concurrency defect that Codex cannot resolve.
 **Capacity:** still **UNKNOWN**; only selectability was observed. Reviewer is instructed to be read-only and to report findings without editing the branch.
+
+## 2026-11-04T10:16Z — independent review (round 1)
+
+**OBSERVED FACT — dispatch.** `delegate_task` started Codex `gpt-6.1-sol` with `reasoningEffort: high`, role `review`, read-only instructions, in the shared checkout. Child task id:
+`node:delegated-task:command%3Amcp%3Ace0a1aa7-523d-4c66-b220-ef52e71e379d%3Adelegate-task%3A1e00b520-7f10-4fcd-b8b7-f22f3e29a3b8`. Terminal status: `completed`.
+
+**OBSERVED FACT — verdict.** `CHANGES REQUIRED`. The reviewer independently ran the focused Evidence + Projection Maintenance suites (38 passed) and a SQLite snapshot-isolation test (1 passed, 18 skipped), inspected the full diff, and reproduced both findings below. It confirmed the core pruning invariant and transaction analysis: publish-before-delete cannot produce a false-complete snapshot; conservative markers are possible but not false-complete; no upstream engine change; no test weakening.
+
+**OBSERVED FACT — finding 1 (material, repaired).** The marker summary interpolated the full thread ID. A valid 400-character thread ID produced a 528-character summary, above the 512-character schema bound, so JSONL export after pruning failed to decode. Reproduced red in this lane: `expected 528 to be at most 512`.
+**Repair:** the summary no longer embeds the thread ID; identity remains in `eventId`, `recordId`, and `threadId`. Added `keeps pruned markers decodable for long thread identifiers`, which exercises real pruning, JSONL decode, and reconstruction for a 400-character thread/run ID. Red before the summary change (`528 > 512`), green after (`1 passed`).
+
+**OBSERVED FACT — finding 2 (material compatibility concern, accepted and documented).** `OrchestrationEvidenceRecordType` is a closed enum on the unchanged `orchestration-evidence/v0` envelope. Older decoders built from the base commit reject an export containing `orchestration-v2-pruned`.
+**Disposition:** the governing task explicitly permits a strictly additive evidence record type and requires version compatibility with the existing V0 envelope; it forbids unreviewed breaking schema changes. The additive literal is therefore kept. No universal backward-decodability claim will be made. A short source comment now records that older decoders need an upgrade before consuming an export with the new literal. This remains a **compatibility risk for the manager**, not a reason to add version negotiation or a second schema in this bounded repair. Re-review will check that the disposition is stated accurately.
+
+## 2026-11-04T10:20Z — post-review verification
+
+**OBSERVED FACT.**
+
+| Command                                                                          | Exit | Result                                                                           |
+| -------------------------------------------------------------------------------- | ---- | -------------------------------------------------------------------------------- |
+| `vp test run OrchestrationEvidenceService.test.ts ProjectionMaintenance.test.ts` | 0    | 39/39 passed                                                                     |
+| `vp run typecheck`                                                               | 0    | 40/40 packages successful                                                        |
+| `vp test run apps/server/src/provider/AgentContextBudget.test.ts`                | 0    | 1/1 passed; snapshot unchanged                                                   |
+| `vp run check:changed upstream/main`                                             | 0    | format, lint, knip, graphql, typecheck, 81 test files, react compiler all passed |
+
+**ORCHESTRATOR CLAIM — no test weakening.** The long-identifier regression was added after review; it failed on the old summary and passes on the bounded summary. No existing assertion was removed or relaxed.

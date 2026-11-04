@@ -38,6 +38,8 @@ export const OrchestrationEvidenceSchemaVersion = Schema.Literal(
   ORCHESTRATION_EVIDENCE_SCHEMA_VERSION,
 );
 
+// Closed enum on the unchanged v0 envelope: a new literal needs decoder upgrades
+// before older clients consume an export that contains it.
 export const OrchestrationEvidenceRecordType = Schema.Literals([
   "project-runtime-task",
   "project-runtime-verification",
