@@ -1,3 +1,5 @@
+> **CANONICAL STATE MOVED — 2026-11-04:** This accumulated dated manager note is retained as **historical evidence**. The single current manager entrypoints are [01_CURRENT_STATE.md](../../01_CURRENT_STATE.md) and [OVERALL_MANAGER_HANDOFF.md](../../OVERALL_MANAGER_HANDOFF.md). The existing dated sections below may describe prior stages as open after they were completed; newer canonical state overrides them.
+
 # CURRENT MANAGER STATE — fork-only reconciliation draft PR opened (2026-11-04)
 
 **This section is current and supersedes prior “PR not approved/opened” language below.**
