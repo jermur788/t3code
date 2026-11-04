@@ -48,3 +48,9 @@ Other bounded risks: conservative false-positive incompleteness for threads olde
 4. **Later, separate gate:** only after PR #21 contains accepted repair and current checks/provenance are reconciled should the manager request user approval for a fork-only merge. Production release gates D2/D4 remain separate and unmet.
 
 **No main update, PR #21 source update, merge, release, or production continuation activation was performed by this review.**
+
+## Promotion outcome — recorded after user acceptance at 11:44Z
+
+The user **selected Option A**, accepting coordinated reader upgrades for the closed-enum Evidence V0 pruning marker and authorizing **source-branch promotion only**. The Overall Manager verified PR #21 remained open/draft/unmerged with its expected unchanged source head, that the repair was a fast-forward descendant with exactly the reviewed source/test changes and durable handoff/ledger, and that fork `main` was unchanged. A GitHub `update_ref` with `force=false` and `expected_sha` succeeded on the **existing PR source branch**. A subsequent independent GitHub PR and branch read confirmed the new source head `0e0c7bc2cb1bb805f273123686303a68e1c2807c`, fork main unchanged, PR **OPEN/DRAFT/UNMERGED** and GitHub REST `mergeable=true`, `mergeable_state=clean`. No hosted checks, no source rebase or history rewrite, no PR merge, no production activation.
+
+**State now: `PROMOTED TO DRAFT PR #21`; not `INTEGRATED` into fork main.** The old-decoder limitation has been expressly accepted for this fork-only source promotion, but does not establish general public schema backward compatibility. The remaining authority gate is a **separate user decision about merging PR #21 to fork main**. Earlier sections describe the pre-promotion review snapshot, not current unpromoted status.
