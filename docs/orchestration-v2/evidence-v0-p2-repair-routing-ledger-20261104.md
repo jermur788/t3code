@@ -176,3 +176,20 @@ The web build had already passed on the additive contract literal (`vp run --fil
 **Repair.** The regression now decodes every reconstructed event through the same `OrchestrationEvidenceEvent` JSON schema decoder used for JSONL, then asserts the marker is present. This closes the coverage gap without changing production behavior.
 
 **OBSERVED FACT — post-closure focused run.** `vp test run OrchestrationEvidenceService.test.ts ProjectionMaintenance.test.ts` → exit `0`, 39/39 passed; targeted lint exit `0`.
+
+## 2026-11-04T11:00Z — independent review (round 4, closure)
+
+**OBSERVED FACT — dispatch.** New `delegate_task` to Codex `gpt-6.1-sol` at `reasoningEffort: medium` for a narrow test-only closure. Rationale: the code was already accepted at round 3; the only change was one decoder assertion, so medium reasoning is the cost-appropriate route. Child task id:
+`node:delegated-task:command%3Amcp%3Ace0a1aa7-523d-4c66-b220-ef52e71e379d%3Adelegate-task%3Adf0d013a-dffc-4935-bb49-97d375ebcf9d`. Terminal status: `completed`.
+
+**OBSERVED FACT — verdict.** `PASS`. No findings. The reviewer confirmed the regression eagerly decodes every reconstructed event through `OrchestrationEvidenceEvent` before asserting marker presence, that an invalid marker would fail, that only test/ledger files changed, and that no assertion was weakened. It ran both focused suites: 2 files, 39/39 tests, exit `0`; `git diff --check` passed.
+
+**REVIEW ACCEPTANCE SCOPE.** The bounded pruning-completeness repair is accepted for manager promotion review. This is not integration or production verification.
+**COMPATIBILITY LIMITATION CARRIED FORWARD.** The unchanged V0 envelope adds a closed-enum literal; base-commit decoders reject `orchestration-v2-pruned` and require upgrading. Universal backward decodability must not be claimed.
+
+## 2026-11-04T11:02Z — final state
+
+**OBSERVED FACT — reviewed code head:** `a03a8bce92ea2de65a92a112bf9771388673094b`.
+The final handoff document adds documentation only; the reviewed code and tests are unchanged from this commit.
+
+**OBSERVED FACT — integration state:** the repair exists only on `fix/evidence-v0-pruning-completeness-p2-20261104`. PR #21 remains open/draft/unmerged at its unchanged candidate head; fork `main` was not modified. No PR was created or merged by this task.
