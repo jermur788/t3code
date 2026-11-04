@@ -1,3 +1,20 @@
+# CURRENT MANAGER STATE — 2026-11-04 after default-off gate review
+
+**This section is current and supersedes older T0–T5 “ready” or decision-pending language below.** User-approved D1/D3 work was implemented and reviewed in the isolated gate branch; D2/D4 remain binding release requirements.
+
+**ACCEPTED IMPLEMENTATION:** [Default-off experimental continuation gate](https://github.com/jermur788/t3code/tree/experiment/continuation-default-off-gate-20261104), **IMPLEMENTED / worker-local RUNTIME PASS / independent T2 and T5 worker REVIEW PASS / independent manager SOURCE REVIEW PASS** limited to experimental default-off surfaces. Never mark main INTEGRATED/VERIFIED: fork main unchanged. 13 Project Runtime files, 192 tests passed per local host evidence; 39-package typecheck and `check:changed` also reported passing. Manager independently fetched source diff and tests, not raw local logs/host runtime. [Detailed manager gate review](manager-gate-branch-review-20261104.md).
+
+**BLOCKED FOR INTEGRATION:** new fork/upstream combined tree not validated. Prior local trial produced 8 pre-existing fork-vs-upstream conflicts outside candidate continuation files. Manager checked newer upstream changes after trial, including Orchestrator and adapter modifications; reconnection required. Root local filesystem was reportedly 100% full; use external-volume worktree after fresh disk preflight, no unapproved cleanup.
+
+**NEXT AUTHORIZED TASK:** Separate [bounded fork-upstream reconciliation packet](task-fork-upstream-reconciliation-20261104.md) on [manager-prepared isolated trial branch](https://github.com/jermur788/t3code/tree/integration/fork-upstream-reconciliation-trial-20261104), **not dispatched by browser manager**. The trial branch now has a [routing/conflict ledger seed](https://github.com/jermur788/t3code/blob/integration/fork-upstream-reconciliation-trial-20261104/docs/orchestration-v2/fork-upstream-reconciliation-routing-ledger-20261104.md), and no local code/conflict resolution is claimed. DeepSeek coordinator on real T3 host, with separate code ownership and independent Codex/Claude review for sensitive conflicts. Authorized only on isolated branch; no main merge/upstream push/PR/production provider enablement.
+
+**D2** remains accepted shipping exclusion: public release cannot contain the experimental agent-facing continuation surface or its +646-byte tool-budget increase. **D4** remains accepted strict post-revocation release requirement, but the architecture defining the linearization boundary and authority source is **PRODUCT DECISION / DESIGN REVIEW REQUIRED**. T4 memo suggests atomic durable run-creation guard against existing task revisions and defense-in-depth provider turn-start cancellation. No upstream engine change/new authority store is authorized yet.
+
+**Routing/state:** T3 local worker ledger reported DeepSeek writing; independent Claude Opus 5.5 reviewed and Codex GPT-6.1 Sol accepted after the first reviewer route was rate-limited. These are host-reported actual routes with limited browser validation. New reconciliation ledger is seed-only and must be updated with real dispatch, rejected candidates, retries and results.
+
+**Stop/decision policy:** Continue bounded upstream reconciliation safely; do not decide release semantics or provider execution engine by assumption. User approval is required for material changes to upstream command/effect core, new authority table/epoch, public merge/release and significant infrastructure cost.
+
+---
 ## Accepted staged product decisions — 2026-11-04 01:09 Europe/Dublin (CURRENT)
 
 **This section supersedes the earlier “product choices pending” language below.** The user explicitly **approved both recommended staged directions**. They are now **ACCEPTED DECISIONS**, not research or proposals.
