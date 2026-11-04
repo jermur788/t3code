@@ -1,3 +1,18 @@
+# CURRENT MANAGER STATE — fork-only reconciliation draft PR opened (2026-11-04)
+
+**This section is current and supersedes prior “PR not approved/opened” language below.**
+
+**NEW AUTHORIZED ACTION COMPLETE:** User expressly approved a **fork-only draft PR** to review the accepted v0.1.7 reconciliation candidate, and the manager created [draft PR #21 — Reconcile T3 fork main with upstream v0.1.7](https://github.com/jermur788/t3code/pull/21). Source branch: `integration/fork-upstream-reconciliation-trial-20261104`; target: fork `main`. GitHub returned and subsequent independent fetch verified: **open, draft, not merged**, source and base at reviewed heads, `mergeable_state: clean`, fork main unchanged. No upstream PR or public posting beyond this fork PR. **No permission to merge**, mark ready for review, enable continuation, or deploy.
+
+**PR size warning:** GitHub reports approximately **28,984 changed files**, reflecting historical upstream/fork divergence and merge ancestry; this count is not the seven manually reconciled files. Review needs focus on conflict-resolution source, migration/adapter/permission changes and tests, not an assumption that the entire change set was independently inspected. No GitHub-hosted checks/check-runs are present on the PR head at this check; no CI PASS claim.
+
+**Current verification gate:** [Separate local verification packet](task-verify-reconciled-v017-before-main-20261104.md) still pending for rendered route UI, restart and cross-project isolation, and Evidence V0 after pruning. Existing local test and independent review evidence support **STATIC/RUNTIME PASS and scoped REVIEW PASS**, not production VERIFIED. Current candidate is pinned to upstream v0.1.7; check later upstream changes before promotion.
+
+**Separate experiment:** [Default-off continuation gate](https://github.com/jermur788/t3code/tree/experiment/continuation-default-off-gate-20261104) is NOT included in PR #21. Public shipping exclusion D2 and strict production revocation D4 remain unimplemented release gates. Preserve separate code lanes, routing ledger and no destructive Git operations.
+
+**Next authorized action:** continue bounded local verification only. Reconcile evidence, then ask user separately for merge/production actions. Maintain fork main unchanged until that approval.
+
+---
 # CURRENT MANAGER STATE — fork/upstream v0.1.7 trial accepted, not integrated (2026-11-04 ~08:17 Dublin)
 
 **Supersedes earlier “eight conflicts blocked” status below.** The isolated fork/upstream reconciliation trial has now **resolved seven actual conflicts** against pinned upstream v0.1.7. The historical eighth did not recur. All conflicts were resolved in [isolated branch](https://github.com/jermur788/t3code/tree/integration/fork-upstream-reconciliation-trial-20261104), which is a **clean descendant of fork main** and contains the true two-parent upstream merge. Fork main still unchanged. The gate experiment is **not** part of this branch.
