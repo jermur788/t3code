@@ -161,3 +161,18 @@ Strict `<` is deliberate: pruning retains `thread.created`, so a thread created 
 `vp run check:changed upstream/main` → exit `0`.
 `81` test files passed, `2,075` tests passed; format, lint, knip 1/2, knip 2/2, GraphQL check, typecheck of 40 packages, and React compiler checks all passed. Log: `/tmp/opencode/p2-check-round3.log` (host-local; sanitized command/result copied here).
 The web build had already passed on the additive contract literal (`vp run --filter @t3tools/web build`, exit `0`, built in 38.84s). The later contract change was a non-behavioral comment, and no web code changed.
+
+## 2026-11-04T10:50Z — independent review (round 3)
+
+**OBSERVED FACT — dispatch.** New `delegate_task` to Codex `gpt-6.1-sol`, `reasoningEffort: high`, role `review`, read-only, at commit `17fdc19825a17891eec5de513d488fb619b53dbf`. Child task id:
+`node:delegated-task:command%3Amcp%3Ace0a1aa7-523d-4c66-b220-ef52e71e379d%3Adelegate-task%3Af2408755-5dcb-4da3-9a51-2a0d4b31864b`. Terminal status: `completed`.
+
+**OBSERVED FACT — verdict.** `PASS WITH FINDINGS`. The reviewer independently ran the focused suites (`39/39`), inspected both diffs, confirmed the SHA-256 marker ID is 93 characters and hashes the full canonical thread ID, confirmed identity remains in `recordId`/`threadId`/facts/reference, confirmed the old formula produces 4,125 characters and fails JSONL/reconstruction decode, confirmed strict `<` boundary logic and isolation semantics, and confirmed no upstream engine edits or unrelated test weakening.
+**Acceptance scope stated by the reviewer:** the bounded pruning-completeness repair, including the maximum 4,096-character Evidence ID case, is accepted; no material defect remains.
+**Compatibility limitation to carry forward:** the unchanged V0 envelope contains a new closed-enum literal; base-commit decoders reject exports containing `orchestration-v2-pruned` and require upgrading. Universal backward decodability must not be claimed.
+
+**OBSERVED FACT — low finding.** The long-ID regression checked that the reconstruction contained the marker but did not schema-decode the reconstructed events; the ledger's "reconstruction decode" wording overclaimed that coverage.
+
+**Repair.** The regression now decodes every reconstructed event through the same `OrchestrationEvidenceEvent` JSON schema decoder used for JSONL, then asserts the marker is present. This closes the coverage gap without changing production behavior.
+
+**OBSERVED FACT — post-closure focused run.** `vp test run OrchestrationEvidenceService.test.ts ProjectionMaintenance.test.ts` → exit `0`, 39/39 passed; targeted lint exit `0`.

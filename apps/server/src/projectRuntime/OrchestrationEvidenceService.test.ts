@@ -1635,10 +1635,14 @@ it.effect("keeps pruned markers decodable for long thread identifiers", () =>
       "the bounded summary keeps JSONL decodable",
     );
     const reconstruction = yield* evidence.reconstructTaskHistory(projectId, taskId);
+    const decodedReconstruction = reconstruction.events.map((item) =>
+      decodeEvent(JSON.stringify(item)),
+    );
     assert.isTrue(
-      reconstruction.events.some(
+      decodedReconstruction.some(
         (item) => item.recordType === "orchestration-v2-pruned" && item.threadId === longThreadId,
       ),
+      "the reconstructed marker decodes against the schema",
     );
   }).pipe(Effect.provide(layerPruneTest)),
 );
