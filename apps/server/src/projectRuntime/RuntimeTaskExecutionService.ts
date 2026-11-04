@@ -154,8 +154,11 @@ const asAttemptId = (value: string) => value as RuntimeExecutionAttemptId;
  * while only a well-formed key can be re-derived by the internal dispatcher.
  */
 const CONTINUATION_REQUEST_KEY_NAMESPACE = "cont:v1:";
+// SQLite LIKE is ASCII case-insensitive, so the public reservation must be too:
+// otherwise `CONT:V1:P:x` slips past the guard and can consume a repair cycle.
 const isReservedContinuationRequestKey = (key: string) =>
-  key.startsWith(CONTINUATION_REQUEST_KEY_NAMESPACE);
+  key.slice(0, CONTINUATION_REQUEST_KEY_NAMESPACE.length).toLowerCase() ===
+  CONTINUATION_REQUEST_KEY_NAMESPACE;
 
 const parseContinuationRequestKey = (
   key: string,
@@ -360,7 +363,7 @@ const make = Effect.gen(function* () {
     const rows = yield* sql<{ readonly count: number }>`SELECT count(*) AS count
       FROM project_runtime_execution_attempts
       WHERE project_id = ${projectId} AND task_id = ${repairTaskId}
-        AND request_key LIKE 'cont:v1:p:%'
+        AND request_key GLOB 'cont:v1:p:*'
         ${excludeAttemptId === undefined ? sql`` : sql`AND attempt_id <> ${excludeAttemptId}`}`;
     // The public entry point reserves the whole `cont:v1:` namespace, so every
     // row counted here is host-issued rather than a caller-chosen key.
@@ -717,9 +720,10 @@ const make = Effect.gen(function* () {
               requestKey,
               excludeAttemptId: attempt.attemptId,
             });
-      // The receipt insert is the dispatch boundary; this closes the gap
-      // between that insert and the external launch (including pending replay
-      // after restart). A launched thread is reconciled, never discarded.
+      // The receipt insert is the dispatch boundary; this narrows, but does not
+      // close, the gap between that insert and the external launch (including
+      // pending replay after restart). A launched thread is reconciled, never
+      // discarded.
       if (authorization === null) {
         const shell = yield* threads.getThreadShell(attempt.threadId).pipe(
           Effect.asSome,

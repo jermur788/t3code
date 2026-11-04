@@ -1625,86 +1625,88 @@ it.effect("still accepts an ordinary key on the same repair task", () =>
 );
 
 /**
- * A reconciliation that started before its peer committed the review receipt
- * must not insert a second receipt or launch a second reviewer.
+ * A delayed reconciliation that re-enters after its peer committed the review
+ * receipt must reuse that receipt instead of launching a second reviewer.
  */
-it.effect("dispatches one review when a delayed reconciliation overlaps a completed one", () =>
-  Effect.scoped(
-    Effect.gen(function* () {
-      const fs = yield* FileSystem.FileSystem;
-      const dir = yield* fs.makeTempDirectoryScoped();
-      const dbPath = `${dir}/continuation.sqlite`;
-      const state = makeState();
-      const created = yield* process(
-        state,
-        dbPath,
-        Effect.gen(function* () {
-          const service = yield* RuntimeTaskExecutionService.RuntimeTaskExecutionService;
-          const sql = yield* SqlClient.SqlClient;
-          const tasks = yield* seedAndCreateTasks(state);
-          const worker = yield* service.execute(projectId, {
-            taskId: tasks.source.taskId,
-            expectedTaskRevision: tasks.source.revision,
-          });
-          yield* appendHandoff(worker, { milestone: "none", result: "none" });
-          completeRun(state, worker.threadId);
-          // Settle the attempt directly so no reconciliation has advanced the
-          // chain yet; both racing callers start from the same durable state.
-          yield* sql`UPDATE project_runtime_execution_attempts
+it.effect(
+  "re-enters one review receipt when a delayed reconciliation overlaps a completed one",
+  () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const fs = yield* FileSystem.FileSystem;
+        const dir = yield* fs.makeTempDirectoryScoped();
+        const dbPath = `${dir}/continuation.sqlite`;
+        const state = makeState();
+        const created = yield* process(
+          state,
+          dbPath,
+          Effect.gen(function* () {
+            const service = yield* RuntimeTaskExecutionService.RuntimeTaskExecutionService;
+            const sql = yield* SqlClient.SqlClient;
+            const tasks = yield* seedAndCreateTasks(state);
+            const worker = yield* service.execute(projectId, {
+              taskId: tasks.source.taskId,
+              expectedTaskRevision: tasks.source.revision,
+            });
+            yield* appendHandoff(worker, { milestone: "none", result: "none" });
+            completeRun(state, worker.threadId);
+            // Settle the attempt directly so no reconciliation has advanced the
+            // chain yet; both racing callers start from the same durable state.
+            yield* sql`UPDATE project_runtime_execution_attempts
             SET status = 'completed', payload_json = json_set(payload_json, '$.status', 'completed')
             WHERE project_id = ${projectId} AND attempt_id = ${worker.attemptId}`;
-          return { ...tasks, worker };
-        }),
-      );
-      assert.equal(state.launches.length, 1);
+            return { ...tasks, worker };
+          }),
+        );
+        assert.equal(state.launches.length, 1);
 
-      const gate: RuntimeGate = {
-        taskId: created.source.taskId,
-        armed: true,
-        entered: yield* Deferred.make<void>(),
-        release: yield* Deferred.make<void>(),
-      };
-      state.runtimeGate = gate;
-      const delayed = yield* Effect.forkChild(
-        process(
+        const gate: RuntimeGate = {
+          taskId: created.source.taskId,
+          armed: true,
+          entered: yield* Deferred.make<void>(),
+          release: yield* Deferred.make<void>(),
+        };
+        state.runtimeGate = gate;
+        const delayed = yield* Effect.forkChild(
+          process(
+            state,
+            dbPath,
+            Effect.gen(function* () {
+              const service = yield* RuntimeTaskExecutionService.RuntimeTaskExecutionService;
+              return yield* service.reconcileAttempt(projectId, created.worker.attemptId);
+            }),
+          ),
+        );
+        yield* Deferred.await(gate.entered);
+        // The peer layer must build without the gate so it can complete the
+        // dispatch while the delayed caller is suspended.
+        state.runtimeGate = null;
+        const first = yield* process(
           state,
           dbPath,
           Effect.gen(function* () {
             const service = yield* RuntimeTaskExecutionService.RuntimeTaskExecutionService;
             return yield* service.reconcileAttempt(projectId, created.worker.attemptId);
           }),
-        ),
-      );
-      yield* Deferred.await(gate.entered);
-      // The peer layer must build without the gate so it can complete the
-      // dispatch while the delayed caller is suspended.
-      state.runtimeGate = null;
-      const first = yield* process(
-        state,
-        dbPath,
-        Effect.gen(function* () {
-          const service = yield* RuntimeTaskExecutionService.RuntimeTaskExecutionService;
-          return yield* service.reconcileAttempt(projectId, created.worker.attemptId);
-        }),
-      );
-      yield* Deferred.succeed(gate.release, undefined);
-      const delayedResult = yield* Fiber.join(delayed);
+        );
+        yield* Deferred.succeed(gate.release, undefined);
+        const delayedResult = yield* Fiber.join(delayed);
 
-      assert.equal(first.status, "completed");
-      assert.equal(delayedResult.status, "completed");
-      // Exactly one review receipt and one review launch survived the overlap.
-      const reviews = yield* process(
-        state,
-        dbPath,
-        Effect.gen(function* () {
-          const service = yield* RuntimeTaskExecutionService.RuntimeTaskExecutionService;
-          return yield* service.listAttempts(projectId, { taskId: created.review.taskId });
-        }),
-      );
-      assert.equal(reviews.attempts.length, 1);
-      assert.equal(state.launches.length, 2);
-    }),
-  ).pipe(Effect.provide(NodeServices.layer)),
+        assert.equal(first.status, "completed");
+        assert.equal(delayedResult.status, "completed");
+        // Exactly one review receipt and one review launch survived the overlap.
+        const reviews = yield* process(
+          state,
+          dbPath,
+          Effect.gen(function* () {
+            const service = yield* RuntimeTaskExecutionService.RuntimeTaskExecutionService;
+            return yield* service.listAttempts(projectId, { taskId: created.review.taskId });
+          }),
+        );
+        assert.equal(reviews.attempts.length, 1);
+        assert.equal(state.launches.length, 2);
+      }),
+    ).pipe(Effect.provide(NodeServices.layer)),
 );
 
 /**
@@ -1805,4 +1807,49 @@ it.effect(
         assert.equal(source.status, "ready");
       }),
     ).pipe(Effect.provide(NodeServices.layer)),
+);
+
+it.effect("rejects case-variant continuation keys without spending repair budget", () =>
+  Effect.scoped(
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const dir = yield* fs.makeTempDirectoryScoped();
+      const state = makeState();
+      // SQLite LIKE is case-insensitive, so these variants used to pass the
+      // case-sensitive public guard and still count as spent repair cycles.
+      const keys = ["CONT:V1:P:attempt", "Cont:v1:r:attempt", "cOnT:v1:p:x"];
+
+      for (const [index, key] of keys.entries()) {
+        const dbPath = `${dir}/case-${index}.sqlite`;
+        let repairTaskId: ProjectRuntimeTask["taskId"] | null = null;
+        const rejected = yield* process(
+          state,
+          dbPath,
+          Effect.gen(function* () {
+            const service = yield* RuntimeTaskExecutionService.RuntimeTaskExecutionService;
+            const created = yield* seedAndCreateTasks(state);
+            repairTaskId = created.repair.taskId;
+            return yield* service
+              .execute(projectId, {
+                taskId: created.repair.taskId,
+                expectedTaskRevision: created.repair.revision,
+                clientRequestId: key,
+              })
+              .pipe(Effect.flip);
+          }),
+        );
+        assert.equal(rejected._tag, "RuntimeExecutionRejectedError");
+        assert.equal(state.launches.length, 0);
+        const attempts = yield* process(
+          state,
+          dbPath,
+          Effect.gen(function* () {
+            const service = yield* RuntimeTaskExecutionService.RuntimeTaskExecutionService;
+            return yield* service.listAttempts(projectId, { taskId: repairTaskId! });
+          }),
+        );
+        assert.isEmpty(attempts.attempts);
+      }
+    }),
+  ).pipe(Effect.provide(NodeServices.layer)),
 );

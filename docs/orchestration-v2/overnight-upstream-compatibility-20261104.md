@@ -20,8 +20,8 @@ must re-fetch immediately before merging.
 The candidate changes 13 files. **None of them is also changed by upstream.** The
 `projectRuntime` service, `RuntimeTaskContinuationPolicy`, `RuntimeTaskPacket` and
 `packages/contracts/src/projectRuntime.ts` do not exist upstream at all; they are fork-owned
-additions. `Migrations.ts` and `agentContextBudget.json` are the only shared files touched by
-the fork lineage around this work, and both are outside the candidate diff.
+additions. `Migrations.ts` is a shared file but is outside the candidate diff;
+`agentContextBudget.json` **is** one of the candidate's 13 changed files (58,519 → 59,165).
 
 A real trial merge of `overnight/deepseek-continuation-20261104` into `upstream/main@43bf0bab`
 was executed in a disposable worktree (`/home/jer/dev/t3code-compat-20261104`, branch
@@ -62,17 +62,19 @@ verification gates must be rerun after the conflict set is resolved on the merge
 
 ## Context-budget finding
 
-| Snapshot                      | claude append | codex context | MCP tool list    |
-| ----------------------------- | ------------- | ------------- | ---------------- |
-| Upstream main                 | 5153          | 6883          | **47538**        |
-| Fork main before continuation | 7496          | 9224          | 58519            |
-| Candidate with continuation   | 7496          | 9224          | **59165** (+646) |
+| Snapshot                              | claude append | codex context | MCP tool list    |
+| ------------------------------------- | ------------- | ------------- | ---------------- |
+| Upstream main / merge base `47f2c8d2` | 5153          | 6883          | **47538**        |
+| Fork main before continuation         | 7496          | 9224          | 58519            |
+| Candidate with continuation           | 7496          | 9224          | **59165** (+646) |
 
-Upstream has since _reduced_ the tool-list budget substantially. Merging the fork's snapshot
-would restore the fork's larger numbers and lose upstream's reduction. Correct sequence:
-resolve conflicts → re-measure with `AgentContextBudget.test.ts` on the merged tree → only then
-update the snapshot. The +646-byte continuation delta remains an `agent-context-increase` gate
-for whichever base is chosen; it must not be absorbed into an upstream reconciliation silently.
+Upstream did **not** change this file since the merge base: both hold 47,538. The fork had
+already raised its own snapshot to 58,519 before this work; the continuation contract adds a
+further 646 bytes. Merging the fork's snapshot would therefore carry roughly 11 KB of
+fork-owned growth into upstream, not "lose" an upstream reduction. Correct sequence: resolve
+conflicts → re-measure with `AgentContextBudget.test.ts` on the merged tree → only then update
+the snapshot. The +646-byte continuation delta remains an `agent-context-increase` gate for
+whichever base is chosen; it must not be absorbed into an upstream reconciliation silently.
 
 ## Least-churn option
 

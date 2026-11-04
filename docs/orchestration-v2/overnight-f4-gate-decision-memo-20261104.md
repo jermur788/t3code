@@ -30,8 +30,9 @@ The MCP tool-list snapshot is the model-visible budget
 
 The delta is the arithmetic between the two committed snapshots, not a fresh schema-diff run.
 It is genuinely model-visible: `continuation` is part of the task input schema surfaced to
-agents. Upstream main has meanwhile reduced its own snapshot to 47,538 bytes, so any later
-merge must re-measure rather than copy either value.
+agents. Upstream main and the merge base both remain at 47,538 bytes; the fork had already
+raised its own snapshot to 58,519 before this work. Any later merge must re-measure on the
+merged tree rather than copy either value.
 
 ## 3. Gate options
 

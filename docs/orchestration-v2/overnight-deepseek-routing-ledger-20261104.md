@@ -188,3 +188,28 @@ Authority: handoff above. Coordinator model resolved from host: `opencode-go/dee
 - **Resolved actual (host):** provider instance `claudeAgent`, model `claude-sonnet-5-5`, option `effort=high`, role `review`, runtime `inherit`, shared checkout; task `node:delegated-task:command%3Amcp%3Aef0bc521...%3Af94f7889...`; state RUNNING; completion wakes the coordinator (host-supported async polling/wake).
 - **Liveness:** dispatch receipt observed in host response; no result yet at ledger write.
 - **Next:** inspect returned findings, repair routine ones only if safely within authorization, re-review, then morning handoff. No merge.
+
+## Routing event 0008 — O5 review result and routine repairs
+
+- **UTC:** review returned 2026-11-04T00:33Z (completion wake observed); repairs 00:33–00:36Z.
+- **Resolved route:** `claudeAgent` / `claude-sonnet-5-5`, effort high. Independent of the implementer and of the coordinator.
+- **Verdict:** **REVIEW REQUIRED (scoped)** — no authorization bypass, no self-grant path; one low-severity real defect and two documentation errors.
+- **Reviewer evidence (host-reported, not fabricated):** 42/42 focused after my edits (41 at review time), 181/181 projectRuntime, typecheck 39/39, AgentContextBudget 1/1; merge-tree conflict counts matched O3; `check:changed` not re-run by the reviewer (read both logs).
+- **Findings and disposition:**
+  1. **Low, real defect — case-variant request keys.** Public reservation used case-sensitive `startsWith`; the budget query used SQLite `LIKE` (ASCII case-insensitive), so `CONT:V1:P:x` passed the guard and consumed a repair cycle. No authority granted. **FIXED:** guard now compares a lower-cased prefix; budget query uses case-sensitive `GLOB`. Regression test added (3 variants). DeepSeek attempt 1, no escalation needed.
+  2. **Low/medium doc error — upstream budget narrative.** Upstream and merge base both hold 47,538; the fork raised it to 58,519 before this work. `agentContextBudget.json` **is** in the candidate diff. **FIXED** in the O3 doc and O4 memo.
+  3. **Low stale doc** — handoff said no test coordinates the launch gap. **FIXED**; points at the characterization test.
+  4. **Low test scope** — the "concurrent" test is resolved by the `readByRequestKey` pre-check, not a simultaneous insert. **FIXED** by renaming to `re-enters one review receipt…`; the test now claims only idempotent re-entry. A true simultaneous-insert test would need a production hook or a flaky SQLite race, so it was not added.
+  5. **Info** — characterization test is honest but asserts the undesired outcome as green. Kept; documented as KNOWN GAP.
+  6. **Info** — authorization reads are separate statements; the launch re-check catches mixes. No change.
+  7. **Hygiene** — compat worktree/branch removed (`git worktree remove`, `git branch -D`).
+- **Re-verification after repair:** focused 42/42 (00:34Z); projectRuntime + typecheck + check:changed in flight (logs `/tmp/opencode/o5-*.log`).
+- **Next:** commit, bounded re-review of the delta, morning handoff. Nothing merged/pushed.
+
+## Worker roster — live
+
+| Child/task   | Role                     | Resolved provider/model                 | Worktree          | State | Last host event | Next                        |
+| ------------ | ------------------------ | --------------------------------------- | ----------------- | ----- | --------------- | --------------------------- |
+| no-op probe  | completion-channel proof | opencode/deepseek-v4.1-flash            | shared            | DONE  | 00:24Z          | none                        |
+| O5 review #1 | independent review       | claudeAgent/claude-sonnet-5-5           | shared, read-only | DONE  | 00:33Z          | findings repaired           |
+| O5 review #2 | bounded re-review        | claudeAgent/claude-sonnet-5-5 (planned) | shared, read-only | READY | —               | dispatch after green checks |
