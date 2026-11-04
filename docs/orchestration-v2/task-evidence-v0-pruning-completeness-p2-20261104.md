@@ -28,9 +28,10 @@ Implement a minimal, upstream-friendly, deterministic **read-only completeness i
 ## ROUTING
 
 - Work class: **LOCAL/CODE REQUIRED** for tests and application changes; browser source/packet review performed by ChatGPT GPT-6 Overall Manager.
-- Routine implementation: **DeepSeek/OpenCode** preferred, available capacity **UNKNOWN**. Capture actual provider/model, alternatives, reason, resource observations, attempts and outcomes in Project Runtime or an append-only lane ledger.
-- Independent review: **Codex/Claude-class**, different provider/model, read-only. Escalate hard concurrency/security/integration issues directly; ordinary failing tests get up to two materially distinct evidence-backed low-cost repair attempts first, max four bounded solution attempts unless separately authorized.
-- One writer for Evidence V0 contract/service/test surfaces; reviewer does not edit. Never consume real/paid app-under-test providers.
+- **Mandatory DeepSeek orchestrator for the entire local lifecycle**. Hand this task to a real running DeepSeek T3 Code orchestration session using the [complete copy/paste handoff](handoff-deepseek-orchestrator-evidence-v0-p2-20261104.md); no published note automatically dispatches a worker.
+- DeepSeek may execute/delegate routine implementation and tests to **DeepSeek/OpenCode**. Capture actual provider/model, alternatives, reason, capacity (UNKNOWN if unmeasured), resource observations, attempts and outcomes in Project Runtime or an append-only lane ledger. Update the ledger **during execution**.
+- If stronger analysis is justified, DeepSeek assigns a bounded task to **Codex GPT-6.1 SOL** (high as justified) or **Claude Sonnet 5.5** (medium); if these fail on a genuinely hard issue, **Claude Opus 5.5** (low/medium initially). Keep **DeepSeek as orchestrator** throughout; do not silently replace it. Reviewer must be different provider/model from implementer and read-only.
+- Escalate hard concurrency/security/integration issues directly; ordinary failing tests get up to two materially distinct evidence-backed low-cost repair attempts first, max four bounded solution attempts unless separately authorized. One writer for Evidence V0 contract/service/test surfaces; reviewer does not edit. Never consume real/paid app-under-test providers.
 
 ## BASE / PREFLIGHT / OWNERSHIP
 
