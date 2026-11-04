@@ -34,6 +34,7 @@ import * as Stream from "effect/Stream";
 
 import * as NodeSqliteClient from "@t3tools/shared/nodeSqliteClient";
 import * as EventStoreV2 from "../orchestration-v2/EventStore.ts";
+import { EVENT_LOG_PRUNED_THROUGH } from "../persistence/OrchestrationEventStore.ts";
 import { PersistenceDecodeError, PersistenceSqlError } from "../persistence/Errors.ts";
 
 type EvidenceError =
@@ -1020,6 +1021,46 @@ const v2TruncationEvent = (
     ]),
   });
 
+/**
+ * Pruning is a global boundary, not a per-thread deletion record. A thread whose
+ * oldest retained event sits below it may have lost earlier events; a thread
+ * created after it keeps that event above. Only the former is marked incomplete.
+ */
+const v2PrunedEvent = (
+  projectId: ProjectRuntimeTask["projectId"],
+  taskId: ProjectRuntimeTask["taskId"],
+  threadId: string,
+  prunedThroughSequence: number,
+  oldestRetainedSequence: number,
+): DraftEvent =>
+  event({
+    schemaVersion: ORCHESTRATION_EVIDENCE_SCHEMA_VERSION,
+    eventId: `oev0:orchestration-v2-pruned:${threadId}`,
+    recordType: "orchestration-v2-pruned",
+    recordId: threadId,
+    lifecycleClass: "observation",
+    recordBasis: "derived-view",
+    authority: "orchestration-v2",
+    projectId,
+    taskId,
+    attemptId: null,
+    threadId,
+    runId: null,
+    occurredAt: null,
+    recordedAt: null,
+    summary: `V2 thread ${threadId} has retained events at or below pruning boundary ${prunedThroughSequence}; earlier history may be missing and completeness is UNKNOWN`,
+    unknownFields: ["occurredAt", "recordedAt", "completeness"],
+    references: [{ recordType: "orchestration-v2-thread", recordId: threadId }],
+    facts: facts([
+      ["status", "incomplete"],
+      ["completeness", "unknown"],
+      ["reason", "pruned-history-boundary"],
+      ["threadId", threadId],
+      ["prunedThroughSequence", prunedThroughSequence],
+      ["oldestRetainedSequence", oldestRetainedSequence],
+    ]),
+  });
+
 const stagingEvent = (reference: OrchestrationEvidenceStagingReference): DraftEvent =>
   event({
     schemaVersion: ORCHESTRATION_EVIDENCE_SCHEMA_VERSION,
@@ -1213,17 +1254,42 @@ const make = Effect.gen(function* () {
       );
       const referencedRuns = (threadId: string): ReadonlySet<string> =>
         runIdsByThread.get(threadId) ?? new Set<string>();
+      const prunedThroughSequence = yield* sql<{ readonly last_sequence: number }>`
+        SELECT last_sequence FROM orchestration_v2_projection_metadata
+        WHERE projection_name = ${EVENT_LOG_PRUNED_THROUGH}
+      `.pipe(
+        Effect.mapError(
+          (cause) =>
+            new PersistenceSqlError({
+              operation: "OrchestrationEvidenceService.loadBoundedV2Evidence.prunedThrough",
+              cause,
+            }),
+        ),
+        Effect.map((rows) => rows[0]?.last_sequence ?? 0),
+      );
       // A read that returns exactly the limit cannot prove the thread was fully read,
       // because later events may exist beyond the bounded prefix.
       const truncatedThreadIds = uniqueThreadIds.filter(
         (threadId, index) => perThread[index]!.length >= V2_EVENT_READ_LIMIT_PER_THREAD,
       );
+      // Pruning retains each thread's thread.created event. An oldest retained
+      // event below the published boundary therefore means the thread existed
+      // while pruning was in range, so earlier events may be gone. A thread
+      // created after the boundary keeps its oldest event above it.
+      const prunedThreads = uniqueThreadIds.flatMap((threadId, index) => {
+        const oldestRetainedSequence = Array.from(perThread[index]!)[0]?.sequence;
+        return prunedThroughSequence > 0 &&
+          oldestRetainedSequence !== undefined &&
+          oldestRetainedSequence < prunedThroughSequence
+          ? [{ threadId, oldestRetainedSequence }]
+          : [];
+      });
       const events = perThread.flat().filter((stored) => {
         const relevantRuns = referencedRuns(stored.event.threadId);
         const runId = v2EffectiveRunId(stored);
         return runId === undefined || relevantRuns.has(runId);
       });
-      return { events, truncatedThreadIds };
+      return { events, truncatedThreadIds, prunedThreads, prunedThroughSequence };
     },
   );
 
@@ -1551,6 +1617,15 @@ const make = Effect.gen(function* () {
       ...unresolvedV2.map(([type, id]) => v2UnresolvedEvent(projectId, taskId, type, id)),
       ...boundedV2.truncatedThreadIds.map((threadId) =>
         v2TruncationEvent(projectId, taskId, threadId),
+      ),
+      ...boundedV2.prunedThreads.map(({ threadId, oldestRetainedSequence }) =>
+        v2PrunedEvent(
+          projectId,
+          taskId,
+          threadId,
+          boundedV2.prunedThroughSequence,
+          oldestRetainedSequence,
+        ),
       ),
       ...stagingReferences.map(stagingEvent),
     ]);

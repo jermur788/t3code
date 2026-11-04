@@ -1,4 +1,5 @@
 import { assert, it } from "@effect/vitest";
+import * as NodeServices from "@effect/platform-node/NodeServices";
 import {
   AdaptiveCapacityPoolId,
   AdaptiveCapacitySnapshotId,
@@ -43,14 +44,20 @@ import {
 } from "@t3tools/contracts";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
+import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
+import * as Stream from "effect/Stream";
 import * as TestClock from "effect/testing/TestClock";
 import * as SqlClient from "effect/sql/SqlClient";
 import { type SqlError } from "effect/sql/SqlError";
 
 import * as SqlitePersistence from "../persistence/Sqlite.ts";
+import * as OrchestrationEventStore from "../persistence/OrchestrationEventStore.ts";
+import * as EventSink from "../orchestration-v2/EventSink.ts";
 import * as EventStore from "../orchestration-v2/EventStore.ts";
+import * as ProjectionMaintenance from "../orchestration-v2/ProjectionMaintenance.ts";
+import * as ProjectionStore from "../orchestration-v2/ProjectionStore.ts";
 import * as AdaptiveRoutingService from "./AdaptiveRoutingService.ts";
 import * as OrchestrationEvidenceService from "./OrchestrationEvidenceService.ts";
 
@@ -457,6 +464,17 @@ const encodeTask = Schema.encodeSync(Schema.fromJsonString(ProjectRuntimeTask));
 const encodeHandoff = Schema.encodeSync(Schema.fromJsonString(ProjectRuntimeHandoff));
 const encodeAttempt = Schema.encodeSync(Schema.fromJsonString(RuntimeExecutionAttempt));
 
+const insertAttemptRow = (value: RuntimeExecutionAttempt) =>
+  Effect.flatMap(
+    SqlClient.SqlClient,
+    (sql) => sql`INSERT INTO project_runtime_execution_attempts
+      (attempt_id, project_id, task_id, status, revision, thread_id, run_id, request_key,
+        created_at, updated_at, payload_json)
+      VALUES (${value.attemptId}, ${value.projectId}, ${value.taskId}, ${value.status},
+        ${value.revision}, ${value.threadId}, ${value.runId}, NULL, ${value.createdAt},
+        ${value.updatedAt}, ${encodeAttempt(value)})`,
+  );
+
 const seedRuntime = Effect.gen(function* () {
   const sql = yield* SqlClient.SqlClient;
   yield* sql`INSERT INTO projection_projects
@@ -485,7 +503,11 @@ const v2At = DateTime.makeUnsafe(createdAttempt);
 const v2ThreadEventId = EventId.make(`event:${threadId}:created`);
 const v2RunEventId = EventId.make("event:ev0-run-created");
 
-const v2ThreadCreated = (id: ThreadId, title: string): OrchestrationV2DomainEvent => ({
+const v2ThreadCreated = (
+  id: ThreadId,
+  title: string,
+  eventProjectId: ProjectId = projectId,
+): OrchestrationV2DomainEvent => ({
   id: EventId.make(`event:${id}:created`),
   type: "thread.created",
   threadId: id,
@@ -494,7 +516,7 @@ const v2ThreadCreated = (id: ThreadId, title: string): OrchestrationV2DomainEven
     createdBy: "user",
     creationSource: "web",
     id,
-    projectId,
+    projectId: eventProjectId,
     title,
     providerInstanceId: opencode,
     modelSelection: {
@@ -518,7 +540,7 @@ const v2ThreadCreated = (id: ThreadId, title: string): OrchestrationV2DomainEven
   },
 });
 
-const v2RunCreated: OrchestrationV2DomainEvent = {
+const v2RunCreated = {
   id: v2RunEventId,
   type: "run.created",
   threadId,
@@ -544,7 +566,7 @@ const v2RunCreated: OrchestrationV2DomainEvent = {
     checkpointId: null,
     contextHandoffId: null,
   },
-};
+} satisfies OrchestrationV2DomainEvent;
 
 const v2RunAttemptCreatedId = EventId.make("event:ev0-run-attempt-created");
 const v2RunAttemptCreated: OrchestrationV2DomainEvent = {
@@ -567,17 +589,22 @@ const v2RunAttemptCreated: OrchestrationV2DomainEvent = {
   },
 };
 
-const v2NodeUpdated = (id: NodeId, occurredAt: string): OrchestrationV2DomainEvent => ({
+const v2NodeUpdated = (
+  id: NodeId,
+  occurredAt: string,
+  eventThreadId: ThreadId = threadId,
+  eventRunId: RunId = runId,
+): OrchestrationV2DomainEvent => ({
   id: EventId.make(`event:${id}:updated`),
   type: "node.updated",
-  threadId,
-  runId,
+  threadId: eventThreadId,
+  runId: eventRunId,
   nodeId: id,
   occurredAt: DateTime.makeUnsafe(occurredAt),
   payload: {
     id,
-    threadId,
-    runId,
+    threadId: eventThreadId,
+    runId: eventRunId,
     parentNodeId: null,
     rootNodeId: id,
     kind: "root_turn",
@@ -593,6 +620,19 @@ const v2NodeUpdated = (id: NodeId, occurredAt: string): OrchestrationV2DomainEve
   },
 });
 
+const v2RunCreatedFor = (eventThreadId: ThreadId, eventRunId: RunId): OrchestrationV2DomainEvent =>
+  ({
+    ...v2RunCreated,
+    id: EventId.make(`event:${eventRunId}:created`),
+    threadId: eventThreadId,
+    runId: eventRunId,
+    payload: {
+      ...v2RunCreated.payload,
+      id: eventRunId,
+      threadId: eventThreadId,
+    },
+  }) as OrchestrationV2DomainEvent;
+
 const seedV2 = Effect.gen(function* () {
   const eventStore = yield* EventStore.EventStoreV2;
   yield* eventStore.append({
@@ -604,6 +644,32 @@ const layerTest = Layer.merge(
   OrchestrationEvidenceService.layer,
   AdaptiveRoutingService.layer,
 ).pipe(Layer.provideMerge(EventStore.layer), Layer.provideMerge(SqlitePersistence.layerMemory));
+
+// Pruning needs the sink's projection watermark, so this fixture shares one
+// database across the event store, projections, maintenance and evidence.
+const pruneDatabase = SqlitePersistence.layerMemory;
+const pruneEventStore = EventStore.layer.pipe(Layer.provideMerge(pruneDatabase));
+const pruneProjectionStore = ProjectionStore.layer.pipe(Layer.provideMerge(pruneDatabase));
+const pruneStores = Layer.mergeAll(pruneDatabase, pruneEventStore, pruneProjectionStore);
+const layerPruneTest = Layer.mergeAll(
+  pruneStores,
+  EventSink.layer.pipe(Layer.provide(pruneStores)),
+  ProjectionMaintenance.layer.pipe(Layer.provide(pruneStores)),
+  OrchestrationEvidenceService.layer.pipe(Layer.provide(pruneStores)),
+);
+
+const makeFilePruneLayer = (dbPath: string) => {
+  const database = SqlitePersistence.layerFromPath(dbPath);
+  const eventStore = EventStore.layer.pipe(Layer.provideMerge(database));
+  const projectionStore = ProjectionStore.layer.pipe(Layer.provideMerge(database));
+  const stores = Layer.mergeAll(database, eventStore, projectionStore);
+  return Layer.mergeAll(
+    stores,
+    EventSink.layer.pipe(Layer.provide(stores)),
+    ProjectionMaintenance.layer.pipe(Layer.provide(stores)),
+    OrchestrationEvidenceService.layer.pipe(Layer.provide(stores)),
+  );
+};
 
 const seedAll = Effect.gen(function* () {
   yield* seedRuntime;
@@ -1251,6 +1317,243 @@ it.effect("derives a unique recommendation link and marks multiple receipts AMBI
       [receiptId, secondReceipt.recommendationReceiptId].sort(),
     );
   }).pipe(Effect.provide(layerTest)),
+);
+
+it.effect("marks referenced history as incomplete when pruning may have removed events", () =>
+  Effect.gen(function* () {
+    const sink = yield* EventSink.EventSinkV2;
+    const eventStore = yield* EventStore.EventStoreV2;
+    const maintenance = yield* ProjectionMaintenance.ProjectionMaintenanceV2;
+    const evidence = yield* OrchestrationEvidenceService.OrchestrationEvidenceService;
+    const sql = yield* SqlClient.SqlClient;
+
+    yield* seedRuntime;
+    yield* sink.write({
+      events: [v2ThreadCreated(threadId, "Evidence V0 execution"), v2RunCreated],
+    });
+    const prunableNodeIds = Array.from({ length: 4 }, (_, index) =>
+      NodeId.make(`node:ev0-prune-${index}`),
+    );
+    for (const node of prunableNodeIds) {
+      yield* sink.write({ events: [v2NodeUpdated(node, createdAttempt)] });
+    }
+    const before = Array.from(yield* eventStore.read({ threadId }).pipe(Stream.runCollect));
+    assert.equal(before.length, 6);
+
+    const fresh = yield* evidence.exportTask(projectId, taskId);
+    assert.isFalse(
+      fresh.events.some((item) => item.recordType === "orchestration-v2-pruned"),
+      "history that was never pruned carries no pruned marker",
+    );
+
+    // The first pass only marks the head; the second pass, a day later, deletes.
+    assert.equal((yield* maintenance.pruneEventStore()).deletedEventCount, 0);
+    const watermark = yield* sql<{ readonly sequence: number }>`
+      SELECT MAX(sequence) AS sequence FROM orchestration_events
+    `.pipe(Effect.map((rows) => rows[0]?.sequence ?? 0));
+    yield* TestClock.adjust("1 day");
+    assert.isAbove((yield* maintenance.pruneEventStore()).deletedEventCount, 0);
+
+    const published = yield* sql<{ readonly last_sequence: number }>`
+      SELECT last_sequence FROM orchestration_v2_projection_metadata
+      WHERE projection_name = ${OrchestrationEventStore.EVENT_LOG_PRUNED_THROUGH}
+    `.pipe(Effect.map((rows) => rows[0]?.last_sequence ?? 0));
+    assert.equal(published, watermark);
+
+    const remaining = Array.from(yield* eventStore.read({ threadId }).pipe(Stream.runCollect));
+    assert.isBelow(remaining.length, before.length);
+    assert.isTrue(
+      remaining.some((stored) => stored.event.id === v2ThreadEventId),
+      "thread.created is retained below the pruning boundary",
+    );
+    assert.deepEqual(
+      remaining.flatMap((stored) =>
+        stored.event.type === "node.updated" ? [stored.event.payload.id] : [],
+      ),
+      [prunableNodeIds.at(-1)],
+      "only the stream head survives among the prunable nodes",
+    );
+
+    // This referenced thread's complete history begins after the boundary.
+    const postThreadId = ThreadId.make("thread:ev0-post-prune");
+    const postRunId = RunId.make("run:ev0-post-prune");
+    yield* sink.write({
+      events: [
+        v2ThreadCreated(postThreadId, "Post-prune thread"),
+        v2RunCreatedFor(postThreadId, postRunId),
+      ],
+    });
+    yield* insertAttemptRow({
+      ...attempt,
+      attemptId: RuntimeExecutionAttemptId.make("ev0-attempt-post-prune"),
+      threadId: postThreadId,
+      runId: postRunId,
+      createdAt: completedAttempt,
+      updatedAt: completedAttempt,
+    });
+
+    const exported = yield* evidence.exportTask(projectId, taskId);
+    const prunedMarkers = exported.events.filter(
+      (item) => item.recordType === "orchestration-v2-pruned",
+    );
+    assert.equal(prunedMarkers.length, 1, "only the referenced pruned thread is marked");
+    const marker = prunedMarkers[0];
+    assert.equal(marker?.eventId, `oev0:orchestration-v2-pruned:${threadId}`);
+    assert.equal(marker?.recordId, threadId);
+    assert.equal(marker?.threadId, threadId);
+    assert.equal(marker?.authority, "orchestration-v2");
+    assert.equal(marker?.recordBasis, "derived-view");
+    assert.equal(marker?.lifecycleClass, "observation");
+    assert.equal(marker?.facts.find((fact) => fact.key === "status")?.value, "incomplete");
+    assert.equal(marker?.facts.find((fact) => fact.key === "completeness")?.value, "unknown");
+    assert.equal(
+      marker?.facts.find((fact) => fact.key === "reason")?.value,
+      "pruned-history-boundary",
+    );
+    assert.equal(
+      marker?.facts.find((fact) => fact.key === "prunedThroughSequence")?.value,
+      watermark,
+    );
+    assert.isTrue(marker?.unknownFields.includes("completeness"));
+    assert.isFalse(
+      exported.events.some(
+        (item) => item.recordType === "orchestration-v2-pruned" && item.threadId === postThreadId,
+      ),
+      "a thread created after pruning is not marked",
+    );
+    // The retained events keep the thread and run references resolved; the only
+    // defect is the missing earlier history, which the marker must expose.
+    assert.isFalse(
+      exported.events.some(
+        (item) =>
+          item.recordType === "orchestration-v2-unresolved" &&
+          (item.recordId === threadId || item.recordId === runId),
+      ),
+    );
+
+    const repeated = yield* evidence.exportTask(projectId, taskId);
+    assert.deepEqual(
+      repeated.events
+        .filter((item) => item.recordType === "orchestration-v2-pruned")
+        .map((item) => [item.eventId, item.facts]),
+      prunedMarkers.map((item) => [item.eventId, item.facts]),
+    );
+    const jsonl = yield* evidence.exportTaskJsonl(projectId, taskId);
+    const decoded = jsonl
+      .split("\n")
+      .filter(Boolean)
+      .map((line) => decodeEvent(line));
+    assert.isTrue(
+      decoded.some(
+        (item) => item.recordType === "orchestration-v2-pruned" && item.recordId === threadId,
+      ),
+      "the marker round-trips through JSONL",
+    );
+  }).pipe(Effect.provide(layerPruneTest)),
+);
+
+it.effect("keeps the pruning marker and project isolation after a file-backed reopen", () =>
+  Effect.scoped(
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const dir = yield* fs.makeTempDirectoryScoped();
+      const dbPath = `${dir}/evidence.sqlite`;
+
+      const watermark = yield* Effect.scoped(
+        Effect.gen(function* () {
+          const sink = yield* EventSink.EventSinkV2;
+          const maintenance = yield* ProjectionMaintenance.ProjectionMaintenanceV2;
+          const sql = yield* SqlClient.SqlClient;
+
+          yield* seedRuntime;
+          yield* sink.write({
+            events: [v2ThreadCreated(threadId, "Evidence V0 execution"), v2RunCreated],
+          });
+          for (let index = 0; index < 4; index += 1) {
+            yield* sink.write({
+              events: [v2NodeUpdated(NodeId.make(`node:ev0-reopen-${index}`), createdAttempt)],
+            });
+          }
+          assert.equal((yield* maintenance.pruneEventStore()).deletedEventCount, 0);
+          const head = yield* sql<{ readonly sequence: number }>`
+            SELECT MAX(sequence) AS sequence FROM orchestration_events
+          `.pipe(Effect.map((rows) => rows[0]?.sequence ?? 0));
+          yield* TestClock.adjust("1 day");
+          assert.isAbove((yield* maintenance.pruneEventStore()).deletedEventCount, 0);
+
+          // A different project starts after the boundary and stays independent.
+          const otherProjectId = ProjectId.make("ev0-other-project");
+          const otherTaskId = ProjectRuntimeTaskId.make("ev0-other-task");
+          const otherAttemptId = RuntimeExecutionAttemptId.make("ev0-other-attempt");
+          const otherThreadId = ThreadId.make("thread:ev0-other");
+          const otherRunId = RunId.make("run:ev0-other");
+          yield* sql`INSERT INTO projection_projects
+            (project_id, title, workspace_root, scripts_json, created_at, updated_at)
+            VALUES (${otherProjectId}, 'Other project', '/evidence-v0-other', '[]',
+              ${createdTask}, ${createdTask})`;
+          yield* sql`INSERT INTO project_runtime
+            (project_id, enabled, revision, created_at, updated_at)
+            VALUES (${otherProjectId}, 1, 1, ${createdTask}, ${createdTask})`;
+          yield* sql`INSERT INTO project_runtime_tasks
+            (task_id, project_id, status, revision, created_at, payload_json)
+            VALUES (${otherTaskId}, ${otherProjectId}, ${task.status}, ${task.revision},
+              ${task.createdAt},
+              ${encodeTask({ ...task, taskId: otherTaskId, projectId: otherProjectId })})`;
+          yield* insertAttemptRow({
+            ...attempt,
+            attemptId: otherAttemptId,
+            projectId: otherProjectId,
+            taskId: otherTaskId,
+            threadId: otherThreadId,
+            runId: otherRunId,
+          });
+          yield* sink.write({
+            events: [
+              v2ThreadCreated(otherThreadId, "Other project thread", otherProjectId),
+              v2RunCreatedFor(otherThreadId, otherRunId),
+            ],
+          });
+          return head;
+        }).pipe(Effect.provide(makeFilePruneLayer(dbPath))),
+      );
+
+      yield* Effect.scoped(
+        Effect.gen(function* () {
+          const evidence = yield* OrchestrationEvidenceService.OrchestrationEvidenceService;
+          const reopened = yield* evidence.exportTask(projectId, taskId);
+          const marker = reopened.events.find(
+            (item) => item.recordType === "orchestration-v2-pruned",
+          );
+          assert.isDefined(marker, "the marker is recomputed from the reopened database");
+          assert.equal(
+            marker?.facts.find((fact) => fact.key === "prunedThroughSequence")?.value,
+            watermark,
+          );
+
+          const other = yield* evidence.exportTask(
+            ProjectId.make("ev0-other-project"),
+            ProjectRuntimeTaskId.make("ev0-other-task"),
+          );
+          assert.isFalse(
+            other.events.some((item) => item.recordType === "orchestration-v2-pruned"),
+            "the post-boundary project is not marked incomplete",
+          );
+          assert.isTrue(
+            other.events.some(
+              (item) =>
+                item.recordType === "orchestration-v2-event" &&
+                item.threadId === ThreadId.make("thread:ev0-other"),
+            ),
+            "the other project exports its own V2 history",
+          );
+          assert.isFalse(
+            reopened.events.some((item) => item.threadId === ThreadId.make("thread:ev0-other")),
+            "the original task export stays inside its referenced thread scope",
+          );
+        }).pipe(Effect.provide(makeFilePruneLayer(dbPath))),
+      );
+    }),
+  ).pipe(Effect.provide(NodeServices.layer)),
 );
 
 it.effect("marks a bounded V2 thread read as incomplete instead of complete", () =>

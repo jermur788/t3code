@@ -59,6 +59,7 @@ export const OrchestrationEvidenceRecordType = Schema.Literals([
   "orchestration-v2-event",
   "orchestration-v2-unresolved",
   "orchestration-v2-truncation",
+  "orchestration-v2-pruned",
   "project-staging-reference",
 ]);
 export type OrchestrationEvidenceRecordType = typeof OrchestrationEvidenceRecordType.Type;
