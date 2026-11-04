@@ -1,6 +1,6 @@
 # Overall Manager — Authoritative Continuation Handoff
 
-**Updated:** 2026-11-04 after 09:26Z independent local V1–V5 verification handoff and manager reconciliation.  
+**Updated:** 2026-11-04 following the 09:37Z user routing clarification: DeepSeek-mandatory paste-ready T3 Code handoffs.  
 **Classification:** MANAGER HANDOFF / CURRENT CONTINUATION ENTRYPOINT.  
 **Status:** Documentation published on the shared fork's **planning branch**, not fork main. No code merge, provider execution or production configuration change is effected by this file.
 
@@ -41,7 +41,9 @@ Fork-only [draft PR #21](https://github.com/jermur788/t3code/pull/21) remains op
 - **Browser source preflight:** [PR discussion](https://github.com/jermur788/t3code/pull/21#issuecomment-6626843132). Independent local handoff supplied to manager at 09:26Z; no paid app-under-test provider calls or CI success claimed.
 ## NEXT — exact already-authorized action
 
-Run [**Evidence V0 pruning-completeness P2 bounded repair**](docs/orchestration-v2/task-evidence-v0-pruning-completeness-p2-20261104.md) under a single local writer on a **fresh isolated external-volume worktree** from the prepared remote branch [`fix/evidence-v0-pruning-completeness-p2-20261104`](https://github.com/jermur788/t3code/tree/fix/evidence-v0-pruning-completeness-p2-20261104), derived from the unchanged PR #21 head. The repair branch has **no source changes** at this handoff. DeepSeek/OpenCode is the first-choice routine implementer when actually available; capacity and model-cost details are currently UNKNOWN. No worker has been launched by this written handoff.
+**Operator entrypoint: [COMPLETE COPY/PASTE DEEPSEEK ORCHESTRATION HANDOFF](docs/orchestration-v2/handoff-deepseek-orchestrator-evidence-v0-p2-20261104.md).** The Overall Manager must also provide the paste-ready content in the user-facing reply whenever local worker action is next. This handoff itself does NOT start a worker.
+
+Run [**Evidence V0 pruning-completeness P2 bounded repair**](docs/orchestration-v2/task-evidence-v0-pruning-completeness-p2-20261104.md) with **DeepSeek as the mandatory orchestrator**, retaining supervision/ledger authority as it delegates routine work to DeepSeek/OpenCode and hard bounded work/review to Codex GPT-6.1 SOL, Claude Sonnet 5.5, then Claude Opus 5.5 as justified by evidence. Use a single local writer on a **fresh isolated external-volume worktree** from the prepared remote branch [`fix/evidence-v0-pruning-completeness-p2-20261104`](https://github.com/jermur788/t3code/tree/fix/evidence-v0-pruning-completeness-p2-20261104), derived from the unchanged PR #21 head. The repair branch has **no source changes** at this handoff. DeepSeek/OpenCode is the first-choice routine implementer when actually available; capacity and model-cost details are currently UNKNOWN. No worker has been launched by this written handoff.
 
 1. Reproduce red-before tests using **actual** upstream V2 pruning watermark and deleted event rows; prove incomplete markers for referenced partially pruned history, honest unresolved events for fully absent references, and no false marker for newly created unaffected threads.
 2. Prefer an additive read-only evidence marker without second event store, migration or upstream V2 execution change. If material schema/architecture tradeoffs appear, stop that affected lane for manager/user decision, not an unreviewed semantics change.
