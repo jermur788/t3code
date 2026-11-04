@@ -70,7 +70,7 @@ The local worker reported detached verification worktree on external volume, tra
 3. red/green real-pruning regression, no-prune/unrelated-thread cases, restart/isolation/JSONL schema checks; targeted and broad local verification;
 4. distinct-provider read-only review and manager review of exact evidence before possible candidate promotion.
 
-**Routing:** browser manager source reconciliation and task preparation completed here (GPT-6); local execution recommended DeepSeek/OpenCode, capacity **UNKNOWN**, with independent Codex/Claude-class review. No local worker has been dispatched by the GitHub task write. Preserve one writer per code lane and record all routed attempts and verification facts in Runtime or an append-only ledger.
+**Routing:** browser manager source reconciliation and task preparation completed here (GPT-6); the isolated remote repair branch [`fix/evidence-v0-pruning-completeness-p2-20261104`](https://github.com/jermur788/t3code/tree/fix/evidence-v0-pruning-completeness-p2-20261104) has been created from PR #21's unchanged candidate head, with **no source edits yet**. Local execution recommended DeepSeek/OpenCode, capacity **UNKNOWN**, with independent Codex/Claude-class review. No local worker has been dispatched by the GitHub task write. Preserve one writer per code lane and record all routed attempts and verification facts in Runtime or an append-only ledger.
 
 **Stop:** Do not merge PR #21, mark production verified, enable synthetic continuation, rewrite history or modify upstream engine without distinct authority. After repair acceptance, request a **separate user merge decision**. If the user instead expressly accepts P2 as a known limitation, record that decision and the exact risk before any merge action.
 
