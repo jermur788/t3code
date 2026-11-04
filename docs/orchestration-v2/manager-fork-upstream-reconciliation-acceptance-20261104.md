@@ -1,3 +1,5 @@
+> **CURRENT STATUS NOTE — PR #21 OPEN / DRAFT / UNMERGED:** After this original acceptance record, the user approved opening a fork-only draft PR, and [PR #21](https://github.com/jermur788/t3code/pull/21) was created. The original “PR creation needs approval” language below is **historical**. **Merge approval remains outstanding.** For current authority and next task, read [Current State](../../01_CURRENT_STATE.md) and [Overall Manager Handoff](../../OVERALL_MANAGER_HANDOFF.md).
+
 # Manager acceptance — fork/upstream v0.1.7 reconciliation trial
 
 **Date:** 2026-11-04 (Europe/Dublin), review at user handoff ~08:17.
