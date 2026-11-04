@@ -237,3 +237,11 @@ Authority: handoff above. Coordinator model resolved from host: `opencode-go/dee
   `vp test run RuntimeTaskContinuationSecurity.test.ts` → 25/25. It did not re-run the full suite.
 - **Local check:changed** was already exit 0 after the fix (00:39Z); reviewer read the log.
 - **Outcome:** O5 closed as REVIEW PASS. Morning handoff written. Nothing merged or opened as a PR.
+
+## Routing event 0011 — checkpoint publication
+
+- **UTC:** 2026-11-04T00:46Z.
+- **Action:** fast-forward push of the new isolated branch to the fork remote, after a secret scan of the added lines (no credentials, tokens or keys found) and a clean worktree check. No conflicting owner.
+- **Target:** `origin` = `https://github.com/jermur788/t3code.git`, branch `overnight/deepseek-continuation-20261104`.
+- **Result:** new branch created; remote head matched the local head (`172b348a33` before this ledger follow-up). No PR, no merge, no upstream push.
+- **Note:** this ledger entry and the morning handoff are included in the branch; any later commit is additive and must be pushed separately.
