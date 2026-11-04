@@ -1,3 +1,23 @@
+## Accepted staged product decisions — 2026-11-04 01:09 Europe/Dublin (CURRENT)
+
+**This section supersedes the earlier “product choices pending” language below.** The user explicitly **approved both recommended staged directions**. They are now **ACCEPTED DECISIONS**, not research or proposals.
+
+- **D1:** Implement default-off server-side gating NOW for the isolated synthetic continuation experiment, across new policy writes, automatic reconciliation and pending-receipt launch/replay. A server operator may explicitly enable testing; agent/task data cannot enable the global gate.
+- **D2:** Before any public shipping release, exclude experimental continuation and its agent-facing tool-schema overhead. The experimental +646-byte MCP budget increment is tolerated **only on the isolated, unmerged experiment branch**. It is **not** a public release budget acceptance.
+- **D3:** Existing best-effort authorization recheck + cancel/reconcile is accepted for isolated stub-only experimentation; known final-check/external-launch window remains a documented limitation.
+- **D4:** Production requires strict no-new-run-after-committed-revocation. This is a **release requirement** and separate design/verification gate, not authorization to change upstream execution internals now.
+- **D5:** Fork main merge, production enablement, upstream post/PR and real-provider usage remain NOT AUTHORIZED by this approval.
+
+**New governing source:** [Staged continuation safety spec](continuation-staged-safety-governing-spec-20261104.md).  
+**Active bounded T3 task:** [Default-off implementation, independent review, safe upstream reconciliation, strict revocation research](task-handoff-staged-continuation-safety-20261104.md).  
+**Writable task branch:** [Dedicated default-off gate experiment](https://github.com/jermur788/t3code/tree/experiment/continuation-default-off-gate-20261104), created by manager from published overnight branch; **no implementation written yet** at this checkpoint. Worktree ownership/repo status must be inspected by local worker before writes.
+
+**New upstream reconnaissance snapshot:** upstream main advanced 14 commits beyond the prior trial base at manager check 2026-11-04 01:10 UTC; changes include mobile/UI and Claude-provider code. This does **not** establish merge compatibility, override the 8 historical fork conflicts or authorize a rebase. Fetch again before local trial. [Current upstream main](https://github.com/pingdotgg/t3code/tree/main).
+
+**Manager routing/continuation:** browser manager completed source inspection, decisions/spec/task and branch creation; cannot run a local T3 Code worktree or local TypeScript test suite from this browser/GitHub connection. Code and tests are therefore assigned to isolated local T3 Code. Route actual worker and independent reviewer through T3 host; log each decision/route/attempt in Runtime if exposed, otherwise branch-local ledger. No live background task is started by the browser.
+
+**Next exact action:** T3 Code starts the complete accepted task packet on the already-created gate branch, then returns verified evidence for manager reconciliation. No further product choice is needed for T0–T5 while operating under these constraints.
+
 # Overall Manager reconciliation — DeepSeek overnight queue
 
 **Date:** 2026-11-04 (Europe/Dublin)  
