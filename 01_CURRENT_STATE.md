@@ -20,11 +20,12 @@ The **user decides product policy, significant architecture trade-offs, merges/r
 | --- | --- |
 | Fork main | `d3bedef12a31f368e5c5a6b279445bea39a6a13a` — unchanged since the manager began this reconciliation |
 | Upstream main | `8b44f42b14c8e273156474a924ccf29680dd7857` at last manager fetch; upstream moves quickly |
-| Pinned upstream release used by reconciliation | `bb4afa5425c52104a9261fa2d022cb8ba2fcc099` (v0.1.7) |
+| Upstream reconciliation parent | `bb4afa5425c52104a9261fa2d022cb8ba2fcc099` (release-preparation commit, **25 commits past the v0.1.7 tag**) |
 | Reconciled fork/upstream trial | `integration/fork-upstream-reconciliation-trial-20261104` at `70203ed5a95dbe1762da1ad2a46c4f153f910492` |
 | **Fork-only draft PR #21** | **OPEN, DRAFT, UNMERGED**: [Review reconciliation](https://github.com/jermur788/t3code/pull/21). Source trial → fork `main`; GitHub last reported mergeable/clean |
 | Resource-efficient continuation planning | [Draft research PR #20](https://github.com/jermur788/t3code/pull/20) — separate, open/draft, unmerged |
 | Default-off continuation experiment | `experiment/continuation-default-off-gate-20261104` at `b3b8da54e0b8b184a1cf4e667d53e73e04f85074` — **separate from PR #21 and main** |
+| P2 Evidence V0 repair | `fix/evidence-v0-pruning-completeness-p2-20261104`: bounded source review PASS, **not yet promoted** to PR #21 |
 
 **No approval has been given to merge PR #21 or PR #20, fast-forward main, ship, or enable production continuation.** Opening PR #21 was explicitly approved by the user and completed by the browser manager.
 
