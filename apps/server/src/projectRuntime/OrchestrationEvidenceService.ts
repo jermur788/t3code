@@ -25,8 +25,10 @@ import {
   type RuntimeExecutionAttemptStatus,
 } from "@t3tools/contracts";
 import * as Context from "effect/Context";
+import * as Digest from "effect/crypto/Digest";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
+import * as Hex from "effect/encoding/Hex";
 import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
 import * as SqlClient from "effect/sql/SqlClient";
@@ -1030,12 +1032,13 @@ const v2PrunedEvent = (
   projectId: ProjectRuntimeTask["projectId"],
   taskId: ProjectRuntimeTask["taskId"],
   threadId: string,
+  eventId: string,
   prunedThroughSequence: number,
   oldestRetainedSequence: number,
 ): DraftEvent =>
   event({
     schemaVersion: ORCHESTRATION_EVIDENCE_SCHEMA_VERSION,
-    eventId: `oev0:orchestration-v2-pruned:${threadId}`,
+    eventId,
     recordType: "orchestration-v2-pruned",
     recordId: threadId,
     lifecycleClass: "observation",
@@ -1177,6 +1180,7 @@ const sortEvents = (events: ReadonlyArray<DraftEvent>): ReadonlyArray<DraftEvent
 const make = Effect.gen(function* () {
   const sql = yield* SqlClient.SqlClient;
   const eventStore = yield* EventStoreV2.EventStoreV2;
+  const crypto = yield* Digest.Digest;
   const now = DateTime.now.pipe(Effect.map(DateTime.formatIso));
 
   const sqlError = (operation: string) => (cause: unknown) =>
@@ -1276,7 +1280,7 @@ const make = Effect.gen(function* () {
       // event below the published boundary therefore means the thread existed
       // while pruning was in range, so earlier events may be gone. A thread
       // created after the boundary keeps its oldest event above it.
-      const prunedThreads = uniqueThreadIds.flatMap((threadId, index) => {
+      const prunedCandidates = uniqueThreadIds.flatMap((threadId, index) => {
         const oldestRetainedSequence = Array.from(perThread[index]!)[0]?.sequence;
         return prunedThroughSequence > 0 &&
           oldestRetainedSequence !== undefined &&
@@ -1284,6 +1288,19 @@ const make = Effect.gen(function* () {
           ? [{ threadId, oldestRetainedSequence }]
           : [];
       });
+      // Thread IDs can reach the 4,096-character evidence bound, so the marker ID
+      // hashes the canonical ID. Identity stays in recordId and threadId.
+      const prunedThreads = yield* Effect.forEach(
+        prunedCandidates,
+        (candidate) =>
+          crypto.digest(Digest.sha256, new TextEncoder().encode(candidate.threadId)).pipe(
+            Effect.map((digest) => ({
+              ...candidate,
+              eventId: `oev0:orchestration-v2-pruned:${Hex.encode(digest)}`,
+            })),
+          ),
+        { concurrency: 1 },
+      );
       const events = perThread.flat().filter((stored) => {
         const relevantRuns = referencedRuns(stored.event.threadId);
         const runId = v2EffectiveRunId(stored);
@@ -1618,11 +1635,12 @@ const make = Effect.gen(function* () {
       ...boundedV2.truncatedThreadIds.map((threadId) =>
         v2TruncationEvent(projectId, taskId, threadId),
       ),
-      ...boundedV2.prunedThreads.map(({ threadId, oldestRetainedSequence }) =>
+      ...boundedV2.prunedThreads.map(({ threadId, eventId, oldestRetainedSequence }) =>
         v2PrunedEvent(
           projectId,
           taskId,
           threadId,
+          eventId,
           boundedV2.prunedThroughSequence,
           oldestRetainedSequence,
         ),

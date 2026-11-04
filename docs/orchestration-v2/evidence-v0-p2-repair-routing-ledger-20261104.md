@@ -136,3 +136,28 @@ Strict `<` is deliberate: pruning retains `thread.created`, so a thread created 
 | `vp run check:changed upstream/main`                                             | 0    | format, lint, knip, graphql, typecheck, 81 test files, react compiler all passed |
 
 **ORCHESTRATOR CLAIM — no test weakening.** The long-identifier regression was added after review; it failed on the old summary and passes on the bounded summary. No existing assertion was removed or relaxed.
+
+## 2026-11-04T10:34Z — independent review (round 2)
+
+**OBSERVED FACT — dispatch.** New `delegate_task` to Codex `gpt-6.1-sol`, `reasoningEffort: high`, role `review`, read-only, at commit `ec90331b7740b04346efa25b62de0e8ad0f17fdc`. Child task id:
+`node:delegated-task:command%3Amcp%3Ace0a1aa7-523d-4c66-b220-ef52e71e379d%3Adelegate-task%3A296b963b-5186-4941-ae77-2baaf0a2412a`. Terminal status: `completed`.
+
+**OBSERVED FACT — verdict.** `CHANGES REQUIRED`. The reviewer confirmed finding 1 (summary overflow) is resolved and accepted finding 2's disposition, with this compatibility statement:
+
+> Safe claim: this extends the record-type vocabulary within the unchanged V0 envelope; updated decoders accept previously valid V0 records and the new pruning marker. Decoders built from the base commit reject exports containing `orchestration-v2-pruned` and require an upgrade.
+> Prohibited claim: universal backward decodability, compatibility with unchanged base decoders, or that retaining the V0 version string guarantees compatibility.
+
+**OBSERVED FACT — new finding (material, repaired).** The marker `eventId` embedded the full thread ID after a 29-character prefix. A valid 4,096-character thread ID produced a 4,125-character `eventId`, above the same 4,096-character schema bound, so JSONL export and reconstruction failed contract decoding after real pruning. This defect predated round 2 and was not introduced by the summary edit.
+
+**Repair.** The marker ID now hashes the canonical thread ID with a deterministic SHA-256 digest through Effect's `Digest` service; the marker ID is ~93 characters. Full identity remains in `recordId`, `threadId`, and the thread reference. The regression now uses the maximum 4,096-character thread ID with short canonical event IDs so the marker bound is isolated from the V2 event-ID bound. It asserts the summary bound, marker-ID bound and prefix, full identity fields, real pruning, JSONL decode, reconstruction decode, and repeated-export identity stability.
+
+**OBSERVED FACT — red before this repair.** With the old `oev0:orchestration-v2-pruned:${threadId}` ID, the maximum-ID fixture returned a 4,125-character event ID (`oev0:orchestration-v2-pruned:thread:xxx…`) instead of the bounded hash. Exit `1`.
+
+**OBSERVED FACT — typecheck constraint.** The first implementation used `node:crypto`; the repository's `effect(nodeBuiltinImport)` rule rejected it. The repair switched to `effect/crypto/Digest` with `layerWebCrypto` in the test layers. `vp run typecheck` then passed 40/40.
+
+**OBSERVED FACT — post-repair focused run.** `vp test run OrchestrationEvidenceService.test.ts ProjectionMaintenance.test.ts AgentContextBudget.test.ts` → exit `0`, 40/40 passed (Evidence 36, maintenance 3, context budget 1).
+
+**OBSERVED FACT — final broad run after the round-2 repair.**
+`vp run check:changed upstream/main` → exit `0`.
+`81` test files passed, `2,075` tests passed; format, lint, knip 1/2, knip 2/2, GraphQL check, typecheck of 40 packages, and React compiler checks all passed. Log: `/tmp/opencode/p2-check-round3.log` (host-local; sanitized command/result copied here).
+The web build had already passed on the additive contract literal (`vp run --filter @t3tools/web build`, exit `0`, built in 38.84s). The later contract change was a non-behavioral comment, and no web code changed.

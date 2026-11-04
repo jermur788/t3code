@@ -43,6 +43,7 @@ import {
   type RuntimeRouteResolution,
 } from "@t3tools/contracts";
 import * as DateTime from "effect/DateTime";
+import * as Digest from "effect/crypto/Digest";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
@@ -507,8 +508,9 @@ const v2ThreadCreated = (
   id: ThreadId,
   title: string,
   eventProjectId: ProjectId = projectId,
+  eventId: EventId = EventId.make(`event:${id}:created`),
 ): OrchestrationV2DomainEvent => ({
-  id: EventId.make(`event:${id}:created`),
+  id: eventId,
   type: "thread.created",
   threadId: id,
   occurredAt: v2At,
@@ -643,14 +645,23 @@ const seedV2 = Effect.gen(function* () {
 const layerTest = Layer.merge(
   OrchestrationEvidenceService.layer,
   AdaptiveRoutingService.layer,
-).pipe(Layer.provideMerge(EventStore.layer), Layer.provideMerge(SqlitePersistence.layerMemory));
+).pipe(
+  Layer.provideMerge(EventStore.layer),
+  Layer.provideMerge(SqlitePersistence.layerMemory),
+  Layer.provideMerge(Digest.layerWebCrypto),
+);
 
 // Pruning needs the sink's projection watermark, so this fixture shares one
 // database across the event store, projections, maintenance and evidence.
 const pruneDatabase = SqlitePersistence.layerMemory;
 const pruneEventStore = EventStore.layer.pipe(Layer.provideMerge(pruneDatabase));
 const pruneProjectionStore = ProjectionStore.layer.pipe(Layer.provideMerge(pruneDatabase));
-const pruneStores = Layer.mergeAll(pruneDatabase, pruneEventStore, pruneProjectionStore);
+const pruneStores = Layer.mergeAll(
+  pruneDatabase,
+  pruneEventStore,
+  pruneProjectionStore,
+  Digest.layerWebCrypto,
+);
 const layerPruneTest = Layer.mergeAll(
   pruneStores,
   EventSink.layer.pipe(Layer.provide(pruneStores)),
@@ -662,7 +673,7 @@ const makeFilePruneLayer = (dbPath: string) => {
   const database = SqlitePersistence.layerFromPath(dbPath);
   const eventStore = EventStore.layer.pipe(Layer.provideMerge(database));
   const projectionStore = ProjectionStore.layer.pipe(Layer.provideMerge(database));
-  const stores = Layer.mergeAll(database, eventStore, projectionStore);
+  const stores = Layer.mergeAll(database, eventStore, projectionStore, Digest.layerWebCrypto);
   return Layer.mergeAll(
     stores,
     EventSink.layer.pipe(Layer.provide(stores)),
@@ -1398,7 +1409,8 @@ it.effect("marks referenced history as incomplete when pruning may have removed 
     );
     assert.equal(prunedMarkers.length, 1, "only the referenced pruned thread is marked");
     const marker = prunedMarkers[0];
-    assert.equal(marker?.eventId, `oev0:orchestration-v2-pruned:${threadId}`);
+    assert.isTrue(marker?.eventId.startsWith("oev0:orchestration-v2-pruned:"));
+    assert.isAtMost(marker!.eventId.length, 128);
     assert.equal(marker?.recordId, threadId);
     assert.equal(marker?.threadId, threadId);
     assert.equal(marker?.authority, "orchestration-v2");
@@ -1561,13 +1573,21 @@ it.effect("keeps pruned markers decodable for long thread identifiers", () =>
     const sink = yield* EventSink.EventSinkV2;
     const maintenance = yield* ProjectionMaintenance.ProjectionMaintenanceV2;
     const evidence = yield* OrchestrationEvidenceService.OrchestrationEvidenceService;
-    const longThreadId = ThreadId.make(`thread:${"x".repeat(400)}`);
-    const longRunId = RunId.make(`run:${"r".repeat(400)}`);
+    const longThreadId = ThreadId.make(`thread:${"x".repeat(4089)}`);
+    const longRunId = RunId.make("run:ev0-long");
+    assert.equal(longThreadId.length, 4_096);
 
     yield* seedRuntime;
     yield* sink.write({
       events: [
-        v2ThreadCreated(longThreadId, "Long identifier thread"),
+        // The canonical event ID stays short so the fixture isolates the marker
+        // ID bound from the V2 event ID bound.
+        v2ThreadCreated(
+          longThreadId,
+          "Long identifier thread",
+          projectId,
+          EventId.make("event:ev0-long-thread-created"),
+        ),
         v2RunCreatedFor(longThreadId, longRunId),
       ],
     });
@@ -1599,6 +1619,10 @@ it.effect("keeps pruned markers decodable for long thread identifiers", () =>
     );
     assert.isDefined(marker);
     assert.isAtMost(marker!.summary.length, 512);
+    assert.isTrue(marker!.eventId.startsWith("oev0:orchestration-v2-pruned:"));
+    assert.isAtMost(marker!.eventId.length, 128);
+    assert.equal(marker!.recordId, longThreadId);
+    assert.equal(marker!.threadId, longThreadId);
 
     const decoded = (yield* evidence.exportTaskJsonl(projectId, taskId))
       .split("\n")
