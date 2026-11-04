@@ -153,3 +153,38 @@ Authority: handoff above. Coordinator model resolved from host: `opencode-go/dee
   2. `characterizes a turn that starts when continuation is withdrawn during the launch call` — CHARACTERIZATION ONLY. Suspends `ThreadLaunchService.launch` after the final authorization recheck, withdraws the operator policy, resumes. Asserts the already-authorized review turn still starts (`launched`, total launches 2) and the source remains `ready` with no policy. This is the known last-check-to-launch TOCTOU, documented as a fixture; it is **not** a fix, pass claim, or revocation-contract decision.
 - **Result:** security file 24/24 passed (00:21:29Z). Comment/format failures fixed; `check:changed` rerun in flight.
 - **Classification:** O2 bounded risk qualification complete for duplicate dispatch; residual external-launch race remains PRODUCT DECISION / REVIEW REQUIRED (unchanged).
+
+## Routing event 0004 — completion-channel proof (incidental child)
+
+- **UTC:** 2026-11-04T00:24Z.
+- **Stage:** O0 acceptance criterion (one real child response).
+- **Route:** inherited `opencode` / `opencode-go/deepseek-v4.1-flash`; `delegate_task` async.
+- **Result:** child completed with "No action taken." — proves the host completion wake/routing path works end to end. No repository change. Task ID recorded in host receipts only; not a work task.
+
+## Routing event 0005 — O3 upstream compatibility (read-only)
+
+- **UTC:** 2026-11-04T00:25Z. **Attempt:** 1. **Type:** research, no dispatch.
+- **Route:** DeepSeek coordinator, local git only. No child.
+- **Bases:** candidate `33fb8ea`, fork main `d3bedef`, upstream `43bf0ba` (fetched fresh; upstream moved from `8657eecb` earlier in the run). Merge base `47f2c8d2`; 300 upstream commits since.
+- **Method:** disposable worktree `/home/jer/dev/t3code-compat-20261104` on `compat/upstream-43bf0ba-20261104`; real `git merge --no-ff --no-commit overnight/deepseek-continuation-20261104`; inspect conflicts; `git merge --abort`.
+- **Result:** continuation files auto-merge cleanly; 8 conflicts, all pre-existing fork divergence (OrchestratorMcpService, linkOrigin test, Grok/OpenCode adapter tests, runtimeLayer test, PeerForwarding test, routeTree.gen, usageLimits). No continuation file conflicts. Report: `docs/orchestration-v2/overnight-upstream-compatibility-20261104.md`.
+- **Verdict:** NOT INTEGRATED; no upstream-compatible claim. Behavioural re-verification needed for ThreadLaunchService (+37) and Orchestrator (+250).
+- **Next:** O5 review; O6 spare read-only.
+
+## Routing event 0006 — O4 F4 gate memo (analysis)
+
+- **UTC:** 2026-11-04T00:27Z. **Attempt:** 1. **Type:** analysis, no dispatch, no code.
+- **Route:** DeepSeek coordinator. No child; no product choice made.
+- **Result:** memo at `docs/orchestration-v2/overnight-f4-gate-decision-memo-20261104.md`; measured delta 59,165 − 58,519 = **+646 bytes** from committed snapshots; options A (default-off server gate; keeps cost), B (exclude from shipping; removes cost), C (remove agent-facing surface; partial); cancellation options (a) best-effort + reconcile vs (b) atomic revocation-aware launch requiring upstream cooperation. No prototype, no adoption.
+- **Next:** independent review, then user decision.
+
+## Routing event 0007 — O5 independent review (dispatch, pre-result)
+
+- **UTC:** dispatched 2026-11-04T00:29Z. **Attempt:** 1. **Type:** independent review.
+- **Goal/acceptance:** independent assessment of authorization, provenance, revision CAS, restart/replay, concurrency, the two new tests, residual TOCTOU, F4/budget, and upstream claims; line-specific findings; must not approve its own code (it wrote none).
+- **Requested by/coordinator:** DeepSeek. **Proposed:** Claude Sonnet 5.5 for security-sensitive review, independent of the implementer (browser/local worker) and of the coordinator (DeepSeek).
+- **Candidates considered:** `claudeAgent` Sonnet 5.5 (chosen, $2/$10 per Mtok list, high effort), `claudeAgent` Opus 5.5 (stronger, $4/$20 — rejected as unnecessary for a scoped source review), `codex` GPT-6.1 Sol (capable, quota/subscription pricing unknown — retained as escalation), DeepSeek (rejected: would not be independent of the O2 work).
+- **Rejected reasons:** cost/capability balance; independence requirement; no paid external evaluation authorized.
+- **Resolved actual (host):** provider instance `claudeAgent`, model `claude-sonnet-5-5`, option `effort=high`, role `review`, runtime `inherit`, shared checkout; task `node:delegated-task:command%3Amcp%3Aef0bc521...%3Af94f7889...`; state RUNNING; completion wakes the coordinator (host-supported async polling/wake).
+- **Liveness:** dispatch receipt observed in host response; no result yet at ledger write.
+- **Next:** inspect returned findings, repair routine ones only if safely within authorization, re-review, then morning handoff. No merge.
