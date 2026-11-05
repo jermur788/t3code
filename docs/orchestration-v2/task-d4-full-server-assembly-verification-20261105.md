@@ -1,6 +1,6 @@
 # D4 — bounded full-server assembly, natural release and real revocation closure
 
-**State:** `PREPARED / NOT DISPATCHED`.  
+**State:** **COMPLETED / K1 FULL-SERVER ASSEMBLY RUNTIME PASS / K2 NATURAL ASYNC RELEASE RUNTIME PASS (worker-reported, independently re-run) / K3 PARTIAL / REVIEW PASS WITH FINDINGS / NOT INTEGRATED**. This original packet is historical; **DO NOT REDISPATCH**. [Authoritative manager return](manager-d4-full-root-k1-k2-verification-reconciliation-20261105.md).  
 **Nature:** continuation of already-authorized isolated D4 implementation verification, **not** new architecture/product scope.  
 **Binding specs:** [accepted D4 A+B](d4-accepted-revocation-contract-20261105.md), [staged safety](continuation-staged-safety-governing-spec-20261104.md), [original isolated implementation packet](task-stage2-d4-isolated-implementation-20261105.md), [manager return reconciliation](manager-d4-isolated-implementation-return-review-20261105.md).  
 **Scope:** full-root verification and minimal tests/bug fixes on **existing isolated local D4 branch only**. No upstream catch-up/re-land/main merge/public PR/release/provider spend.
@@ -34,3 +34,7 @@
 Return a complete authoritative handoff: **VERDICT / EXACT BASE WORKTREE + OWNERSHIP / FULL ROOT LAYER WIRING AND SHARED DB EVIDENCE / OPERATOR `continuation:null` ORDERING / NATURAL `schedulePreparation` RELEASE PATH / ZERO-RUN/EFFECT/RECEIPT ASSERTIONS / TYPED DENIAL + RECOVERY / PUBLIC AUTH PROVENANCE / TEST COMMANDS + COUNTS/EXIT / REVIEW + REPAIRS / ROUTING EFFORT/QUOTA / UNVERIFIED ITEMS / INTEGRATION STATE / NEXT**.
 
 If no local bridge is connected, the browser manager cannot launch these tasks automatically. This packet is a **durable local handoff, NOT DISPATCHED** until explicitly started by an active T3 Code session.
+
+## Returned 2026-11-05 21:43Z — outcome supersedes task instructions
+
+**K1 PASS:** worker and independent different-provider reviewer ran real exported `layerMakeServer` production-root with temporary homes, shared SQLite `SqlClient` / `BEGIN IMMEDIATE` identity confirmed. Real operator `continuation:null` revocation precedes run launch → **0 new runs / 0 start effects / no accepted receipt / typed denial / 0 adapter session opens**. Launch-first gave one run and stable replay; ordinary user runs unaffected. **K2 PASS:** real asynchronous `schedulePreparation` held until revocation, then release/retry denied, terminal cancelled projections, zero start effects, no accepted release receipt and a failed tracker; late `prepared-run.fail` idempotent; `reconcile_required` preserved after an actual defect was repaired. **K3 PARTIAL:** real crash/restart/pruning, portable provider stub/paired model and shipping D2 unavailable. Review **PASS WITH FINDINGS**; reviewer reran full-root 5/5 plus focused 94/94 tests; other worker claims and quotas in [manager reconciliation](manager-d4-full-root-k1-k2-verification-reconciliation-20261105.md). No code pushed/merged; isolated local branch only. Browser manager cannot inspect private branch source or raw logs. No additional local task or production action authorized by this completed packet.
