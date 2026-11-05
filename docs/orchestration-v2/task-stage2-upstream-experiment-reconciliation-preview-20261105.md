@@ -1,6 +1,12 @@
 # Stage 2 — read-only upstream/experimental continuation reconciliation preview
 
-**Status:** TASK PACKET PREPARED / NOT DISPATCHED. **Authority:** inspect/review and plan only. No merge, commit, rebase or source integration authorized. **Current milestone:** fork-main PR #21 merged and locally qualified; continuation remains isolated; D4 implementation contract pending user choice.
+**Status:** **COMPLETED — READ-ONLY QUALIFICATION RETURNED**, 2026-11-05 13:50Z. This handoff below is historical: **DO NOT REDISPATCH**. **Authority:** inspect/review and plan only. No merge, commit, rebase or source integration authorized. **Current milestone:** fork-main PR #21 merged and locally qualified; continuation remains isolated; D4 implementation contract pending user choice.
+
+## Result (supersedes this historical pre-dispatch packet)
+
+LANE C CLOSED — READ-ONLY PREVIEW COMPLETE (worker-reported), independent PASS WITH FINDINGS (recorded). 50 upstream commits/610 changed paths, 30 experiment paths; simulated conflicts 1 experiment→main, 2 main→upstream, 9 experiment→upstream. Upstream catch-up then fresh continuation re-land is proposed only; no ref changes. Browser manager screened selected OPEN upstream PR hotspots; not merged or exhaustive. [Manager reconciliation](manager-stage2-three-lane-return-reconciliation-20261105.md).
+
+The user supplied the local consolidated result and restricted ledger. Original screenshots/logs/attempt transcripts were not available to the browser manager. All related work was read-only against product source and no commits/merges/releases/paid-provider calls occurred. Any future writable task needs separate accepted spec and authority.
 
 ## Paste into T3 Code — DeepSeek orchestration-only task
 
