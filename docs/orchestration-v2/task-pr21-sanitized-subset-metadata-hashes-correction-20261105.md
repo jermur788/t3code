@@ -1,6 +1,6 @@
 # PR #21 private sanitized evidence — bounded metadata checksum completion
 
-**Task state:** PREPARED / NOT DISPATCHED (browser-only manager).  
+**Task state:** **COMPLETED — LOCAL PREPARATION INTEGRITY PASS (worker-reported), independent REVIEW PASS (recorded)**, returned 2026-11-05 12:46Z. Original instruction packet below is historical and **must not be re-dispatched**. [Manager acceptance](manager-pr21-sanitized-subset-integrity-acceptance-20261105.md).  
 **Authority:** Continuation of user's 2026-11-05 **local-only** evidence preparation approval; routine integrity correction. Nothing authorizes publication, uploading or moving local `main`.  
 **Governing sources:** [Original local-staging task](task-pr21-sanitized-evidence-subset-local-preparation-20261105.md), [Manager review](manager-pr21-sanitized-subset-preparation-review-20261105.md), [Current State](../../01_CURRENT_STATE.md), Coordination/Handoff Protocol and accepted DeepSeek orchestrator template. The original task **exists on GitHub planning branch**; local worker's missing-document finding is a fetch/ref discrepancy of unknown cause.
 
@@ -28,3 +28,9 @@
 - Exactly 78 unchanged sanitized text files + two tracked metadata files + checksum self-file; **80 uniquely accounted entries and 80/80 verification PASS**; separately report checksum-file digest.
 - Source package/previous ledger preserved, no secret/privacy regression, independent different-provider/model read-only review, factual task ledger.
 - No external transfer. Fork repo is **public**; a "dedicated branch" would also be publicly readable.
+
+## Completed task result — supersedes the pre-dispatch status
+
+The user returned actual DeepSeek-orchestrated execution: 3 dispatches (Codex GPT-6.1 SOL Medium writer, Claude Sonnet 5.5 Medium read-only reviewer, Codex ledger recording). The private 81-file candidate now has a corrected `SHA256SUMS.txt` with 80 distinct sorted relative entries covering 78 unchanged sanitized evidence files and unchanged `MANIFEST.md` and `SANITIZED-MAP.json`; SHA256SUMS excludes itself. Worker reported **80/80 checksum PASS**, no symlinks/path escapes, full unchanged source checks and fresh disclosure scans; reviewer independently re-derived the same using the genuine prior 78-entry witness instead of writer-created before-artifact and returned **PASS**. All work was local and no Git commit, push, upload, publication or production action occurred. Fork `main` remained unchanged.
+
+This closes the bounded correction as `LOCAL PREPARATION INTEGRITY PASS (worker-reported) / REVIEW PASS (recorded)` but **not independent browser-manager disk inspection or remotely published audit proof**. Pattern-based scan and reviewer log-sampling caveats remain. The public GitHub fork is not a private publication target. Any evidence transfer still requires separate user approval for exact files/destination/visibility/routing names. **Do not re-dispatch this packet.**
