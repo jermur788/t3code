@@ -2,7 +2,7 @@
 
 **Date:** 2026-11-05, after 12:25Z user-supplied worker return.  
 **Authority:** Overall Manager independent GitHub repo/governing packet inspection plus worker-attributed local staging return. No browser-manager access to the private candidate bytes or worker-host ledger.  
-**Verdict:** `LOCAL STAGING COMPLETE (worker-reported) / INDEPENDENT REVIEW PASS (recorded) / FINAL CHECKSUM COVERAGE CORRECTION REQUIRED / NOT PUBLISHED`. Fork `main` and PR #21 remain unchanged/merged. **Not production verified; not a disclosure safety guarantee.**
+**Historical verdict at 12:25Z:** `LOCAL STAGING COMPLETE (worker-reported) / INDEPENDENT REVIEW PASS (recorded) / FINAL CHECKSUM COVERAGE CORRECTION REQUIRED / NOT PUBLISHED`. **This earlier correction requirement was RESOLVED by the 12:46Z worker return. See [final integrity manager acceptance](manager-pr21-sanitized-subset-integrity-acceptance-20261105.md).** Fork `main` and PR #21 remain unchanged/merged. **Not production verified; not a disclosure safety guarantee.**
 
 ## Independently verified facts
 
@@ -31,3 +31,7 @@
 **Status:** closure of local staging integrity is pending only the 80-entry checksum correction and reviewer recheck. Worker reported independent PASS on disclosure, but **manager cannot independently inspect private bytes**. Production/live-provider/hosted CI and app-level MCP handoff isolation remain outside this task.
 
 **Next bounded packet:** [Metadata checksum coverage correction (DeepSeek-only orchestration)](task-pr21-sanitized-subset-metadata-hashes-correction-20261105.md). This task is prepared, **not dispatched**. It is routine correction inside the authorized local-only preparation; no new publication consent is inferred.
+
+## Historical finding disposition — resolved at 12:46Z
+
+The missing `MANIFEST.md` and `SANITIZED-MAP.json` checksum entries were added during a bounded local-only correction. A different-model read-only reviewer verified 80/80 sorted non-self entries, exact candidate membership and preservation of all 78 original sanitized file bytes and both metadata files. **Final current status: `LOCAL PREPARATION INTEGRITY PASS (worker-reported) / INDEPENDENT REVIEW PASS (recorded) / NOT PUBLISHED`.** See [manager acceptance](manager-pr21-sanitized-subset-integrity-acceptance-20261105.md) for provenance and limitations. The earlier verdict in this document is historical, not an open defect, and the correction packet must not be dispatched again. Publication/transfer still lacks explicit user authorization.
