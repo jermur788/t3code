@@ -1,6 +1,12 @@
 # Stage 2 / D4 — cross-transaction feasibility and run-creation path qualification
 
-**Status:** TASK PACKET PREPARED / NOT DISPATCHED. **Authority:** read-only, source-led feasibility/testing and independent review, not implementation of new production authority or upstream engine edits. **Spec:** [browser proposed D4 contract](d4-transactional-revocation-proposed-contract-20261105.md) is PROPOSED, not yet user-accepted. Governing D4 requirement in [staged safety spec](continuation-staged-safety-governing-spec-20261104.md) is accepted.
+**Status:** **COMPLETED — READ-ONLY QUALIFICATION RETURNED**, 2026-11-05 13:50Z. This handoff below is historical: **DO NOT REDISPATCH**. **Authority:** read-only, source-led feasibility/testing and independent review, not implementation of new production authority or upstream engine edits. **Spec:** [browser proposed D4 contract](d4-transactional-revocation-proposed-contract-20261105.md) is PROPOSED, not yet user-accepted. Governing D4 requirement in [staged safety spec](continuation-staged-safety-governing-spec-20261104.md) is accepted.
+
+## Result (supersedes this historical pre-dispatch packet)
+
+LANE A CLOSED — SCOPE-BOUNDED FEASIBILITY PASS (worker-reported), independent PASS WITH FINDINGS (recorded). Not D4 implemented or a full-server pass. Worker returned same-file/inode cross-process barrier tests and corrected defer-start lifecycle: initial run preparing has no start effect; later prepared-run.release controls start. Remaining real operator revoke/typed denial/full-server/restart gaps. [Manager reconciliation](manager-stage2-three-lane-return-reconciliation-20261105.md).
+
+The user supplied the local consolidated result and restricted ledger. Original screenshots/logs/attempt transcripts were not available to the browser manager. All related work was read-only against product source and no commits/merges/releases/paid-provider calls occurred. Any future writable task needs separate accepted spec and authority.
 
 ## Paste into T3 Code — DeepSeek orchestration-only task
 
