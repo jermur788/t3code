@@ -1,7 +1,7 @@
 # D4 — Accepted execution revocation contract (A + B)
 
 **Authority:** User explicitly agreed to Overall Manager's recommended **A + B** on 2026-11-05 at 14:10 UTC, following the plain-English explanation and the three-lane qualification review.  
-**Status:** **ACCEPTED PRODUCT CONTRACT / NOT IMPLEMENTED / NOT INTEGRATED / NOT PRODUCTION VERIFIED**.  
+**Status:** **ACCEPTED PRODUCT CONTRACT / IMPLEMENTED ON LOCAL ISOLATED BRANCH (worker-reported) / SCOPED STATIC + RUNTIME PASS / INDEPENDENT REVIEW PASS WITH FINDINGS (worker-recorded) / FULL-SERVER ASSEMBLY NOT VERIFIED / NOT INTEGRATED / NOT PRODUCTION VERIFIED**. The implementation return does **not** change the binding A+B semantics or remove required verification. See [manager reconciliation](manager-d4-isolated-implementation-return-review-20261105.md).  
 **Scope:** Project Runtime operator-authorized **synthetic continuation**, currently isolated on the default-off experimental branch. Not a grant of autonomous authority to agents; no main merge, upstream catch-up, provider-production testing, release or material paid spend.  
 **Companion:** [staged safety governing spec](continuation-staged-safety-governing-spec-20261104.md) (D1–D5), [Stage 2 verification](manager-stage2-three-lane-return-reconciliation-20261105.md), [historical design alternatives](d4-transactional-revocation-proposed-contract-20261105.md), [Current State](../../01_CURRENT_STATE.md).
 
@@ -65,4 +65,4 @@ The implementation must operate on an **isolated owned worktree** after exact-ba
 
 ## 4. Immediate next state
 
-**Product decision A + B: ACCEPTED.** [One bounded isolated implementation/review packet](task-stage2-d4-isolated-implementation-20261105.md) can now be prepared against this contract. Task packet **PREPARED / NOT DISPATCHED** until a real T3 Code session takes ownership. No production code or Git branch was changed merely by accepting this spec. Detailed earlier proposals should be read as historical alternatives where they contradict this accepted choice.
+**Product decision A+B: ACCEPTED.** Original [isolated implementation/review packet](task-stage2-d4-isolated-implementation-20261105.md) has **RETURNED** on local-only experimental branch, with worker-reported implementation, tests and reviewer PASS WITH FINDINGS. Browser cannot inspect unpushed code. The full combined production/server-root transaction/revocation check and natural async release-denial verification remain **NOT DEMONSTRATED**; the [single bounded test closure task](task-d4-full-server-assembly-verification-20261105.md) is **PREPARED / NOT DISPATCHED**. **Do not waive Check 1, broaden scope, or promote to INTEGRATED/VERIFIED/PRODUCTION.** Historical design alternatives do not override the accepted A+B contract.
