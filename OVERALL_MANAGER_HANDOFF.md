@@ -1,6 +1,6 @@
 # Overall Manager — Authoritative Continuation Handoff
 
-**Updated:** 2026-11-05 after worker-reported private 80-entry checksum correction and manager integrity acceptance.
+**Updated:** 2026-11-05 after user decided to KEEP PRIVATE the completed PR #21 sanitized evidence candidate; no external transfer.
 **Classification:** MANAGER HANDOFF / CURRENT CONTINUATION ENTRYPOINT.  
 **Status:** Documentation published on the shared fork's **planning branch**, not fork main. No code merge, provider execution or production configuration change is effected by this file.
 
@@ -37,15 +37,13 @@ Historical chats are supporting evidence; do not treat them as authoritative if 
 - Two independent read-only reviewer roles recorded **PASS WITH FINDINGS** after two legitimate rework loops on mode evidence and package-v2 redaction. DeepSeek V4.1 Flash orchestrated only, not implementation/test; Codex SOL Medium and Sonnet 5.5 Medium executed; Opus not used; quotas/reset data UNKNOWN.
 - **Not independently reviewed raw bytes:** manager cannot see worker-local 9.8-MB originals/755-KB package, screenshots or full ledger; no hosted CI, paid live-provider, production/native/remote qualification. Do not claim a remote audit trail was published.
 
-## NEXT — local staging complete; publication requires user decision
+## NEXT — evidence stays private; proceed only with separately authorized work
 
-1. **Already complete; do not repeat:** PR #21 merge, original local evidence closure, private 78-text-file sanitized candidate staging, and [bounded checksum correction](docs/orchestration-v2/task-pr21-sanitized-subset-metadata-hashes-correction-20261105.md). [Manager integrity acceptance](docs/orchestration-v2/manager-pr21-sanitized-subset-integrity-acceptance-20261105.md) records the final 80/80 checksum PASS, independent reviewer PASS and provenance limitations.
-2. **Source:** fork `main` still `fb67545d790c5c001e8f85827f219ab6493c435e`, [PR #21](https://github.com/jermur788/t3code/pull/21) closed/merged. Local worker `main` remains stale but untouched. Worker host kept evidence volume mounted read-only; do not unmount or alter refs just to tidy the evidence task.
-3. **Candidate:** private on worker host only; 81 files / 629,261 bytes, 78 sanitized evidence texts + `MANIFEST.md` + `SANITIZED-MAP.json` + `SHA256SUMS.txt` (80 entries, checksum file itself omitted). All 78 texts and both metadata files unchanged versus previously reviewed version; only checksum file changed. Two corrected local tasks had combined ten worker/reviewer dispatches; no quota errors, balances/reset UNKNOWN. Independent reviewer PASS is worker-reported; manager cannot directly view those bytes.
-4. **Next user decision:** keep this candidate local/private or permit external publication. Before any actual transfer, user explicitly decides the **exact reviewed files, destination (public vs restricted/private), audience, routing provider/model names and transfer method**. Fork repo is public, so a branch there is a public upload. Recommend defaulting to private retention or a restricted maintainer-controlled destination unless there is clear need for public audit. Separate destination hardening/verification may be warranted after authorization.
-5. Do not initiate another manifest edit simply for a one-line checksum-coverage explanation: the independently reviewed 80/80 manifest establishes coverage. Any edit would require new checksums and re-review. Any remaining optional app-level handoff/provider-MCP integration, browser-process restart, hosted CI, D2 shipping exclusion or D4 strict revocation is separate scope and authorization.
-
-**Nothing has been published; no remote candidate URL exists.** Never claim `REMOTE AUDIT PASS` or `PRODUCTION VERIFIED` on the strength of local worker data.
+1. **User decision 2026-11-05: KEEP PRIVATE.** PR #21 evidence originals and completed 81-file sanitized candidate must remain on their local worker host. **No publication or distribution is a pending task.** This resolves the prior prospective publication decision; do not repeatedly ask about destination or routing-name visibility unless the user independently reopens evidence sharing.
+2. PR #21 is merged; original local evidence closure, sanitized staging and final 80-entry checksum correction are complete. [Final acceptance review](docs/orchestration-v2/manager-pr21-sanitized-subset-integrity-acceptance-20261105.md) distinguishes worker-reported local PASS from the manager's independent GitHub integration proof. **Do not re-dispatch any of these completed local tasks**. No browser-manager raw evidence inspection, hosted CI or production qualification is claimed.
+3. No code merge, Git push, branch publication, external evidence transfer, file attachment, archive upload or production action is authorized by this decision. The fork repository is **PUBLIC**, so even a dedicated evidence branch would disclose the files.
+4. Continue separately authorized generic Runtime/T3 fork work per Current State and governing specs. Keep app-level handoff isolation `NOT RUN / OPERATIONAL BLOCKER`, client-local mode persistence narrow PASS, experimental continuation excluded from main and D2/D4 public-release gates separate. Stop for new product/architecture decisions.
+5. Preserve the local read-only Files mount, original checksums, private candidate and stale local main as currently reported; no discretionary cleanup, remount or ref update.
 
 ## USER-ACCEPTED DECISIONS (do not re-ask)
 
@@ -53,12 +51,13 @@ Historical chats are supporting evidence; do not treat them as authoritative if 
 - User separately approved **merging PR #21 into fork `main`** at 2026-11-04 12:31Z. Normal two-parent merge completed and independently verified. **Never re-ask merge permission for the already merged PR #21 or repeat the merge**.
 - User approved DeepSeek **orchestration-only** for all future worker tasks, with Codex GPT-6.1 SOL Medium or Claude Sonnet 5.5 Medium doing implementation/tests, Claude Opus 5.5 for justified escalations, per-subscription capacity/watch/reset tracking, and real-time ledger updates. User reported a low DeepSeek monthly allowance on 2026-11-04; exact current balance/reset UNKNOWN.
 - On 2026-11-05, user approved **local-only preparation/review of the 78-file sanitized text evidence publication candidate**. No upload, commit, push or publication; any actual external transfer requires a new, destination-specific user decision.
+- **Later on 2026-11-05, user explicitly decided KEEP PRIVATE.** This supersedes consideration of publication as the immediate next milestone: do not publish, upload or transfer candidate/original evidence or ask again about a destination unless the user explicitly changes direction.
 - User approved the **separate default-off server gate** for isolated continuation experimentation — implemented on unmerged experimental branch.
 - User requires **exclusion of experimental agent-facing continuation tool-schema overhead before public release** (D2); this release requirement remains unmet and unmerged.
 - User permits **best-effort last-check/reconciliation only for isolated stub-only continuation experiments** (D3), with known provider-start race explicitly bounded.
 - User requires strict no-new-continuation-run after durably committed revocation **before production** (D4); no accepted exact linearization or authority-table/engine rewrite exists yet.
 
-**Not approved:** publishing/sanitized evidence upload, any Git commit/push, further repo merges, public release, production continuation, material paid-provider work, unsafe credential bypass, new authority DB or destructive Git changes. Local evidence closure occurred **without publication**; local candidate preparation is approved but not dispatched.
+**Not approved:** publishing/sanitized evidence upload, any Git commit/push, further repo merges, public release, production continuation, material paid-provider work, unsafe credential bypass, new authority DB or destructive Git changes. Local evidence closure, candidate preparation and integrity correction are completed; evidence retention is **PRIVATE by user decision**.
 
 ## Open risks and milestone context
 
@@ -72,4 +71,4 @@ Historical chats are supporting evidence; do not treat them as authoritative if 
 
 ## STOP / TRANSITION
 
-PR #21 is merged; original evidence closure, local candidate staging and metadata checksum correction are complete. **No further local task is pending for this candidate.** Candidate stays on the worker host, PRIVATE and NOT PUBLISHED. Do not commit/push/upload/publish or infer authority from user approval for local preparation. A new explicit user product/security decision must identify exact files, destination, visibility/audience, routing-name exposure and transfer method before evidence leaves the machine. The fork repo is PUBLIC, including dedicated branches. Stop for source/main changes, paid provider use, production release, authentication bypass, destructive Git or material architecture/security expansion. Keep Current State, active Runtime/handoffs and inspected GitHub fork main in sync.
+PR #21 is merged, original evidence closure, local candidate staging and 80/80 checksum correction are completed. The user expressly chose **KEEP PRIVATE** on 2026-11-05; the publication gate is closed unless reopened by a new explicit user instruction. No evidence upload, archive, commit, branch push, external transfer or public/private publication is authorized. Do not disturb the local evidence, read-only volume or stale local main without a bounded authorized task. Maintain separate unverified runtime and production gates; stop for material architectural/security tradeoffs, Git main changes, material paid model use, destructive operations or production release. Read Current State/active Runtime tasks and verify current GitHub main at any future manager change.
