@@ -1,6 +1,6 @@
 # T3 Fork — Current State and Roadmap
 
-**Updated:** 2026-11-04, after 20:00Z PR #21 local evidence-closure handoff and independent manager GitHub/source reconciliation.
+**Updated:** 2026-11-05 after user authorization to prepare PR #21 sanitized text-only evidence subset locally (no publication).
 **Classification:** CURRENT PROJECT STATE — authoritative snapshot for manager continuation, not a code change.  
 **Repository:** [jermur788/t3code](https://github.com/jermur788/t3code)  
 **Maintained on:** `planning/resource-efficient-continuation-20261103` — **not fork main**.  
@@ -53,7 +53,7 @@ The **user decides product policy, significant architecture trade-offs, merges/r
 4. The closed-enum `orchestration-v2-pruned` marker is not readable by older strict `orchestration-evidence/v0` decoders; user approved a **fork-only coordinated reader upgrade**, not universal backward compatibility or a stable external-format policy.
 5. The experimental default-off continuation branch remains unmerged. D2 public shipping exclusion and D4 strict revocation remain **separate unmet public-release gates**; nothing here changes those decisions.
 
-**Next manager action:** await **one user product/permissions decision** about whether any **sanitized evidence** should be published, and to which trusted destination. Recommendation: first authorize a local-only publication subset to be prepared and reviewed, then authorize transfer separately. Do not publish the whole package or binaries. The existing [DeepSeek orchestration-only template](docs/orchestration-v2/DEEPSEEK_ORCHESTRATOR_HANDOFF_TEMPLATE_V1.md) governs any later local worker task. No new code fix, source push, PR merge, production release or paid-provider work is automatically authorized.
+**Next manager action (authorization received 2026-11-05):** the user approved **local-only preparation and independent review of a minimal sanitized evidence subset**, not publication or network transfer. The [complete task/DeepSeek orchestration handoff](docs/orchestration-v2/task-pr21-sanitized-evidence-subset-local-preparation-20261105.md) is **PREPARED / NOT DISPATCHED** because the browser manager has no verified local T3 Code worker bridge. Candidate limited to 78 sanitized text files plus newly location-scrubbed manifest/map and fresh checksums; originals and checked v2 package immutable. Source privacy scans and independent reviewer required; final candidate remains private on worker host. **Any Git commit/push, upload, external publication, raw/binary disclosure, production release or paid-provider work remains NOT AUTHORIZED.** Ask separately for exact reviewed destination and visibility only after local staging returns.
 
 ## Accepted continuation safety decisions (binding; separate workstream)
 
@@ -91,7 +91,8 @@ The completed P2 repair used DeepSeek V4.1 Flash for orchestration + implementat
 | Upstream reconciliation and P2 Evidence V0 | **`INTEGRATED`**, independently verified GitHub fork-main merge | Maintain accepted baseline; no remerge |
 | Post-merge local runtime qualification | **`LOCAL RUNTIME PASS (worker-reported) / REVIEW PASS WITH FINDINGS (recorded)`** | Source/evidence limitations retained, no production PASS |
 | Original evidence and sanitized package v2 | **`EVIDENCE CLOSED LOCALLY (worker-reported)`** with reported hashes and two independent reviews | Originals/package remain host-local; no remote audit claim |
-| Sanitized evidence publication | **`NOT AUTHORIZED / NOT DONE`** | User decides whether to prepare/review a safe text-only publication subset and later approves specific transfer/destination |
+| Sanitized evidence candidate preparation | **`AUTHORIZED — LOCAL ONLY / PREPARED / NOT DISPATCHED`** (2026-11-05) | DeepSeek orchestrates Codex SOL M / Sonnet 5.5 M for staging, privacy scans and independent read-only review; no transfer |
+| Sanitized evidence publication/upload | **`NOT AUTHORIZED / NOT DONE`** | Only after final candidate inspection, user separately approves exact files, audience, destination and transfer |
 | Workspace/Development mode persistence | **`CLIENT-LOCAL RUNTIME PASS (reported)`** for normal server restart/same-profile reload | Browser-process restart/cross-device still NOT VERIFIED |
 | App-level handoff write/isolation | **`NOT RUN / OPERATIONAL BLOCKER`** in tested no-cost host | Service-level tests exist; new credential/stub architecture needs separate decision |
 | Hosted CI, live-provider/production/native/remote | **`NOT VERIFIED`** | No production claim |
@@ -103,10 +104,10 @@ The completed P2 repair used DeepSeek V4.1 Flash for orchestration + implementat
 
 ## Next manager loop
 
-1. Start with Project Instructions, this Current State, Coordination Protocol, manager handoff, [evidence-closure manager reconciliation](docs/orchestration-v2/manager-postmerge-pr21-evidence-closure-reconciliation-20261104.md), and exact GitHub/Runtime truth. PR #21 is **already merged**.
-2. Preserve `POST-MERGE LOCAL RUNTIME PASS (worker-reported)` and `REVIEW PASS WITH FINDINGS`, plus **`EVIDENCE CLOSED LOCALLY`** (worker report). Do not conflate host-local verified package checksums with public availability or browser-manager raw inspection.
-3. **Stop for user authorization** before preparing a distribution-specific sanitized publication subset or uploading any evidence. If user approves local-only preparation, deliver a complete copy/paste-ready DeepSeek orchestration-only handoff and dispatch Codex SOL/Sonnet Medium workers; require independent read-only review and artifact manifest, then seek a separate explicit approval before transfer.
-4. Do not attempt to bypass provider-session MCP to create app handoffs. The app-level isolation gate remains `NOT RUN / OPERATIONAL BLOCKER` until a genuinely supported no-cost route exists or a separately accepted governing feature spec authorizes one.
-5. Keep D2/D4 production/public release gates and default-off continuation experiment separate. Do not merge, modify fork main, push, release or invoke paid providers without authority. Reconcile canonical state after each authorized transition.
+1. Read Project Instructions → Current State → Coordination Protocol → [closure review](docs/orchestration-v2/manager-postmerge-pr21-evidence-closure-reconciliation-20261104.md) → source code/Runtime truth. PR #21 is already merged; local evidence closure was already completed. Do not repeat either task.
+2. **2026-11-05 local-only staging authorization accepted.** The next T3 Code task is strictly [sanitized text subset preparation](docs/orchestration-v2/task-pr21-sanitized-evidence-subset-local-preparation-20261105.md), **PREPARED / NOT DISPATCHED**. Manager should supply a complete paste-ready DeepSeek-only handoff; no automatic local bridge is verified.
+3. DeepSeek coordinates only; Codex GPT-6.1 SOL Medium / Claude Sonnet 5.5 Medium performs staging/inspection in a private new directory, then a different-provider/model reviewer independently inspects actual final candidate text. Verify original package unchanged, location and credential scrubs, new checksum manifest and exclusions. No source edits, commit, push, network upload or publication.
+4. On returned evidence, reconcile exact local output, privacy/reviewer findings and task ledger, update canonical state, then ask **separate user authorization for any exact external publication** (audience, destination and transfer). If blocked, record precisely and preserve originals.
+5. App-level handoff MCP remains `NOT RUN / OPERATIONAL BLOCKER`; client mode persistence is narrow `PASS`. D2/D4 production/public release gates and unmerged default-off experiment stay separate. No main writes, production claims, paid provider calls or new merges.
 
-**Hard stops:** no unauthorized public evidence export, main write, merge, destructive Git, history rewrite, paid resources, production enablement or architecture/security expansion.
+**Hard stops:** no Git branch push/commit, public/private external evidence transfer, production release, destructive Git, history rewrite, unsafe credentials, material paid costs or architecture/security expansion without separate approval.
