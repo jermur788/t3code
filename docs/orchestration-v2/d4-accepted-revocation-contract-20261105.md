@@ -1,0 +1,68 @@
+# D4 — Accepted execution revocation contract (A + B)
+
+**Authority:** User explicitly agreed to Overall Manager's recommended **A + B** on 2026-11-05 at 14:10 UTC, following the plain-English explanation and the three-lane qualification review.  
+**Status:** **ACCEPTED PRODUCT CONTRACT / NOT IMPLEMENTED / NOT INTEGRATED / NOT PRODUCTION VERIFIED**.  
+**Scope:** Project Runtime operator-authorized **synthetic continuation**, currently isolated on the default-off experimental branch. Not a grant of autonomous authority to agents; no main merge, upstream catch-up, provider-production testing, release or material paid spend.  
+**Companion:** [staged safety governing spec](continuation-staged-safety-governing-spec-20261104.md) (D1–D5), [Stage 2 verification](manager-stage2-three-lane-return-reconciliation-20261105.md), [historical design alternatives](d4-transactional-revocation-proposed-contract-20261105.md), [Current State](../../01_CURRENT_STATE.md).
+
+## 1. Binding acceptance rules
+
+### A. Strict no-new-run after durable operator revocation
+
+**Linearization point:** durable transaction commit that creates a **new** continuation `run.created` event in T3's authoritative orchestration event store. Revocation means the authorized operator's removal/invalidation of the source continuation policy (`continuation: null` or otherwise invalidating the exact authorized revision) is **durably committed first**.
+
+**Rule:** If revocation commits before the would-be continuation run-creation transaction, that transaction **MUST NOT** commit `run.created`, a start effect, or a falsely successful command receipt under the revoked authorization. This must hold for concurrent writers, retries, delayed launch, replay and server restart. A task/attempt receipt reserved earlier than revocation is *not* permission to create a run afterward.
+
+The guard must be bound to **project ID, exact source task authorization identity/revision**, and an internally trusted continuation launch provenance; include target/attempt/request identity where necessary for idempotency. A worker/agent/MCP request key, a handoff, prompt, route, or a thread's `createdBy` alone **MUST NOT** mint authority. Denial is deterministic and fail-closed without a new run; produce typed, inspectable reason/status without exposing private policy data.
+
+**Implementation preference, not an unreviewed API mandate:** use a narrow upstream-friendly **private transaction-time guard** at the orchestration command/event commit boundary, leaving normal user dispatch unchanged and avoiding a new authority table where existing task revision plus same-DB write ordering is sufficient. Any significant upstream engine contract expansion, added durable authority table/epoch, or failure to prove shared SQLite transaction semantics is **REVIEW REQUIRED** rather than permission to improvise.
+
+### B. Prepared but not started after revocation
+
+**Observed actual path:** `ThreadLaunchService.launch` invokes `message.dispatch` with `dispatchMode: defer_start`. That path creates a durable `preparing` run **without** `provider-turn.start`; a later `prepared-run.release` can enqueue start work. The earlier fixture's initial pending start effect was not the real lifecycle.
+
+**Rule:** If revocation is already committed and the system can reliably establish that the run **has not begun execution**, T3 **MUST block its pending release/start and must not deliberately enqueue a new provider-start effect** under that revoked continuation authorization. Cancel unsettled effects where this can be established safely. For any ambiguous in-progress release/worker/provider start, classify `reconcile_required`, retain durable provenance, and attempt safe best-effort cancellation/stop; do not silently mark it cancelled or successful. The feature remains default-off outside an authorized experiment.
+
+**Scope boundary:** The user **did not require a globally atomic guarantee over an external provider's `startTurn` call**, and did not require an immediate/guaranteed stop of an already-running provider. For work already executing when revoked, request stop/cancellation where supported and record whether it was acknowledged; reconcile uncertain cases. Do **not** claim transactional external-provider cancellation based only on SQLite checks. If later product requirements demand stricter external-start linearization, return for a **new architecture decision**.
+
+### C. Nonnegotiable data/operation constraints
+
+- **Only an operator** may grant, modify, or revoke continuation authorization. Agents/providers cannot re-grant it via task input, MCP, prompt, route or hidden schema.
+- Authorization is **project-scoped**; wrong-project/task/source/revision contexts must fail closed. Preserve accepted task CAS revisions, immutable attempt/receipt provenance, and idempotency.
+- Distinguish `pending` (Runtime attempt), `preparing` (durable run), `provider-start effect queued/claimed`, and `running` (provider accepted); never collapse them to one launch state.
+- A pre-revocation committed run may still exist on replay. Returning its prior durable receipt is not **new run creation**; however, replay after revocation may **not** create a new run, enqueue a fresh start for a provably unstarted run, or resurrect cancelled effects.
+- Gate disabled/authorization removed must not affect **normal user-created runs or non-continuation Project Runtime execution**, nor degrade existing service-level project isolation, Evidence V0, handoff or routing contracts.
+- Respect D2: **no experimental continuation input/output field or budget increase** in public shipping agent-facing MCP schemas unless separately accepted. The present default-off gate is insufficient to hide it.
+- Preserve server-owned Runtime/orchestration state; no chat, hidden worker reasoning or dashboard copy becomes the authoritative revocation ledger.
+
+## 2. Ordering/acceptance examples
+
+| Scenario | Accepted behavior |
+| --- | --- |
+| Revocation durable before new run commit | Deny new continuation `run.created`, deny start effect, no accepted-success receipt; preserve attempt as cancelled or reconcile-required by known shell/run state |
+| New run commit wins before revocation | Run exists exactly once; separate B gate applies if still `preparing`; no duplicate via replay |
+| Revocation between `run.created` and `prepared-run.release` | If definitely not executing, prevent release/start; record cancellation and retain provenance |
+| `prepared-run.release` raced against revocation or external provider start | Inspect durable effect/provider evidence; stop if safe, otherwise mark `reconcile_required`, no invented cancellation guarantee |
+| Pre-revoke attempt receipt replay after restart | Re-check operator authority before **any new run**, fail closed if revoked; do not reissue new start work; preserve historical receipt |
+| Independent project / ordinary user run | No D4 restriction accidentally inherited |
+| Concurrent policy edits or stale revision | CAS conflict or fail-closed authorization result, never an automatic re-grant |
+| Crash, lost client, incomplete/pruned history | Conservatively reconcile; never fabricate a past run or successful stop |
+
+## 3. Implementation/verification contract (not yet executed)
+
+The implementation must operate on an **isolated owned worktree** after exact-base/status review and should be designed as a small generic T3 extension. The experimental continuation remains outside fork `main`. The Stage 2 subset demonstrated same-file/inode SQLite writer ordering and a fixture guard, **not** full server-root `continuation:null` handling or a finished D4 code path.
+
+**Required checks before any D4 PASS:**
+
+1. Inspect full server dependency graph, real operator revoke update and exact `BEGIN IMMEDIATE` transaction/DB identity. Show that authorization check and event/effect/receipt commit share required serialization **in actual server assembly**, not merely an isolated subset.
+2. Inventory every continuation-reachable `run.created` path (three currently direct emitters), `prepared-run.release` paths and provider-start effect/recovery path; prove internal provenance cannot be forged from public/MCP commands.
+3. Deterministically test both transaction orderings across separate SQL connections/processes; revocation between run creation and release; effect claimed/start uncertainty; same-key replay and startup reconciliation, crash/pruning, concurrent operator task revisions and cross-project/task isolation.
+4. Verify fail-closed guard denial returns a typed outcome and **no false accepted receipt**; normal user launches, default-off gate, D2 schema exclusion, and other Project Runtime V1 behavior remain unchanged.
+5. Run fresh focused tests, full relevant typecheck/changed checks and real local stub/no-cost server integration where possible. Independent read-only concurrency/security and upstream compatibility review by a **different provider/model**, then repair and re-review.
+6. Preserve accepted statuses: `IMPLEMENTED`, `STATIC PASS`, `RUNTIME PASS`, `REVIEW PASS`, `INTEGRATED`, `VERIFIED` only where evidenced. No production/published/release PASS from mock/fixture tests.
+
+**Stop/decision gate:** Stop for inability to establish transaction atomicity, unavoidable public/protocol expansion, significant upstream engine rewrite, new authority/epoch database, cross-process distributed locks, an externally atomic provider-start promise, or conflict with D2/upstream main. Report options; do not silently weaken A/B. A future merge/main integration, upstream sync, production enablement, material spend, public PR/release or destructive Git operation all require their own authorization.
+
+## 4. Immediate next state
+
+**Product decision A + B: ACCEPTED.** [One bounded isolated implementation/review packet](task-stage2-d4-isolated-implementation-20261105.md) can now be prepared against this contract. Task packet **PREPARED / NOT DISPATCHED** until a real T3 Code session takes ownership. No production code or Git branch was changed merely by accepting this spec. Detailed earlier proposals should be read as historical alternatives where they contradict this accepted choice.
