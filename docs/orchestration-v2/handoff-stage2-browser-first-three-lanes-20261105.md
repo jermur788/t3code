@@ -1,6 +1,6 @@
 # PASTE INTO T3 CODE — Stage 2 three-lane read-only qualification
 
-**Status:** PREPARED / NOT DISPATCHED. **Overall Manager browser work completed 2026-11-05.** This is not approval for source implementation, branch merge, production enabling, Git commit/push or paid infrastructure.
+**Current status:** **COMPLETED / RETURNED 2026-11-05 13:50Z**, with three worker-reported scope-limited results and independent PASS WITH FINDINGS reviews. **THIS STARTER IS HISTORICAL — DO NOT REDISPATCH.** [Full manager reconciliation](manager-stage2-three-lane-return-reconciliation-20261105.md). Its original text below remains as the task authorization record, not a pending action. No source implementation, main merge, production release, Git push or paid infrastructure was authorized.
 
 ## Exact T3 Code DeepSeek orchestration instruction
 
@@ -49,3 +49,9 @@ Return one consolidated durable handoff:
 All three lanes are *research and qualification*. Do not call them `D4 IMPLEMENTED`, `D2 SHIPPING VERIFIED`, `INTEGRATED` or `PRODUCTION VERIFIED`. D4 `run.created` versus provider-start linearization and in-flight contract remain **product decisions**, and any engine/source implementation requires explicit accepted spec/owned lane. Nothing here authorizes a fork-main merge, external evidence transfer, public release, provider production spend or history rewrite.
 
 **If no T3 Code worker is accessible:** return `NOT DISPATCHED` with a precise tool/capacity blocker; do not claim a GitHub handoff itself launched a worker.
+
+## Consolidated return — completed
+
+The 2026-11-05 local handoff reports **A scoped D4 same-database transaction feasibility pass** (guard test fixture, not full-server D4 implementation), **B source-loaded MCP transport with mocked services schema audit PASS** (79 tools, +646 experimental agent-context bytes, not packaged release verification), and **C 50-commit upstream/experiment dry-run preview** (1/2/9 simulated conflicts, no actual integration). All three returned independent **PASS WITH FINDINGS** after corrections. Real `ThreadLaunchService` uses `defer_start`: the `preparing` run has **no start effect until later `prepared-run.release`**, which makes pre-start revocation policy a separate D4 owner decision. DeepSeek orchestrated only, 10 worker dispatches, quotas UNKNOWN and some actual Sonnet effort LOW. No code edits, commits, pushes, merges, release, paid provider call or evidence upload reported.
+
+**Status `COMPLETED` — never redispatch these lanes.** Read [manager reconciliation](manager-stage2-three-lane-return-reconciliation-20261105.md), [Current State](../../01_CURRENT_STATE.md), corrected [D4 proposal](d4-transactional-revocation-proposed-contract-20261105.md) and [D2 audit](d2-shipping-exclusion-audit-plan-20261105.md). D4 code writer requires an explicit product contract. Upstream catch-up/re-land and public shipping remain separately gated.
