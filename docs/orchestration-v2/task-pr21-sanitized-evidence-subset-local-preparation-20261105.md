@@ -1,6 +1,6 @@
 # PR #21 sanitized evidence publication candidate — LOCAL PREPARATION ONLY
 
-**Task status:** AUTHORIZED FOR LOCAL PREPARATION on 2026-11-05 by user assent ("Okay") to the Overall Manager's explicit question. **NOT DISPATCHED**: browser manager has no verified live T3 Code/local worktree bridge. **NOT AUTHORIZED:** any Git commit, push, upload, message attachment, publication, network transfer, paid-provider use, fork-main write or production action.
+**Task status:** **COMPLETED (worker-reported) / INDEPENDENT REVIEW PASS (recorded)**. User authorized LOCAL PREPARATION on 2026-11-05; workers completed text-only staging at 12:25Z and the subsequently identified 80-entry checksum correction at 12:46Z. **This original orchestration packet is historical; do not re-dispatch.** [Final manager acceptance](manager-pr21-sanitized-subset-integrity-acceptance-20261105.md). **NOT AUTHORIZED:** any Git commit, push, upload, attachment, publication, network transfer, paid-provider use, fork-main write or production action.
 
 **Governing coordination:** [Current State](../../01_CURRENT_STATE.md), [Coordination/Handoff Protocol](../../02_COORDINATION_HANDOFF_PROTOCOL.md), [Manager evidence-closure reconciliation](manager-postmerge-pr21-evidence-closure-reconciliation-20261104.md), [accepted DeepSeek orchestration template](DEEPSEEK_ORCHESTRATOR_HANDOFF_TEMPLATE_V1.md).
 
@@ -36,3 +36,9 @@
 2. 100% staged checksum verification; exact counts and scope; path/symlink/traversal/credential scans plus manual disclosure review and independent reviewer of **actual final bytes**.
 3. No repo commits, branch pushes, network transfers, disclosure or paid models. The only new files live in a private local staging directory and restricted task ledger.
 4. Any public/private publication requires a **new explicit user authorization** identifying exact reviewed files, audience/destination and transfer method. This approval covers local preparation **only**.
+
+## Result — local preparation finished, no publication
+
+The worker return reports a private **81-file** candidate comprising **78 sanitized text files**, `MANIFEST.md`, `SANITIZED-MAP.json`, and `SHA256SUMS.txt`; final independently reviewed checksum list has **80 non-self entries, 80/80 PASS**. The source v2 package was checked read-only without modifications; all 78 sanitized files and the two metadata files remained unchanged through final checksum correction. Independent Claude Sonnet 5.5 Medium reviewer recorded PASS on the corrected candidate after Codex GPT-6.1 SOL Medium worker execution and DeepSeek orchestration-only supervision. Browser manager verified repository main/PR state and the task document but has not seen the private candidate bytes.
+
+**Task is complete; do not re-run.** Candidate remains privately held on worker host, not uploaded, published or linked from GitHub. See [final manager integrity acceptance](manager-pr21-sanitized-subset-integrity-acceptance-20261105.md) and [Current State](../../01_CURRENT_STATE.md). Any evidence transfer requires a **separate exact-file, destination/visibility, routing-name and transfer-method user approval**.
