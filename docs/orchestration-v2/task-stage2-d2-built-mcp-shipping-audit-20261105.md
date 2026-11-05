@@ -1,6 +1,12 @@
 # Stage 2 / D2 — compare actual built agent-facing tool schemas
 
-**Status:** TASK PACKET PREPARED / NOT DISPATCHED. **Authority:** user-accepted D2 public shipping exclusion requirement; read-only local build/test qualification only, no source implementation or release. **Browser plan:** [D2 shipping-surface audit](d2-shipping-exclusion-audit-plan-20261105.md).
+**Status:** **COMPLETED — READ-ONLY QUALIFICATION RETURNED**, 2026-11-05 13:50Z. This handoff below is historical: **DO NOT REDISPATCH**. **Authority:** user-accepted D2 public shipping exclusion requirement; read-only local build/test qualification only, no source implementation or release. **Browser plan:** [D2 shipping-surface audit](d2-shipping-exclusion-audit-plan-20261105.md).
+
+## Result (supersedes this historical pre-dispatch packet)
+
+LANE B CLOSED — SOURCE-LOADED PRODUCTION TRANSPORT WITH MOCKED SERVICES, scoped audit PASS (worker-reported), independent PASS WITH FINDINGS (recorded). 79 tools; +646 agent-budget bytes; output schema overhead separately measured. Current merged main has no continuation field; isolated experiment does despite gate off. Not packaged/release or paired-client D2 VERIFIED. [Manager reconciliation](manager-stage2-three-lane-return-reconciliation-20261105.md).
+
+The user supplied the local consolidated result and restricted ledger. Original screenshots/logs/attempt transcripts were not available to the browser manager. All related work was read-only against product source and no commits/merges/releases/paid-provider calls occurred. Any future writable task needs separate accepted spec and authority.
 
 ## Paste into T3 Code — DeepSeek orchestration-only task
 
