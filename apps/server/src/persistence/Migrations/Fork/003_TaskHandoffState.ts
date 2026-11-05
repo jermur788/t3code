@@ -226,7 +226,7 @@ const migrateHandoffPayload = (payload: unknown): unknown => {
 
 const parsePayload = (rowId: string, payloadJson: string) =>
   Effect.try({
-    // @effect-diagnostics-next-line preferSchemaOverJson:off - rewrites legacy payload_json; no schema describes the pre-v1 shape.
+    // @effect-diagnostics-next-line globalJsonInEffect:off - rewrites legacy payload_json; no schema describes the pre-v1 shape.
     try: () => JSON.parse(payloadJson) as unknown,
     catch: (): Migrator.MigrationError =>
       new Migrator.MigrationError({
