@@ -1,0 +1,30 @@
+# PR #21 private sanitized evidence — bounded metadata checksum completion
+
+**Task state:** PREPARED / NOT DISPATCHED (browser-only manager).  
+**Authority:** Continuation of user's 2026-11-05 **local-only** evidence preparation approval; routine integrity correction. Nothing authorizes publication, uploading or moving local `main`.  
+**Governing sources:** [Original local-staging task](task-pr21-sanitized-evidence-subset-local-preparation-20261105.md), [Manager review](manager-pr21-sanitized-subset-preparation-review-20261105.md), [Current State](../../01_CURRENT_STATE.md), Coordination/Handoff Protocol and accepted DeepSeek orchestrator template. The original task **exists on GitHub planning branch**; local worker's missing-document finding is a fetch/ref discrepancy of unknown cause.
+
+## PASTE INTO T3 CODE — DeepSeek orchestrator instruction
+
+> **DeepSeek: Orchestrate only; do not edit files, run tests/checks or operate Git yourself.** This is a **single bounded local correction** to the completed PR #21 private sanitized evidence candidate, not a new evidence sanitization, PR merge, source implementation or a publication task.
+>
+> **Live verification before work:** fetch/read the governing task from the GitHub planning branch `planning/resource-efficient-continuation-20261103`. If absent locally, compare actual remote URL/credentials/ref and use the canonical browser-verified document link, not an invented substitute; do not rewrite history or update local main. Confirm original fork `main` is still the already-merged PR #21 development baseline.
+>
+> **Actual candidate reported at:** `/home/jer/pr21-evidence-subset-20261105/candidate/`, private and access-restricted. **Source v2 package** under `/media/jer/Files/Worktrees/pr21-evidence-package-20261104-v2/` remained mounted read-only at prior return, and local `main` was stale. Verify live ownership, mount, file inventory and no concurrent writers. Do not unmount, remount writable, reset, clean, move local main or alter originals without a new explicitly authorized operation. If source is temporarily unavailable, rely only on *previously verified* source checks and do not fabricate a fresh verification.
+>
+> **Specific defect:** Candidate has 81 files: 78 sanitized evidence files plus `MANIFEST.md`, `SANITIZED-MAP.json`, `SHA256SUMS.txt`. Existing sums file has only **78 entries**; original task requires a checksum for **every publishable artifact except checksum self-reference**. Thus `MANIFEST.md` and `SANITIZED-MAP.json` must also be covered. The target is **80 distinct, relative, sorted SHA-256 entries**, 80/80 verification PASS. Preserve existing 78 content files and their bytes exactly.
+>
+> **Worker:** Assign **Codex GPT-6.1 SOL Medium** or **Claude Sonnet 5.5 Medium** as the one writer of the candidate metadata, based on actual capacity; independent read-only reviewer must use the **other provider/model**. DeepSeek only supervises routing and append-only restricted ledger. No Opus unless a material architecture/security issue is found. Keep per-subscription quota/reset/availability observations exact or UNKNOWN.
+>
+> **Execution:** Confirm every file count and checksum against candidate on disk. Recompute the 80-entry relative checksum manifest including the two metadata files and all 78 evidence files, omitting SHA256SUMS itself; use atomic local replacement within the candidate only after checking ownership and recording the prior checksum. Do not mutate `MANIFEST.md` or `SANITIZED-MAP.json` unless a *specific integrity issue* requires it; if either metadata file embeds a checksum of the checksum file, stop for circularity diagnosis. Verify SHA256SUMS's line count, membership, stable sorted ordering, integrity of 80/80 targets, and no symlinks/traversal/absolute paths. Re-run focused automated scans on entire final candidate (including metadata), manually examine high-risk strings, and confirm all 78 sanitized file hashes and source-v2 package invariance. Since the sums file itself changes, report its **new own digest separately** in the private return, rather than attempting to include it as a self-entry.
+>
+> **Independent read-only review:** Re-derive 80/80 integrity, check exact 81-file membership, source v2 unchanged, corrected task compliance, and privacy/disclosure risks including the existing reviewer qualification about large logs. Prior disclosure PASS remains source context; do not claim it proves the new metadata state. If review finds a genuine defect, allow bounded rework and re-review, without publishing any files.
+>
+> **Stop and return:** Complete **VERDICT / ACTUAL BASE / OWNED LANE / BEFORE–AFTER CHECKSUM INVENTORY / 80/80 CHECK / SANITIZED EVIDENCE FILES UNCHANGED / METADATA INTEGRITY / DISCLOSURE RECHECK / INDEPENDENT REVIEW / CAPACITY ROUTING LEDGER / RISKS / NEXT**. Label `LOCAL PREPARATION INTEGRITY PASS (worker-reported)` only if all criteria actually pass. Otherwise return `VERIFICATION FAILURE` or `OPERATIONAL BLOCKER` with evidence and exact next safe step. The corrected candidate stays private on the host; **do not push, commit, attach, email, upload or publish it**. Any transfer requires a separate explicit user decision about exact reviewed candidate, destination/visibility and routing-name exposure.
+
+## Acceptance
+
+- No implementation/source changes, no upstream/milestone merge, no main ref movement, no mutation of original v2 package/restricted evidence.
+- Exactly 78 unchanged sanitized text files + two tracked metadata files + checksum self-file; **80 uniquely accounted entries and 80/80 verification PASS**; separately report checksum-file digest.
+- Source package/previous ledger preserved, no secret/privacy regression, independent different-provider/model read-only review, factual task ledger.
+- No external transfer. Fork repo is **public**; a "dedicated branch" would also be publicly readable.
