@@ -1,7 +1,7 @@
 # D4 — Proposed durable-run-creation revocation contract (browser source review)
 
 **Date:** 2026-11-05.  
-**Status:** **PROPOSED / DESIGN REVIEW REQUIRED / NOT AN ACCEPTED IMPLEMENTATION AUTHORIZATION**.  
+**Status:** **HISTORICAL RESEARCH / SUPERSEDED BY [ACCEPTED D4 A+B CONTRACT](d4-accepted-revocation-contract-20261105.md) on 2026-11-05.** The options and unchosen alternatives below remain reference material; do not treat old undecided language as current authority. D4 implementation is still NOT RUN / NOT INTEGRATED.  
 **Purpose:** advance the already-accepted D4 *requirement*, not silently choose a material orchestration/transaction architecture.  
 **Governing:** [accepted staged continuation safety spec](continuation-staged-safety-governing-spec-20261104.md), [prior T4 design research](https://github.com/jermur788/t3code/blob/experiment/continuation-default-off-gate-20261104/docs/orchestration-v2/staged-continuation-t4-strict-revocation-and-shipping-20261104.md), and [Current State](../../01_CURRENT_STATE.md).
 
@@ -70,7 +70,7 @@ A private server-issued guard context is carried down the host's specific contin
 3. Only if necessary: authorize a new authority/epoch table or an upstream-engine extension larger than the proposed generic guard.
 4. Later: separate fork-main merge, production enablement and public release decisions.
 
-**Status stays PROPOSED until these material choices are accepted.** Read-only investigation and design review may proceed without them; implementation with architecture implications must not start on the strength of this document alone.
+**Historical note:** The owner subsequently **ACCEPTED A+B** in [the governing D4 contract](d4-accepted-revocation-contract-20261105.md). That document governs. This older proposal does not authorize new authority tables, external-start atomicity, production release or main integration.
 
 ## 2026-11-05 three-lane qualification return — critical `defer_start` correction
 
