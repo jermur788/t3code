@@ -1,0 +1,33 @@
+# Manager reconciliation — PR #21 sanitized local publication candidate
+
+**Date:** 2026-11-05, after 12:25Z user-supplied worker return.  
+**Authority:** Overall Manager independent GitHub repo/governing packet inspection plus worker-attributed local staging return. No browser-manager access to the private candidate bytes or worker-host ledger.  
+**Verdict:** `LOCAL STAGING COMPLETE (worker-reported) / INDEPENDENT REVIEW PASS (recorded) / FINAL CHECKSUM COVERAGE CORRECTION REQUIRED / NOT PUBLISHED`. Fork `main` and PR #21 remain unchanged/merged. **Not production verified; not a disclosure safety guarantee.**
+
+## Independently verified facts
+
+- [PR #21](https://github.com/jermur788/t3code/pull/21) is merged/closed and fork `main` remains at the previously verified two-parent integration commit. No new fork-main changes observed.
+- **Governing task document really exists** on the shared GitHub planning branch: [`task-pr21-sanitized-evidence-subset-local-preparation-20261105.md`](task-pr21-sanitized-evidence-subset-local-preparation-20261105.md), with the local-only authorization and no-upload restrictions. Worker reported this file missing on local and remote refs; the manager's GitHub file API fetched it successfully. Treat that as a **worker-host ref/fetch visibility discrepancy** of unknown cause, not a missing governing specification.
+- The task's Step B requires a **fresh checksum file covering every staged publishable artifact except the checksum file itself**. Given the worker-reported final inventory of **78 sanitized files + `MANIFEST.md` + `SANITIZED-MAP.json` + `SHA256SUMS.txt` = 81 files**, this requires **80 checksum entries**. Worker reports only **78 entries**, covering sanitized files. Unless the worker can produce evidence of metadata hashes elsewhere, `MANIFEST.md` and `SANITIZED-MAP.json` are omitted from the checksummed publishable set. This is a **small acceptance defect, not an allegation of data corruption**. The independent reviewer PASS did not surface it. Correct on the existing owned local lane and independently re-review final bytes.
+
+## Worker-reported source and staging
+
+- v2 package read-only on worker-host Files filesystem after a read-only volume mount; source inventory **89 files / 754,717 bytes**, expected package checksum **87/87**, no source mutation, before/after inventory match. The original package's SANITIZED-MAP reportedly has **77 entries for 78 files**; missing entry for sanitized `EXPORT-SUMMARIES.json` was reconstructed from its matching source package checksum and tracked provenance, not by silently inventing bytes. This discrepancy should be retained in the local evidence ledger.
+- Local private staging directory outside repo/source: 81 files / **629,098 bytes**, restricted directories 0700 and files 0600, all ASCII/UTF-8 text, 78 sanitized files and three metadata files. No raw ledger, SQLite DB, screenshot, raw JSONL, fixture Git metadata, node_modules or other restricted evidence reported inside.
+- Writer reported full reads of all 78 sanitized files (including three large logs), zero residual patterns in raw/URL-decoded/JSON-unicode-escaped scans, local redactions for a draft path fragment and account descriptor; meaningful repo-relative paths and provider/model provenance retained. **Pattern tests do not prove absence of arbitrary secrets**. Reviewer did not personally inspect all lines of the three longest logs.
+- Writer reports 78/78 hashes for sanitized files, a 78-entry per-file sanitized map verified against disk, and reviewer Claude Sonnet 5.5 Medium round 1 `PASS WITH FINDINGS`, round 2 `PASS` after low-severity disclosure corrections. Reviewer re-derived scans and sampled high-risk files.
+- Seven routed worker/review dispatches; Codex GPT-6.1 SOL Medium writes, Sonnet 5.5 Medium read-only reviews, DeepSeek V4.1 Flash coordination only; no capacity errors or failovers, actual quota/reset observations UNKNOWN.
+- A local-only read-only filesystem mount was created to access source package; unmount it only after verifying **no other activity needs the volume**. Manager cannot inspect mounted state or safely unmount from browser.
+- Local `main` was reported stale relative to unchanged remote `main`; do not move local refs as a side effect of evidence correction. One empty temporary file reported, no cleanup authorized by this packet.
+
+## Precise open issues and authority boundaries
+
+**Routine acceptance correction:** add hashes for `MANIFEST.md` and `SANITIZED-MAP.json` to the final publishable checksum set (80 distinct relative entries), then hash/verify all 80 with no self-reference, re-run candidate membership, path/traversal, content and disclosure checks, confirm v2 source unchanged and independent read-only reviewer PASS on corrected package. If metadata files contain any checksum self-reference that would make a circular digest, stop and report a precise blocker rather than weakening coverage. No re-execution of PR #21 integration or original 164-file package verification is needed.
+
+**Evidence portability:** candidate remains **private local only**, not remotely accessible to manager. Current fork repository is **PUBLIC** at GitHub. A dedicated branch on the same repo is therefore **PUBLICLY READABLE**; it must not be called a private evidence archive. If user later chooses publication, obtaining destination/visibility and precise files/routing-name policy are **separate product/security approvals**. Do not publish now.
+
+**No permission:** Git commit, branch push, PR creation, GitHub comment with candidate contents, upload, email, archive transfer, public release, paid-provider testing, fork-main change, destructive Git or auth bypass. Keep raw/restricted and source package untouched.
+
+**Status:** closure of local staging integrity is pending only the 80-entry checksum correction and reviewer recheck. Worker reported independent PASS on disclosure, but **manager cannot independently inspect private bytes**. Production/live-provider/hosted CI and app-level MCP handoff isolation remain outside this task.
+
+**Next bounded packet:** [Metadata checksum coverage correction (DeepSeek-only orchestration)](task-pr21-sanitized-subset-metadata-hashes-correction-20261105.md). This task is prepared, **not dispatched**. It is routine correction inside the authorized local-only preparation; no new publication consent is inferred.
