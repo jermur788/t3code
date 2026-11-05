@@ -69,6 +69,8 @@ The **user decides product policy, significant architecture trade-offs, merges/r
 
 **D2 shipping:** isolated experimental branch adds `continuation` to shared task schemas that feed agent MCP tooling; default-off server gate does not remove advertised JSON Schema. Historic +646-byte tool overhead is not a current built-artifact measurement. Current fork main excludes continuation source, but **D2 BUILT SHIPPING PASS is not verified**. [Audit plan](docs/orchestration-v2/d2-shipping-exclusion-audit-plan-20261105.md) requires actual built `tools/list`, schema/property/byte budget and release test, not source-only checks.
 
+**Single copy/paste local starter:** [Stage 2 three-lane DeepSeek orchestrator handoff](docs/orchestration-v2/handoff-stage2-browser-first-three-lanes-20261105.md). It references all three governing task packets and is **PREPARED / NOT DISPATCHED**; no local T3 bridge is connected.
+
 **Next authorized local packets — all PREPARED / NOT DISPATCHED:**
 
 1. [D4 transaction feasibility and run-path proof](docs/orchestration-v2/task-stage2-d4-atomicity-feasibility-20261105.md): read-only source/database ownership, SQLite multi-connection transaction ordering, all run paths, idempotency/restart red-before tests, different-provider review. Does **not** authorize D4 code implementation.
