@@ -71,3 +71,16 @@ A private server-issued guard context is carried down the host's specific contin
 4. Later: separate fork-main merge, production enablement and public release decisions.
 
 **Status stays PROPOSED until these material choices are accepted.** Read-only investigation and design review may proceed without them; implementation with architecture implications must not start on the strength of this document alone.
+
+## 2026-11-05 three-lane qualification return — critical `defer_start` correction
+
+**Status:** `SCOPE-BOUNDED FEASIBILITY PASS (worker-reported) / independent REVIEW PASS WITH FINDINGS (recorded)`; D4 remains **PROPOSED / NOT IMPLEMENTED**. See [manager reconciliation](manager-stage2-three-lane-return-reconciliation-20261105.md).
+
+- Lane A proved a test/fixture transaction guard can prevent a new run when a revocation commits first, on the same SQLite file/inode across separate processes, with **0/0/0** runs/start effects/receipts in guarded scenario versus **1/1/1** unguarded. Red-before test intentionally exited 1 and barrier schedule passed 16/16. **This was not a full server installation of a real operator revocation or a permanent engine guard.**
+- The real `ThreadLaunchService` initial message uses `dispatchMode: defer_start`; new run is persisted in `preparing` with **NO initial `provider-turn.start` outbox effect**. The effect is created later through `prepared-run.release`. The prior illustrative assumption of an initial pending start effect was **fixture-only and incorrect for this path**. This distinction is material to D4: guard run creation, then separately define and test **whether release of an already-created but not-started run may occur after revocation**.
+- Full `server.ts` root integration, operator `continuation:null` revision CAS, provenance/unforgeability of the private guard, typed denial, crash/pruning behavior and provider-start race remain unproven. Do not classify as `D4 VERIFIED`.
+- **Recommended two-part contract for owner approval:** (1) no **new durable `run.created`** commit after revocation commits; (2) for already-created `preparing` runs, attempt to deny or cancel `prepared-run.release` and provider start if no execution has begun, and conservatively mark uncertain cases for reconciliation. Existing already-started runs require separate stop semantics. Part (2) must not be mislabelled as an atomic cross-process provider-call guarantee unless a stronger mechanism is explicitly designed/tested.
+- A future guarded implementation must test revocation **between run creation and release**, plus release/replay/stop concurrency and idempotent receipts. Avoid either omitting late-start policy or silently broadening D4 to a stronger external-start linearization without user consent.
+
+**This note refines but does not adopt the product choices below.** No code work, merge or production authorization was given by the three-lane read-only return.
+
