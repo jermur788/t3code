@@ -40,3 +40,12 @@ To mark **D2 shipping exclusion VERIFIED** on a particular public build, capture
 - independent review and reproducible automated build test.
 
 D2 is a **future public release requirement**. **No public release is authorized**. No change to fork main, branch inclusion, upstream APIs or production settings is authorized by this audit plan.
+
+## 2026-11-05 source-loaded MCP audit return — scoped PASS, no packaged release verification
+
+[Manager's three-lane reconciliation](manager-stage2-three-lane-return-reconciliation-20261105.md) records worker-reported independent review **PASS WITH FINDINGS**, corrected. Actual `tools/list` from production-transport source loaded against **mocked services** reported **79 tools** on both main and experiment, with **+646 UTF-8 bytes in the agent-context budget** (56,753 vs 57,399), **+323 bytes** per task-create/update input schema for optional continuation, four task output schemas **+351 bytes** each outside the budget formula and other unrelated byte drift. Committed budget 58,519 vs 59,165; raw JSON size 187,026 vs 189,796. The source-loaded main tree advertised no experimental continuation field; the isolated experiment's field was exposed **even with the server gate disabled**.
+
+**Qualification:** This is **`D2 SCOPED AUDIT PASS (worker-reported)`**, **not `D2 SHIPPING VERIFIED`**. The handler registry/services were mocked, and neither packaged public-release server nor real paired-client authenticated tool enumeration was tested. Actual shipping release acceptance therefore **requires a built/packaged artifact with supported, genuinely authorized paired-client enumeration (or an equivalently faithful production-auth integration harness), plus a reproducible schema-budget gate**. Manager will not waive that requirement based solely on mocked registry enumeration.
+
+If experimental continuation is later approved for integration, **strategy B** (explicit shipping-safe agent MCP projections that omit operator-only `continuation` in the relevant create/update/success schemas while preserving internal authority) is a recommended approach, not an approved source change. Keep experimental code isolated for now, or public shipping must exclude it entirely.
+
