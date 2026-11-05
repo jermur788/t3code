@@ -1,7 +1,7 @@
 # Manager integration decision brief — after D4 K1/K2 local qualification
 
 **As of:** 2026-11-05 21:43Z D4 worker handoff and subsequent browser GitHub source/ref checks.  
-**Authority:** **PROPOSED OPTIONS ONLY; NO INTEGRATION/RE-LAND/MAIN MERGE APPROVED**. User accepted D4 safety behavior A+B, not an upstream rebase or public shipping decision.  
+**Authority:** **OPTION 1 (reversible isolated local upstream-first trial) AUTHORIZED by user's explicit 'auth' on 2026-11-05 22:14Z.** Scope is governed by [upstream trial spec](upstream-catchup-isolated-trial-governing-spec-20261105.md) and [complete T3 Code packet](task-upstream-catchup-isolated-trial-20261105.md), status **PREPARED / NOT DISPATCHED**. Options 2/3 remain unselected; **no fork-main merge, continuation/D4 re-land, Git push/PR, public release or production approved**.  
 **Evidence:** [D4 full-root K1/K2 manager reconciliation](manager-d4-full-root-k1-k2-verification-reconciliation-20261105.md), [Stage 2 upstream experiment preview](manager-stage2-three-lane-return-reconciliation-20261105.md), [Current State](../../01_CURRENT_STATE.md).
 
 ## Established checkpoints and remaining risk
@@ -13,13 +13,13 @@
 
 ## Options for owner decision
 
-**1. Upstream-first isolated trial (recommended).** Authorize a **bounded, isolated, reversible** new worktree derived from currently integrated fork main to apply the latest upstream delta, preserving fork Runtime extensions and P2 Evidence V0 semantics. One technical writer + different-provider review, tests/visual verification required for touched surfaces. **No push, no main merge, no public release, and no continuation re-land in this first task.** Stop for material architecture/security/rebase conflict; preserve all uncommitted work. After acceptance, separately decide whether to re-land the isolated continuation/D4 implementation as fresh changes onto this updated safe base.
+**1. Upstream-first isolated trial (AUTHORIZED, not yet dispatched).** One **bounded, isolated, reversible** new worktree derived from currently integrated fork main to apply the latest upstream delta, preserving fork Runtime extensions and P2 Evidence V0 semantics. One technical writer + different-provider review, tests/visual verification required for touched surfaces. **No push, no main merge, no public release, and no continuation re-land in this first task.** Stop for material architecture/security/rebase conflict; preserve all uncommitted work. After acceptance, separately decide whether to re-land the isolated continuation/D4 implementation as fresh changes onto this updated safe base.
 
 **2. Re-land continuation/D4 before upstream catch-up.** Authorize a separate bounded fresh application of the experimental changes onto the existing integrated fork-main base. This may temporarily lower short-term merge complexity but creates additional rebase exposure, because upstream is now 91 commits forward and includes orchestration and provider-start changes. D2 must be split/omitted from shipping MCP schemas before any release and K1/K2 rerun on the new base. **Not recommended as default**.
 
 **3. Defer integration.** Keep fork main unchanged and D4 evidence isolated; later reconsider after upstream settles or a higher-priority project task needs the Runtime feature. Safest immediate option, with no automated continuation available on main.
 
-**These are scope/sequence authorizations, not permission to merge to main or activate continuation.** Current task and private evidence remain closed.
+**Only option 1 is now an accepted scope authorization**, not permission to merge to main, push, activate continuation or publish evidence. The [governing spec](upstream-catchup-isolated-trial-governing-spec-20261105.md) controls execution. Private D4/PR #21 evidence remains untouched.
 
 ## If option 1 is adopted — future bounded T3 Code packet requirements
 
@@ -31,4 +31,4 @@ Before local technical writing, Overall Manager must issue/update a governing up
 
 On an accepted, verified integration base, reintroduce the **minimum** continuation plus D4 A+B changes as fresh bounded commits in an isolated writer-owned branch, never by merging the old diverged experiment. Retain default-off, a valid private transactional run guard, prepared-run release behavior and D2 public-shipping agent-schema exclusion. Re-run **real-root K1/K2**, K3 recovery qualification as required by release target, MCP paired-client/packaged release schema budget, provider-neutral tests and independent review. A separate explicit decision is required before any fork-main merge, Git push/PR, production enablement or public release.
 
-**No work dispatched by this document.**
+**2026-11-05 22:14Z transition:** User authorized option 1; the dedicated [trial implementation packet](task-upstream-catchup-isolated-trial-20261105.md) is PREPARED / NOT DISPATCHED. No local code work or main merge performed by this authorization. Future continuation re-land, public push/PR and fork-main merge still require separate decisions.
