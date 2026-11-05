@@ -40,6 +40,8 @@ Historical chats are supporting evidence; do not treat them as authoritative if 
 
 ## NEXT — launch only bounded local Stage 2 verification after browser source review
 
+**One complete paste-ready local session starter:** [Stage 2 three-lane DeepSeek handoff](docs/orchestration-v2/handoff-stage2-browser-first-three-lanes-20261105.md), fully bounded to read-only local verification, **PREPARED / NOT DISPATCHED**.
+
 1. **Already completed in browser:** [manager Stage 2 assessment](docs/orchestration-v2/manager-stage2-browser-first-assessment-20261105.md), [D4 proposed transaction contract](docs/orchestration-v2/d4-transactional-revocation-proposed-contract-20261105.md), [D2 shipping tool-schema audit plan](docs/orchestration-v2/d2-shipping-exclusion-audit-plan-20261105.md), GitHub source/branch/upstream and existing release-gate checks. Do not needlessly delegate/repeat these tasks.
 2. **D4 read-only local feasibility:** [complete packet](docs/orchestration-v2/task-stage2-d4-atomicity-feasibility-20261105.md) — same-database writer serialization, EventSink `run.created` commit path, all retry/restart/run paths and exact guard/test plan. **PREPARED / NOT DISPATCHED**.
 3. **D2 local built-MCP audit:** [complete packet](docs/orchestration-v2/task-stage2-d2-built-mcp-shipping-audit-20261105.md) — actual local stub server's `tools/list` and byte comparison on merged main vs isolated experiment; **no published artifact**. **PREPARED / NOT DISPATCHED**.
