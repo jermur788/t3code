@@ -1,6 +1,6 @@
 # TASK — authorized isolated upstream catch-up trial (one writer, no fork-main merge)
 
-**Status:** **AUTHORIZED / TASK PREPARED / NOT DISPATCHED / NOT IMPLEMENTED**. User's 2026-11-05 22:14Z **"auth"** approves only option 1 from [integration options](manager-post-d4-integration-options-20261105.md).  
+**Status:** **AUTHORIZED / TASK PREPARED / NOT DISPATCHED / NOT IMPLEMENTED**. **Important 2026-11-06 override:** the user requested unattended gated continuation; [overnight U→R→H handoff](handoff-overnight-autonomous-orchestrator-20261106.md) and [binding amendment](overnight-conditional-autonomy-amendment-20261106.md) supersede this original U-only packet's instruction to stop after trial **only if G-U and subsequent stage gates pass**. No fork-main merge/push/production. User's 2026-11-05 22:14Z **"auth"** approves only option 1 from [integration options](manager-post-d4-integration-options-20261105.md).  
 **Governing spec:** [upstream trial contract](upstream-catchup-isolated-trial-governing-spec-20261105.md), [Current State](../../01_CURRENT_STATE.md), [Coordination/Handoff Protocol](../../02_COORDINATION_HANDOFF_PROTOCOL.md), [D4 K1/K2 qualification](manager-d4-full-root-k1-k2-verification-reconciliation-20261105.md).  
 **Goal:** isolated local candidate incorporating latest upstream without losing fork Project Runtime, Evidence V0 or client modes; reproduce tests and independently review. **NOT a merge into `main`, no continuation or D4 re-land, no Git push/PR/production.**
 
@@ -29,3 +29,7 @@
 ## Acceptance / task owner
 
 **One writer on isolated worktree only.** The user approved the trial; exact starting head selection, checkout owner, tests, standard conflict repairs and independent review are routine inside this authorization. DeepSeek supervises but performs no shell/source execution. Review must use a different provider/model. The task ends with a reproducible local upstream candidate plus tests/review or a precise classified blocker. **Original PR #21 evidence must remain PRIVATE; old experimental D4 code is preserved but never imported.** Browser manager has no verified automatic T3 Code launch bridge: task is **PREPARED / NOT DISPATCHED** until local session receives this packet.
+
+## 2026-11-06 overnight conditional-authority amendment (latest user intent)
+
+The user separately authorized conditional continuation **U → R → H**, only on each independently verified pass and only in new isolated local branches, in [the binding amendment](overnight-conditional-autonomy-amendment-20261106.md) with [complete T3 Code paste-ready handoff](handoff-overnight-autonomous-orchestrator-20261106.md). Any older clause in this document saying "stop after U" or "separate permission for ALL isolated re-land" is superseded **only for the gated local-only R/H prototypes**, not for fork-main integration, Git push/public PR, paid-provider work, release, production, destructive Git or new architecture. G-U failure always stops next-stage progression. No local T3 Code dispatch has been started by browser.
