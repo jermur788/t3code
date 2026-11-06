@@ -1,5 +1,7 @@
 # DeepSeek handoff — Stage R cross-provider independent-review and routing-authority gate
 
+**LATEST OWNER CORRECTION, 2026-11-06 10:24:** The user confirmed they had approved Stage R Opus. Disregard prior unauthorized-Opus findings below; record the prior fallback as **OWNER-APPROVED**. Still require cross-provider independent review and accurate dispatch counting before G-R final pass. This does not authorize new unrestricted Opus use. See [owner clarification](stage-r-opus-owner-approval-clarification-20261106.md).
+
 **State:** **`PREPARED / NOT DISPATCHED`**. R local IMPLEMENTED/STATIC/FOCUSED RUNTIME PASS reported; `G-R FINAL PASS` **NOT ACCEPTED**, H **NOT STARTED**.  
 **Purpose:** close the current overnight review-authority discrepancy and reconcile actual dispatch budget WITHOUT redoing implementation or restarting U.  
 **Governing:** [Overnight conditional U→R→H amendment](overnight-conditional-autonomy-amendment-20261106.md) (particularly §4, §6 and §6.1), [accepted D4 A+B](d4-accepted-revocation-contract-20261105.md), [Current State](../../01_CURRENT_STATE.md), [Stage R manager reconciliation](manager-stage-r-return-reconciliation-20261106.md), [Coordination/Handoff Protocol](../../02_COORDINATION_HANDOFF_PROTOCOL.md).
