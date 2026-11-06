@@ -30,6 +30,12 @@
 >
 > **Host limit:** This handoff does not create an unattended scheduler or guarantee the T3 process remains alive. Continue only through genuinely supported local T3 Code dispatch/continuation while active. If session exits, save a precise restart-ready handoff; do not claim future autonomous resume.
 
+## 2026-11-06 00:27 upstream U return — read this before executing the old start-U block
+
+**U was already run and returned. DO NOT restart it.** [Manager reconciliation](manager-upstream-trial-return-reconciliation-20261106.md) accepted the U isolated trial's technical evidence (complete 367 affected test files in 29 batches; monolithic wrapper 900s TIMEOUT, NOT green; bounded runtime/web smoke, independent review PASS). Frozen source was the previous selected upstream tip; browser observes 22 later upstream commits, which must NOT be automatically chased under the source-freeze rule.
+
+**`G-U FINAL PROMOTION HOLD`:** the user explicitly requires a durable **per-routing-decision** log. The U handoff reports a private ledger path and 3 writer + 2 reviewer dispatches, but does NOT prove each decision was logged; the browser manager cannot read the local file. **Before any new R technical worker dispatch, first execute [this coordinator-only routing audit and gate handoff](handoff-upstream-to-r-routing-gate-20261106.md).** Inspect local Runtime/ledger, reconcile missing historical decisions truthfully, verify durable write, then append `G-U FINAL PASS` only if supported. If ledger unavailable, STOP. This later instruction **supersedes** the old paragraph that assumes U has not yet started. H remains gated on real R result. No source push/merge/release.
+
 ## Manager note
 
 The extra R/H stages are **not** implied by the earlier upstream-only authority; they rely on the **new explicit overnight instruction** and the detailed gating amendment. Each stage stays local-only. This packet itself does **not** start a T3 Code worker.
