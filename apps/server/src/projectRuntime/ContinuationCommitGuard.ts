@@ -138,3 +138,28 @@ export const reconcilePreparation = Effect.fn("ContinuationCommitGuard.reconcile
     WHERE thread_id = ${threadId} AND request_key GLOB 'cont:*'
       AND status IN ('pending', 'launched', 'reconcile_required')`;
 });
+
+// Retained start history cannot certify cancellation of a recovered queued run.
+// Keep its identity and history, and fence subsequent promotion even after a regrant.
+export const queuedStartReconciliationGuard = (
+  threadId: string,
+  runId: string,
+): CommandCommitGuard => ({
+  check: Effect.fn("ContinuationCommitGuard.reconcileQueuedStart")(function* (sql) {
+    const rows = yield* sql`SELECT 1 FROM orchestration_v2_projection_runs
+      WHERE run_id = ${runId} AND thread_id = ${threadId} AND status = 'queued'`;
+    if (rows.length !== 1)
+      return yield* new EventSinkCommitDenied({
+        reason: "Queued run changed before reconciliation.",
+      });
+    yield* sql`UPDATE project_runtime_execution_attempts
+      SET status = 'reconcile_required', revision = revision + 1,
+        payload_json = json_set(payload_json, '$.status', 'reconcile_required', '$.revision', revision + 1,
+          '$.failure', 'Continuation authorization invalid; queued start blocked. Retained start history does not certify cancellation.')
+      WHERE thread_id = ${threadId} AND request_key GLOB 'cont:*'
+        AND 'message:runtime-execution:' || attempt_id = (
+          SELECT json_extract(payload_json, '$.userMessageId')
+          FROM orchestration_v2_projection_runs WHERE run_id = ${runId})
+        AND status IN ('pending', 'launched')`;
+  }),
+});

@@ -48,6 +48,7 @@ it.effect("only request_secret asks Claude Code to load it up front", () =>
   }).pipe(Effect.provide(layerAdvertisedTools)),
 );
 
+// Matched U plus upstream baseline: 7bf4d2c21bdbd24351d2210808b07e21612b2183.
 // CI rejects a PR that raises any value above main's agentContextBudget.json, so growth
 // needs the agent-context-increase label. Lower the values when the text shrinks.
 it.effect("agent context matches the committed budget", () =>

@@ -3,6 +3,7 @@ import {
   PrivateContinuationAuthorization,
   launchGuard,
   preparationGuard,
+  queuedStartReconciliationGuard,
   cancellationGuard,
   reconcilePreparation,
 } from "../projectRuntime/ContinuationCommitGuard.ts";
@@ -139,7 +140,12 @@ import {
   isBufferedProviderNotification,
   isUndeliveredMailboxSteer,
 } from "./NotificationMailbox.ts";
-import { EventSinkCommitDenied, isCommitDenied, EventSinkV2 } from "./EventSink.ts";
+import {
+  type CommandCommitGuard,
+  EventSinkCommitDenied,
+  isCommitDenied,
+  EventSinkV2,
+} from "./EventSink.ts";
 import {
   decideGuestMessageSend,
   guestShareAfterCancelledSend,
@@ -1446,7 +1452,10 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
     Effect.fnUntraced(function* (
       events: ReadonlyArray<Omit<OrchestrationV2DomainEvent, "id">>,
       effects: ReadonlyArray<PendingOrchestrationEffectV2> = [],
-      options: { readonly updateDelegatedCompletionOnly?: boolean } = {},
+      options: {
+        readonly updateDelegatedCompletionOnly?: boolean;
+        readonly commitGuard?: CommandCommitGuard;
+      } = {},
     ) {
       const withIds = yield* Effect.forEach(events, (event) => makeSystemEvent(event));
       yield* eventSink.writeWithEffects({ events: withIds, effects, ...options });
@@ -2500,6 +2509,26 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
             request: { type: "provider-turn.start", runId: queuedRun.id },
           },
         ],
+        { commitGuard: preparationGuard(threadId, queuedRun.id, continuationEnabled) },
+      ).pipe(
+        Effect.catchTags({
+          EventSinkCommitDenied: Effect.fn("Orchestrator.holdRevokedQueuedStart")(function* () {
+            yield* writeSystemEvents(
+              [
+                {
+                  type: "run.updated",
+                  threadId,
+                  runId: queuedRun.id,
+                  providerInstanceId: queuedRun.providerInstanceId,
+                  occurredAt: now,
+                  payload: { ...storedQueuedRun, queueHeld: true },
+                },
+              ],
+              [],
+              { commitGuard: queuedStartReconciliationGuard(threadId, queuedRun.id) },
+            ).pipe(Effect.catchTags({ EventSinkCommitDenied: () => Effect.void }));
+          }),
+        }),
       );
     },
     (effect, threadId, options?) =>

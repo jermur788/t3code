@@ -330,6 +330,104 @@ it.effect("paces scheduled compaction while preserving retention state and fixed
   }).pipe(Effect.scoped, Effect.provide(layerTest)),
 );
 
+it.effect.each([true, false])(
+  "guarded command denial rolls back its receipt when caught in provider batch: %s",
+  (caught) =>
+    Effect.gen(function* () {
+      const sink = yield* EventSink.EventSinkV2;
+      const receipts = yield* CommandReceiptStore.CommandReceiptStoreV2;
+      const now = yield* DateTime.now;
+      const thread = makeThread(ThreadId.make("guarded-batch"), now);
+      const commandId = CommandId.make("denied-in-batch");
+      const denied = {
+        commandId,
+        threadId: thread.id,
+        commandType: "prepared-run.release",
+        acceptedAt: now,
+        events: [],
+        effects: [],
+        commitGuard: {
+          check: () => Effect.fail(new EventSink.EventSinkCommitDenied({ reason: "test denial" })),
+        },
+      };
+      const before = yield* sink.latestSequence();
+      const outcome = yield* sink
+        .withProviderBatch(
+          Effect.gen(function* () {
+            yield* sink.write({ events: [threadCreatedEvent({ id: "sentinel", thread, now })] });
+            const commit = sink.commitCommand(denied);
+            yield* caught
+              ? commit.pipe(Effect.catchTags({ EventSinkCommitDenied: () => Effect.void }))
+              : commit;
+          }),
+        )
+        .pipe(Effect.exit);
+      assert.equal(Exit.isSuccess(outcome), caught);
+      const receipt = yield* receipts.getByCommandId(commandId);
+      process.stdout.write(
+        `S1-red caught=${caught} receipt=${JSON.stringify(Option.getOrNull(receipt))}\n`,
+      );
+      assert.isTrue(
+        Option.isNone(receipt),
+        "denied command must not leave an accepted zero-sequence receipt",
+      );
+      assert.equal(yield* sink.latestSequence(), caught ? before + 1 : before);
+      if (caught) {
+        const published = yield* sink
+          .stream({ afterSequence: before })
+          .pipe(Stream.take(1), Stream.runCollect);
+        assert.equal(published[0]?.event.id, EventId.make("sentinel"));
+      }
+      const reused = yield* sink.commitCommand({
+        ...denied,
+        events: [threadCreatedEvent({ id: "reused", thread, now })],
+        commitGuard: { check: () => Effect.void },
+      });
+      assert.isTrue(reused.committed, "denied command ID remains reusable outside the batch");
+    }).pipe(Effect.scoped, Effect.provide(layerTest)),
+);
+
+it.effect("guarded writes deny before mutation inside a provider batch", () =>
+  Effect.gen(function* () {
+    const sink = yield* EventSink.EventSinkV2;
+    const now = yield* DateTime.now;
+    const thread = makeThread(ThreadId.make("guarded-write-batch"), now);
+    let checks = 0;
+    const before = yield* sink.latestSequence();
+    yield* sink.withProviderBatch(
+      Effect.gen(function* () {
+        yield* sink.write({ events: [threadCreatedEvent({ id: "write-sentinel", thread, now })] });
+        const denial = yield* sink
+          .writeWithEffects({
+            events: [threadCreatedEvent({ id: "forbidden-write", thread, now })],
+            effects: [],
+            commitGuard: {
+              check: () =>
+                Effect.sync(() => {
+                  checks++;
+                }),
+            },
+          })
+          .pipe(Effect.flip);
+        assert.isTrue(EventSink.isCommitDenied(denial));
+      }),
+    );
+    assert.equal(checks, 0);
+    assert.equal(yield* sink.latestSequence(), before + 1);
+    const denial = yield* sink
+      .writeWithEffects({
+        events: [threadCreatedEvent({ id: "denied-write", thread, now })],
+        effects: [],
+        commitGuard: {
+          check: () => Effect.fail(new EventSink.EventSinkCommitDenied({ reason: "write denial" })),
+        },
+      })
+      .pipe(Effect.flip);
+    assert.isTrue(EventSink.isCommitDenied(denial));
+    assert.equal(yield* sink.latestSequence(), before + 1);
+  }).pipe(Effect.scoped, Effect.provide(layerTest)),
+);
+
 it.effect(
   "commits an ordered provider batch atomically and publishes only after the outer commit",
   () =>

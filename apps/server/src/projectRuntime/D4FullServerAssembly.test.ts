@@ -6,6 +6,10 @@ import * as NodeSqlite from "node:sqlite";
 import { ProviderRegistry } from "../provider/ProviderRegistry.ts";
 import { RuntimeRoutingProviderView } from "../runtimeRouting/RuntimeRoutingProviderView.ts";
 import {
+  CommandId,
+  ProviderDriverKind,
+  ProviderInstanceId,
+  RunId,
   ProjectId,
   ProjectRuntimeTaskId,
   ThreadId,
@@ -26,6 +30,8 @@ import * as Effect from "effect/Effect";
 import * as Queue from "effect/Queue";
 import * as Deferred from "effect/Deferred";
 import { OrchestrationEffectWorkerV2 } from "../orchestration-v2/EffectWorker.ts";
+import { ProviderRuntimeRecoveryService } from "../orchestration-v2/ProviderRuntimeRecoveryService.ts";
+import { ServerSettingsService } from "../serverSettings.ts";
 import { ThreadManagementService } from "../orchestration-v2/ThreadManagementService.ts";
 import * as Layer from "effect/Layer";
 import * as ServerConfig from "../config.ts";
@@ -386,6 +392,8 @@ const assemble = Effect.fn("D4FullServerAssembly.assemble")(function* (
   return {
     execution,
     runtime,
+    recovery: Context.get(context, ProviderRuntimeRecoveryService),
+    settings: Context.get(context, ServerSettingsService),
     sql,
     revoke,
     counts,
@@ -1013,6 +1021,156 @@ it.effect(
         assert.isFalse(runPayload.includes("continuationAuthorization"));
         assert.equal(Number(projectionHits[0]!.n), 0);
         assert.isAbove(listed.attempts.length, 0);
+        assert.equal(a.adapterCalls(), 0);
+      }),
+    ),
+);
+
+it.effect.each(["queued-run.start", "queue.resume", "normal"] as const)(
+  "production root: revoked recovered continuation cannot enqueue a fresh start through %s",
+  (entry) =>
+    provide(
+      Effect.gen(function* () {
+        const a = yield* assemble(`queue-replay-${entry}`);
+        const worker = yield* settleSourceWorker(a);
+        yield* a.execution.reconcileAttempt(projectId, worker.attemptId);
+        yield* Queue.take(a.released);
+        const review = (yield* continuationRows(a))[0]!;
+        const run = (yield* a.sql<{
+          run_id: string;
+          status: string;
+        }>`SELECT run_id, status FROM orchestration_v2_projection_runs WHERE thread_id = ${review.thread_id}`)[0]!;
+        assert.equal(run.status, "starting");
+        const oldEffects = yield* a.effects;
+        assert.isTrue(oldEffects.every((effect) => effect.attempt_count === 0));
+        yield* a.recovery.reconcile("startup");
+        const held = (yield* a.sql<{
+          status: string;
+          held: number;
+        }>`SELECT status, json_extract(payload_json, '$.queueHeld') AS held FROM orchestration_v2_projection_runs WHERE run_id = ${run.run_id}`)[0]!;
+        assert.deepEqual(held, { status: "queued", held: 1 });
+        assert.isTrue((yield* a.effects).every((effect) => effect.status === "cancelled"));
+        const settings = yield* a.settings.getSettings;
+        const instanceId = ProviderInstanceId.make("claudeAgent");
+        const setEnabled = (enabled: boolean) =>
+          a.settings.updateSettings({
+            providerInstances: {
+              [instanceId]: {
+                ...settings.providerInstances[instanceId],
+                driver: ProviderDriverKind.make("claudeAgent"),
+                enabled,
+              },
+            },
+          });
+        yield* setEnabled(false);
+        const command =
+          entry === "queue.resume"
+            ? {
+                type: "queue.resume" as const,
+                threadId: ThreadId.make(review.thread_id),
+                commandId: CommandId.make(`queue-before-revoke:${entry}`),
+              }
+            : {
+                type: "queued-run.start" as const,
+                threadId: ThreadId.make(review.thread_id),
+                runId: RunId.make(run.run_id),
+                commandId: CommandId.make(`queue-before-revoke:${entry}`),
+              };
+        if (entry !== "normal") yield* a.dispatch(command);
+        assert.equal(
+          (yield* a.counts)[1],
+          oldEffects.length,
+          "disabled provider must hold promotion before revocation",
+        );
+        const historical = yield* a.receipts;
+        yield* a.revoke;
+        yield* setEnabled(true);
+        const before = yield* a.counts;
+        const result = yield* a.dispatch(command);
+        const after = yield* a.counts;
+        process.stdout.write(
+          `queue-replay-red entry=${entry} startsBefore=${before[1]} startsAfter=${after[1]} replayed=${result.replayed === true}\n`,
+        );
+        assert.equal(
+          after[1],
+          before[1],
+          "revoked recovered continuation must not enqueue a fresh provider-turn.start before the worker fence",
+        );
+        assert.equal(after[0], before[0]);
+        if (entry !== "normal") {
+          assert.deepEqual(yield* a.receipts, historical);
+          assert.equal((yield* continuationRows(a))[0]?.status, "launched");
+          // Disabled-provider acceptance reholds the queue. Replay preserves that hold;
+          // a subsequent operator unhold reaches the common transactional promotion fence.
+          yield* a.dispatch({
+            ...command,
+            commandId: CommandId.make(`unhold-after-replay:${entry}`),
+          });
+          assert.equal((yield* a.counts)[1], before[1]);
+        }
+        const reconciled = (yield* continuationRows(a))[0]!;
+        assert.equal(reconciled.status, "reconcile_required");
+        assert.equal(
+          reconciled.failure,
+          "Continuation authorization invalid; queued start blocked. Retained start history does not certify cancellation.",
+        );
+        const fenced = (yield* a.sql<{
+          status: string;
+          held: number;
+        }>`SELECT status, json_extract(payload_json, '$.queueHeld') AS held FROM orchestration_v2_projection_runs WHERE run_id = ${run.run_id}`)[0]!;
+        assert.deepEqual(fenced, { status: "queued", held: 1 });
+        assert.isTrue((yield* a.effects).every((effect) => effect.status === "cancelled"));
+        yield* a.dispatch(command);
+        yield* a.dispatch({ ...command, commandId: CommandId.make(`repeat-unhold:${entry}`) });
+        assert.deepEqual((yield* continuationRows(a))[0], reconciled);
+        yield* a.drainWorker;
+        assert.equal((yield* a.counts)[1], before[1]);
+        assert.equal(a.adapterCalls(), 0);
+      }),
+    ),
+);
+
+it.effect.each(["continuation", "ordinary-runtime"] as const)(
+  "production root: authorized recovered %s queue promotion remains available",
+  (kind) =>
+    provide(
+      Effect.gen(function* () {
+        const a = yield* assemble(`queue-control-${kind}`);
+        let threadId: ThreadId;
+        if (kind === "continuation") {
+          const worker = yield* settleSourceWorker(a);
+          yield* a.execution.reconcileAttempt(projectId, worker.attemptId);
+          yield* Queue.take(a.released);
+          threadId = ThreadId.make((yield* continuationRows(a))[0]!.thread_id);
+        } else {
+          const attempt = yield* a.execution.execute(projectId, {
+            taskId: sourceId,
+            expectedTaskRevision: 1,
+            clientRequestId: "queue-ordinary-control",
+          });
+          yield* Queue.take(a.released);
+          threadId = attempt.threadId!;
+        }
+        yield* a.recovery.reconcile("startup");
+        const run = (yield* a.sql<{
+          run_id: string;
+          status: string;
+          held: number;
+        }>`SELECT run_id, status, json_extract(payload_json, '$.queueHeld') AS held FROM orchestration_v2_projection_runs WHERE thread_id = ${threadId}`)[0]!;
+        assert.equal(run.status, "queued");
+        assert.equal(run.held, 1);
+        const before = yield* a.counts;
+        const command = {
+          type: "queued-run.start" as const,
+          threadId,
+          runId: RunId.make(run.run_id),
+          commandId: CommandId.make(`queue-control:${kind}`),
+        };
+        yield* a.dispatch(command);
+        assert.equal((yield* a.counts)[0], before[0]);
+        assert.equal((yield* a.counts)[1], before[1] + 1);
+        yield* a.dispatch(command);
+        assert.equal((yield* a.counts)[1], before[1] + 1);
         assert.equal(a.adapterCalls(), 0);
       }),
     ),

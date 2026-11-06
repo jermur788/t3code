@@ -133,6 +133,7 @@ export interface EventSinkV2Shape {
       "driver" | "providerInstanceId" | "appThreadId" | "nativeThreadRef"
     >;
     readonly guardPendingUserInputCancellations?: boolean;
+    readonly commitGuard?: CommandCommitGuard;
     readonly commandId?: CommandId;
     readonly events: ReadonlyArray<OrchestrationV2DomainEvent>;
     readonly effects: ReadonlyArray<EffectOutbox.PendingOrchestrationEffectV2>;
@@ -463,9 +464,15 @@ const layerBase: Layer.Layer<
       });
 
       const batch = yield* CurrentProviderBatch;
+      if (batch !== undefined && input.commitGuard !== undefined) {
+        return yield* new EventSinkCommitDenied({
+          reason: "Guarded writes are not supported in a provider batch.",
+        });
+      }
       if (batch !== undefined) batch.eventCount += input.events.length;
       const { committed } = yield* commitThenPublish(
         Effect.gen(function* () {
+          if (input.commitGuard !== undefined) yield* input.commitGuard.check(sql);
           // Check ownership in the same transaction that claims the native session.
           const imported = input.unlessNativeThreadOwned;
           if (imported?.nativeThreadRef != null) {
@@ -683,6 +690,11 @@ const layerBase: Layer.Layer<
     const commitCommandEffect = Effect.fn("orchestrationV2.EventSink.commitCommand")(function* (
       input: Parameters<EventSinkV2Shape["commitCommand"]>[0],
     ) {
+      if (input.commitGuard !== undefined && (yield* CurrentProviderBatch) !== undefined) {
+        return yield* new EventSinkCommitDenied({
+          reason: "Guarded commands are not supported in a provider batch.",
+        });
+      }
       const result = yield* commitThenPublish(
         Effect.gen(function* () {
           const reserved = yield* commandReceipts.insertIfAbsent({
@@ -1029,13 +1041,14 @@ const layerBase: Layer.Layer<
         ),
       writeWithEffects: (input) =>
         writeEffect(input).pipe(
-          Effect.mapError(
-            (cause) =>
-              new EventSinkWriteError({
-                eventCount: input.events.length,
-                ...(input.commandId === undefined ? {} : { commandId: input.commandId }),
-                cause,
-              }),
+          Effect.mapError((cause) =>
+            isCommitDenied(cause)
+              ? cause
+              : new EventSinkWriteError({
+                  eventCount: input.events.length,
+                  ...(input.commandId === undefined ? {} : { commandId: input.commandId }),
+                  cause,
+                }),
           ),
         ),
       writeIfRunCurrent: (input) =>
