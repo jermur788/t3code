@@ -1,7 +1,7 @@
 # Governing spec — isolated upstream T3 catch-up trial after D4 A+B
 
 **Authority:** Explicit user reply **"auth"**, 2026-11-05 22:14 UTC, accepting [option 1: upstream-first bounded isolated trial](manager-post-d4-integration-options-20261105.md).  
-**Status:** **AUTHORIZED FOR ONE REVERSIBLE ISOLATED LOCAL TRIAL / NOT DISPATCHED / NOT IMPLEMENTED / NOT INTEGRATED**.  
+**Status:** **AUTHORIZED U TRIAL / NOT DISPATCHED / NOT IMPLEMENTED / NOT INTEGRATED**. **OVERNIGHT AMENDMENT ACTIVE:** [2026-11-06 conditional U→R→H delegation](overnight-conditional-autonomy-amendment-20261106.md) adds limited downstream **local-only** stages after objective gates, superseding this document's earlier unconditional stop-after-U instruction. No main merge, push, release or production authority.  
 **Classification:** user-accepted governing scope and acceptance criteria, NOT authority to push, PR, merge fork `main`, re-land continuation, release or deploy.  
 **Companions:** [Current State](../../01_CURRENT_STATE.md), [Coordination/Handoff Protocol](../../02_COORDINATION_HANDOFF_PROTOCOL.md), [D4 K1/K2 review](manager-d4-full-root-k1-k2-verification-reconciliation-20261105.md), [post-D4 integration options](manager-post-d4-integration-options-20261105.md).
 
@@ -60,3 +60,7 @@ This task **does not include** importing/rebasing the old divergent continuation
 **Handoff:** update Runtime task and complete durable record when available, else restricted append-only local ledger, then return **VERDICT / BASE & OWNERSHIP / EXACT UPSTREAM TIP / CHANGED PATHS & CONFLICTS / LOCAL TRIAL COMMITS/FILES / TEST COMMANDS & RESULTS / RUNTIME PERSISTENCE & EVIDENCE CHECKS / INDEPENDENT REVIEW/REPAIRS / MODEL/QUOTAS / RISKS/BLOCKERS / INTEGRATION STATE / NEXT DECISION**. Continue routine repair/review within scope; **do not proceed automatically into continuation re-land or fork main merge**.
 
 **Initial:** `AUTHORIZED / SPEC ACCEPTED / TASK TO BE DISPATCHED VIA LOCAL T3 CODE / NO VERIFIED AUTOMATIC BROWSER-TO-LOCAL WORKER BRIDGE`.
+
+## 2026-11-06 overnight conditional-authority amendment (latest user intent)
+
+The user separately authorized conditional continuation **U → R → H**, only on each independently verified pass and only in new isolated local branches, in [the binding amendment](overnight-conditional-autonomy-amendment-20261106.md) with [complete T3 Code paste-ready handoff](handoff-overnight-autonomous-orchestrator-20261106.md). Any older clause in this document saying "stop after U" or "separate permission for ALL isolated re-land" is superseded **only for the gated local-only R/H prototypes**, not for fork-main integration, Git push/public PR, paid-provider work, release, production, destructive Git or new architecture. G-U failure always stops next-stage progression. No local T3 Code dispatch has been started by browser.
