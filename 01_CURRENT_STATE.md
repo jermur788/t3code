@@ -1,6 +1,7 @@
 # T3 Fork — Current State and Roadmap
 
 **Updated:** 2026-11-06 after 11:47 final overnight U/R/H return: G-U and G-R FINAL PASS (worker-reported, independently reviewer-rerun in scope); H scoped REVIEW PASS; D2 packaged shipping and real-provider K3 unverified; no integration or production.
+**NEW MANAGER TRANSITION (2026-11-06):** [Complete T3 Fork successor-manager handoff](docs/orchestration-v2/overall-manager-transition-handoff-20261106.md) is the concise manager entrypoint after Current State and Coordination Protocol. It consolidates final U/R/H scopes, unchanged fork main, remote upstream drift, separate upstream PR cooperation, D2 packaged/K3 live-provider blockers, routing/ledger duties, private evidence, and approvals. Creating this handoff **did not launch workers, change source, merge, push or grant a new product authorization**.
 **Classification:** CURRENT PROJECT STATE — authoritative snapshot for manager continuation, not a code change.  
 **Repository:** [jermur788/t3code](https://github.com/jermur788/t3code)  
 **Maintained on:** `planning/resource-efficient-continuation-20261103` — **not fork main**.  
