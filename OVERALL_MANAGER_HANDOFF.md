@@ -1,6 +1,7 @@
 # Overall Manager — Authoritative Continuation Handoff
 
 **Updated:** 2026-11-06 after 11:47 U/R/H final handoff: U and R FINAL PASS, H isolated REVIEW PASS and scoped D2/K3 qualification; packaged D2, real-provider crash and production NOT VERIFIED.
+**NEW MANAGER TRANSITION (2026-11-06):** [Complete T3 Fork successor-manager handoff](docs/orchestration-v2/overall-manager-transition-handoff-20261106.md) is the concise manager entrypoint after Current State and Coordination Protocol. It consolidates final U/R/H scopes, unchanged fork main, remote upstream drift, separate upstream PR cooperation, D2 packaged/K3 live-provider blockers, routing/ledger duties, private evidence, and approvals. Creating this handoff **did not launch workers, change source, merge, push or grant a new product authorization**.
 **Classification:** MANAGER HANDOFF / CURRENT CONTINUATION ENTRYPOINT.  
 **Status:** Documentation published on the shared fork's **planning branch**, not fork main. No code merge, provider execution or production configuration change is effected by this file.
 
