@@ -481,6 +481,7 @@ export function layerWithRegistry<Error>(
         layerCheckpointServiceProvided,
         CommandPolicy.layer,
         layerContextHandoffServiceProvided,
+        layerDatabase,
         layerPersistence,
         layerProvidedRegistry,
         layerContinuationRequests,
@@ -520,6 +521,7 @@ export function layerWithRegistry<Error>(
   const layerEffectExecutorProvided = EffectWorker.layerExecutor.pipe(
     Layer.provide(
       Layer.mergeAll(
+        layerDatabase,
         layerRunFinalizationServiceProvided,
         layerCheckpointRollbackServiceProvided,
         layerProviderSessionManagerProvided,

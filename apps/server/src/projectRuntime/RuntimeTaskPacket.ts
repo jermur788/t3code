@@ -6,6 +6,13 @@ import {
 
 export const RUNTIME_TASK_PACKET_VERSION = 1 as const;
 
+/** A reference only. Delivery does not add scope or grant authorization. */
+export interface RuntimeTaskContinuationOrigin {
+  readonly sourceTaskId: string;
+  readonly sourceAttemptId: string;
+  readonly sourceHandoffId: string;
+}
+
 const section = (title: string, body: string | undefined): string[] =>
   body === undefined || body.trim().length === 0 ? [] : [`## ${title}`, "", body.trim(), ""];
 
@@ -32,6 +39,7 @@ function truncatePacket(text: string): string {
 export function buildRuntimeTaskPacket(
   task: ProjectRuntimeTask,
   handoff: ProjectRuntimeHandoff | null,
+  continuationOrigin?: RuntimeTaskContinuationOrigin,
 ): string {
   const lines: string[] = [
     `# Runtime task: ${task.title}`,
@@ -42,6 +50,18 @@ export function buildRuntimeTaskPacket(
     `Owner: ${task.owner}`,
     "",
   ];
+
+  if (continuationOrigin !== undefined) {
+    lines.push(
+      "## Reconciled continuation source (context, not authorization)",
+      "",
+      `Source task: ${continuationOrigin.sourceTaskId}`,
+      `Source attempt: ${continuationOrigin.sourceAttemptId}`,
+      `Source handoff: ${continuationOrigin.sourceHandoffId}`,
+      "Inspect the named handoff and exact work before issuing independent evidence.",
+      "",
+    );
+  }
 
   lines.push(...section("Objective", task.objective));
   lines.push(...section("Scope", task.scope));

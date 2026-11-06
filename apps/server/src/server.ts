@@ -116,6 +116,7 @@ import * as RepositoryIdentityResolver from "./project/RepositoryIdentityResolve
 import * as OrchestrationEvidenceService from "./projectRuntime/OrchestrationEvidenceService.ts";
 import * as ProjectRuntimeService from "./projectRuntime/ProjectRuntimeService.ts";
 import * as ProjectRuntimeSourceAccess from "./projectRuntime/ProjectRuntimeSourceAccess.ts";
+import { layerFromEnvironment as continuationGateLayer } from "./projectRuntime/RuntimeTaskContinuationGate.ts";
 import * as RuntimeTaskExecutionService from "./projectRuntime/RuntimeTaskExecutionService.ts";
 import * as RuntimeRoutingProviderView from "./runtimeRouting/RuntimeRoutingProviderView.ts";
 import * as RuntimeRoutingService from "./runtimeRouting/RuntimeRoutingService.ts";
@@ -569,7 +570,10 @@ const layerScheduledTaskWebhookOrigin = Layer.effect(
   }),
 );
 
+const layerContinuationGate = continuationGateLayer();
+
 const layerOrchestrationV2Runtime = RuntimeLayer.layerProduction.pipe(
+  Layer.provide(layerContinuationGate),
   Layer.provide(layerScheduledTaskWebhookOrigin),
   Layer.provide(ProviderUsageAnalytics.layer),
   Layer.provide(layerCheckpointStore),
@@ -777,9 +781,12 @@ const layerProjectRuntime = ProjectRuntimeSourceAccess.layer.pipe(
   Layer.provideMerge(
     RuntimeRoutingService.layer.pipe(Layer.provideMerge(RuntimeRoutingProviderView.layer)),
   ),
+  // The experimental continuation gate is server startup configuration and is
+  // off unless the operator sets T3CODE_EXPERIMENTAL_CONTINUATION=1.
+  Layer.provideMerge(layerContinuationGate),
 );
 const layerRuntimeTaskExecution = RuntimeTaskExecutionService.layer.pipe(
-  Layer.provide(layerProjectRuntime),
+  Layer.provideMerge(layerProjectRuntime),
 );
 const layerRuntimeExecutionReconcile = Layer.effectDiscard(
   Effect.gen(function* () {
@@ -862,7 +869,7 @@ const layerMakeRoutes = Layer.mergeAll(
   Layer.provide(ServerHttp.layerHttpCompression),
 );
 
-const layerMakeServer = Layer.unwrap(
+export const layerMakeServer = Layer.unwrap(
   Effect.gen(function* () {
     const config = yield* ServerConfig.ServerConfig;
     // Before anything opens the database: one server per T3 home.
@@ -1219,6 +1226,7 @@ const layerMakeServer = Layer.unwrap(
     );
 
     return layerServerApplication.pipe(
+      Layer.provideMerge(layerRuntimeTaskExecution),
       Layer.provide(CloudLink.layer.pipe(Layer.provideMerge(ConnectReachability.layer))),
       Layer.provideMerge(layerRuntimeServices),
       Layer.provideMerge(

@@ -63,7 +63,24 @@ export class EventSinkStreamError extends Schema.TaggedError<EventSinkStreamErro
   }
 }
 
-export const EventSinkV2Error = Schema.Union([EventSinkWriteError, EventSinkStreamError]);
+export class EventSinkCommitDenied extends Schema.TaggedError<EventSinkCommitDenied>()(
+  "EventSinkCommitDenied",
+  { reason: Schema.String },
+) {}
+
+export const isCommitDenied = Schema.is(EventSinkCommitDenied);
+
+export interface CommandCommitGuard {
+  readonly check: (
+    sql: SqlClient.SqlClient,
+  ) => Effect.Effect<void, EventSinkCommitDenied | import("effect/sql/SqlError").SqlError>;
+}
+
+export const EventSinkV2Error = Schema.Union([
+  EventSinkWriteError,
+  EventSinkStreamError,
+  EventSinkCommitDenied,
+]);
 export type EventSinkV2Error = typeof EventSinkV2Error.Type;
 
 export interface EventSinkV2Shape {
@@ -139,6 +156,7 @@ export interface EventSinkV2Shape {
     readonly commandId: CommandId;
     readonly threadId: ThreadId;
     readonly commandType: string;
+    readonly commitGuard?: CommandCommitGuard;
     readonly acceptedAt: DateTime.Utc;
     readonly events: ReadonlyArray<OrchestrationV2DomainEvent>;
     readonly effects: ReadonlyArray<EffectOutbox.PendingOrchestrationEffectV2>;
@@ -651,6 +669,8 @@ const layerBase: Layer.Layer<
             return { ...existing, committed: false as const, cancelledEffectIds: [] };
           }
 
+          if (input.commitGuard !== undefined) yield* input.commitGuard.check(sql);
+
           const runId = input.updateDelegatedCompletionOnlyRunId;
           const normalized = yield* normalizeEvents(
             runId === undefined
@@ -930,13 +950,14 @@ const layerBase: Layer.Layer<
         ),
       commitCommand: (input) =>
         commitCommandEffect(input).pipe(
-          Effect.mapError(
-            (cause) =>
-              new EventSinkWriteError({
-                commandId: input.commandId,
-                eventCount: input.events.length,
-                cause,
-              }),
+          Effect.mapError((cause) =>
+            isCommitDenied(cause)
+              ? cause
+              : new EventSinkWriteError({
+                  commandId: input.commandId,
+                  eventCount: input.events.length,
+                  cause,
+                }),
           ),
         ),
       commitRejectedCommand: (input) =>

@@ -1,3 +1,9 @@
+import * as SqlClient from "effect/sql/SqlClient";
+import {
+  preparationGuard,
+  reconcilePreparation,
+} from "../projectRuntime/ContinuationCommitGuard.ts";
+import { ContinuationGate } from "../projectRuntime/RuntimeTaskContinuationGate.ts";
 import { CommandId } from "@t3tools/contracts";
 import * as Cause from "effect/Cause";
 import * as Context from "effect/Context";
@@ -71,6 +77,7 @@ export class OrchestrationEffectExecutorV2 extends Context.Service<
 export const layerExecutor: Layer.Layer<
   OrchestrationEffectExecutorV2,
   never,
+  | SqlClient.SqlClient
   | ProviderSessionManager.ProviderSessionManagerV2
   | RunFinalizationService.RunFinalizationService
   | CheckpointRollbackService.CheckpointRollbackServiceV2
@@ -83,6 +90,10 @@ export const layerExecutor: Layer.Layer<
 > = Layer.effect(
   OrchestrationEffectExecutorV2,
   Effect.gen(function* () {
+    const sql = yield* SqlClient.SqlClient;
+    // Missing gate disables continuation authority; ordinary runs need no continuation grant.
+    const gate = yield* Effect.serviceOption(ContinuationGate);
+    const continuationEnabled = Option.isSome(gate) && gate.value.enabled;
     const runFinalization = yield* RunFinalizationService.RunFinalizationService;
     const resourceCleanup = yield* ResourceCleanupService.ResourceCleanupService;
     const checkpointRollback = yield* CheckpointRollbackService.CheckpointRollbackServiceV2;
@@ -138,10 +149,38 @@ export const layerExecutor: Layer.Layer<
                     }),
                 ),
               );
-          case "provider-turn.start":
-            return providerTurnStart
-              .start({ threadId: effect.threadId, runId: effect.request.runId, willRetry })
+          case "provider-turn.start": {
+            const request = effect.request;
+            return sql
+              .withTransaction(
+                preparationGuard(effect.threadId, request.runId, continuationEnabled).check(sql),
+              )
               .pipe(
+                Effect.as(true),
+                Effect.catchTags({
+                  EventSinkCommitDenied: Effect.fn("EffectWorker.reconcileRevokedStart")(
+                    function* () {
+                      // A claimed outbox start cannot use cancellationGuard's absence proof.
+                      yield* reconcilePreparation(sql, effect.threadId);
+                      yield* threads.dispatch({
+                        type: "thread.stop",
+                        threadId: effect.threadId,
+                        commandId: CommandId.make(`${effect.commandId}:revoked-start-stop`),
+                      });
+                      return false;
+                    },
+                  ),
+                }),
+                // B ends at this guard: revocation after it passes cannot fence the external call.
+                Effect.flatMap((authorized) =>
+                  authorized
+                    ? providerTurnStart.start({
+                        threadId: effect.threadId,
+                        runId: request.runId,
+                        willRetry,
+                      })
+                    : Effect.void,
+                ),
                 Effect.mapError(
                   (cause) =>
                     new OrchestrationEffectExecutionError({
@@ -151,6 +190,7 @@ export const layerExecutor: Layer.Layer<
                     }),
                 ),
               );
+          }
           case "provider-turn.interrupt": {
             const request = effect.request;
             return providerTurnControl

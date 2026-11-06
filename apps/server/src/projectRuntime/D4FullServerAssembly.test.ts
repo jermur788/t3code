@@ -1,3 +1,4 @@
+// @effect-diagnostics processEnvInEffect:off -- the production root reads the continuation gate from the real process environment.
 import { ChildProcess, ChildProcessSpawner } from "effect/process";
 import { vi } from "vite-plus/test";
 import { ProviderInstanceRegistry } from "../provider/ProviderInstanceRegistry.ts";
@@ -16,6 +17,7 @@ import * as Execution from "./RuntimeTaskExecutionService.ts";
 import { ContinuationGate, CONTINUATION_GATE_ENV } from "./RuntimeTaskContinuationGate.ts";
 import { assert, it } from "@effect/vitest";
 import * as NetService from "@t3tools/shared/Net";
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as Context from "effect/Context";
 import * as FileSystem from "effect/FileSystem";
@@ -381,7 +383,9 @@ const provide = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
         {
           noBrowser: true,
         },
-      ).pipe(Layer.provideMerge(Layer.merge(NodeServices.layer, NetService.layer))),
+      ).pipe(
+        Layer.provideMerge(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer, NetService.layer)),
+      ),
     ),
     Effect.scoped,
   );

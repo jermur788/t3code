@@ -1,14 +1,21 @@
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
+import { CommandId } from "@t3tools/contracts";
+import { OrchestratorDispatchError } from "../orchestration-v2/Orchestrator.ts";
+import { EventSinkCommitDenied } from "../orchestration-v2/EventSink.ts";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, it } from "@effect/vitest";
 import {
   DEFAULT_SERVER_SETTINGS,
   ProjectId,
   ProjectRuntimeTaskId,
+  ProjectRuntimeHandoffId,
   ProviderDriverKind,
+  type ServerSettings,
   ProviderInstanceId,
   type Project,
   type ProjectRuntimeTask,
+  type ProjectRuntimeHandoff,
+  type RuntimeExecutionAttempt,
   type RuntimeRouteResolution,
   type ServerProvider,
 } from "@t3tools/contracts";
@@ -18,6 +25,7 @@ import * as SqlClient from "effect/sql/SqlClient";
 
 import * as SqlitePersistence from "../persistence/Sqlite.ts";
 import * as ProjectRuntimeService from "./ProjectRuntimeService.ts";
+import * as ContinuationGate from "./RuntimeTaskContinuationGate.ts";
 import * as RuntimeTaskExecutionService from "./RuntimeTaskExecutionService.ts";
 import * as ThreadLaunchService from "../orchestration-v2/ThreadLaunchService.ts";
 import type { ThreadLaunchInput } from "../orchestration-v2/ThreadLaunchService.ts";
@@ -97,6 +105,33 @@ const resolvedRoute = (): RuntimeRouteResolution => ({
   revisions: { task: 1, projectRouting: 1, profile: null, assignment: null },
 });
 
+const syntheticReviewerId = ProviderInstanceId.make("synthetic-reviewer");
+const syntheticReviewerProvider: ServerProvider = {
+  ...provider,
+  instanceId: syntheticReviewerId,
+  driver: ProviderDriverKind.make("opencode"),
+  models: [
+    {
+      slug: "synthetic-review-model",
+      name: "Synthetic reviewer",
+      isCustom: false,
+      capabilities: null,
+    },
+  ],
+};
+
+// `opencode` driver instances default to disabled, so the synthetic reviewer
+// must be explicitly enabled or execute rejects the review as provider_disabled.
+const settings = {
+  ...DEFAULT_SERVER_SETTINGS,
+  providerInstances: {
+    [syntheticReviewerId]: {
+      driver: ProviderDriverKind.make("opencode"),
+      enabled: true,
+    },
+  },
+} satisfies ServerSettings;
+
 const inheritedRoute = (): RuntimeRouteResolution => ({
   projectId,
   taskId,
@@ -122,6 +157,9 @@ interface State {
   projectionError: Error | null;
   stopCalls: Array<{ readonly threadId: string }>;
   dispatchError: Error | null;
+  tasks?: Map<string, ProjectRuntimeTask>;
+  handoffs?: Map<string, ProjectRuntimeHandoff>;
+  routes?: Map<string, RuntimeRouteResolution>;
 }
 
 const makeState = (overrides: Partial<State> = {}): State => ({
@@ -149,24 +187,35 @@ const seedDatabase = Effect.gen(function* () {
 
 const makeLayer = (state: State) =>
   RuntimeTaskExecutionService.layer.pipe(
+    Layer.provideMerge(ContinuationGate.layer(true)),
     Layer.provideMerge(
       Layer.mock(ProjectRuntimeService.ProjectRuntimeService)({
         getStatus: () => Effect.succeed({ enabled: true, version: 1 as const, revision: 1 }),
-        readTask: () => Effect.succeed(task),
-        readHandoff: () => Effect.die("unexpected handoff read"),
+        readTask: (_projectId, requestedId) =>
+          Effect.succeed(state.tasks?.get(requestedId) ?? task),
+        readHandoff: (_projectId, requestedId) => {
+          const record = state.handoffs?.get(requestedId);
+          return record === undefined
+            ? Effect.die("unexpected handoff read")
+            : Effect.succeed(record);
+        },
       }),
     ),
     Layer.provideMerge(
       Layer.mock(RuntimeRoutingService.RuntimeRoutingService)({
-        resolveRoute: () => Effect.succeed(state.resolution),
+        resolveRoute: (input) =>
+          Effect.succeed(
+            (input.taskId === undefined ? undefined : state.routes?.get(input.taskId)) ??
+              state.resolution,
+          ),
       }),
     ),
     Layer.provideMerge(
       Layer.succeed(RuntimeRoutingProviderView, {
         read: Effect.succeed({
-          providers: [provider],
-          orchestrationCapableInstanceIds: new Set([codex]),
-          settings: DEFAULT_SERVER_SETTINGS,
+          providers: [provider, syntheticReviewerProvider],
+          orchestrationCapableInstanceIds: new Set([codex, syntheticReviewerId]),
+          settings,
           capacityByInstanceId: new Map(),
         }),
       }),
@@ -178,7 +227,7 @@ const makeLayer = (state: State) =>
     ),
     Layer.provideMerge(
       Layer.mock(ServerSettingsService.ServerSettingsService)({
-        getSettings: Effect.succeed(DEFAULT_SERVER_SETTINGS),
+        getSettings: Effect.succeed(settings),
       }),
     ),
     Layer.provideMerge(
@@ -264,6 +313,23 @@ it.effect("persists one attempt before launching and reuses it for retries", () 
     assert.equal(
       (yield* service.readAttempt(projectId, attempt.attemptId)).attemptId,
       attempt.attemptId,
+    );
+    const sql = yield* SqlClient.SqlClient;
+    const authorization = { private: "preserved" };
+    yield* sql`UPDATE project_runtime_execution_attempts SET payload_json = json_set(payload_json, '$.continuationAuthorization', json(${JSON.stringify(authorization)})) WHERE attempt_id = ${attempt.attemptId}`;
+    state.runs = [{ id: "run-1", status: "completed" }];
+    yield* service.reconcileAttempt(projectId, attempt.attemptId);
+    const [stored] = yield* sql<{
+      authorization: string;
+    }>`SELECT json_extract(payload_json, '$.continuationAuthorization') AS authorization FROM project_runtime_execution_attempts WHERE attempt_id = ${attempt.attemptId}`;
+    assert.deepEqual(JSON.parse(stored!.authorization), authorization);
+    assert.notProperty(
+      yield* service.readAttempt(projectId, attempt.attemptId),
+      "continuationAuthorization",
+    );
+    assert.notProperty(
+      (yield* service.listAttempts(projectId, { taskId })).attempts[0]!,
+      "continuationAuthorization",
     );
   }).pipe(Effect.provide(makeLayer(state)));
 });
@@ -588,3 +654,281 @@ it.effect("ignores a handoff from another thread", () => {
     assert.isNull(reconciled.handoffId ?? null);
   }).pipe(Effect.provide(makeLayer(state)));
 });
+
+/**
+ * Stub-provider integration regression: exercise the real attempt store,
+ * terminal reconciliation, request-key idempotency and automatic review
+ * launch without invoking a real model or changing the production database.
+ */
+const syntheticReviewTaskId = ProjectRuntimeTaskId.make("synthetic-review-task");
+const syntheticRepairTaskId = ProjectRuntimeTaskId.make("synthetic-repair-task");
+
+function syntheticTask(
+  id: ProjectRuntimeTaskId,
+  owner: string,
+  continuation = false,
+): ProjectRuntimeTask {
+  return {
+    ...task,
+    taskId: id,
+    owner,
+    title: String(id),
+    ...(continuation
+      ? {
+          continuation: {
+            version: 1 as const,
+            mode: "synthetic" as const,
+            reviewTaskId: syntheticReviewTaskId,
+            repairTaskId: syntheticRepairTaskId,
+            maxRepairCycles: 2,
+          },
+        }
+      : {}),
+  };
+}
+
+function syntheticHandoff(
+  a: RuntimeExecutionAttempt,
+  result: "pass" | "fail" | "none",
+): ProjectRuntimeHandoff {
+  return {
+    handoffId: ProjectRuntimeHandoffId.make(`handoff-${a.attemptId}`),
+    projectId,
+    taskId: a.taskId,
+    checkpoint: "Synthetic completed work",
+    summary: "Stub completion evidence",
+    filesChanged: [],
+    verification: {
+      milestone: result === "pass" ? "review-pass" : "none",
+      evidence:
+        result === "none"
+          ? []
+          : [
+              {
+                evidenceId: "synthetic-check",
+                result,
+                summary: "Synthetic reviewer verdict",
+                recordedAt: timestamp,
+              },
+            ],
+    },
+    threadId: a.threadId,
+    providerInstanceId: a.modelSelection.instanceId,
+    model: a.modelSelection.model,
+    runtimeRevision: 1,
+    taskRevision: a.receipt.packet.taskRevision,
+    createdAt: timestamp,
+    createdBy: `thread:${a.threadId}`,
+  };
+}
+
+function continuationFixture(state: State) {
+  const implementation = syntheticTask(taskId, "worker-x", true);
+  const reviewTask = syntheticTask(syntheticReviewTaskId, "reviewer-y");
+  const repairTask = syntheticTask(syntheticRepairTaskId, "repair-z");
+  state.tasks = new Map([
+    [taskId, implementation],
+    [syntheticReviewTaskId, reviewTask],
+    [syntheticRepairTaskId, repairTask],
+  ]);
+  state.handoffs = new Map();
+  state.routes = new Map([
+    [
+      syntheticReviewTaskId,
+      {
+        ...resolvedRoute(),
+        taskId: syntheticReviewTaskId,
+        role: "review",
+        selected: {
+          ...resolvedRoute().selected!,
+          providerInstanceId: syntheticReviewerId,
+          driverKind: ProviderDriverKind.make("opencode"),
+          model: "synthetic-review-model",
+          candidate: {
+            providerInstanceId: syntheticReviewerId,
+            model: "synthetic-review-model",
+          },
+        },
+      },
+    ],
+  ]);
+  return { implementation, reviewTask, repairTask };
+}
+
+it.effect(
+  "auto-launches one independent review after a reconciled worker; passing review launches no repair",
+  () => {
+    const state = makeState({ threadExists: true });
+    const { implementation, reviewTask, repairTask } = continuationFixture(state);
+    return Effect.gen(function* () {
+      const service = yield* RuntimeTaskExecutionService.RuntimeTaskExecutionService;
+      const sql = yield* SqlClient.SqlClient;
+      yield* seedDatabase;
+      yield* sql`UPDATE project_runtime_tasks SET payload_json = ${JSON.stringify(implementation)}
+      WHERE project_id = ${projectId} AND task_id = ${taskId}`;
+      for (const candidate of [reviewTask, repairTask]) {
+        yield* sql`INSERT INTO project_runtime_tasks
+        (task_id, project_id, status, revision, created_at, payload_json)
+        VALUES (${candidate.taskId}, ${projectId}, ${candidate.status},
+          ${candidate.revision}, ${timestamp}, ${JSON.stringify(candidate)})`;
+      }
+
+      const worker = yield* service.execute(projectId, {
+        taskId,
+        expectedTaskRevision: 1,
+        clientRequestId: "operator-approved-implementation",
+      });
+      assert.equal(state.launchCalls.length, 1);
+      const workerHandoff = syntheticHandoff(worker, "none");
+      state.handoffs!.set(workerHandoff.handoffId, workerHandoff);
+      const updatedImplementation = {
+        ...implementation,
+        revision: 2,
+        latestHandoffId: workerHandoff.handoffId,
+      };
+      state.tasks!.set(taskId, updatedImplementation);
+      yield* sql`UPDATE project_runtime_tasks
+      SET revision = 2, payload_json = ${JSON.stringify(updatedImplementation)}
+      WHERE project_id = ${projectId} AND task_id = ${taskId}`;
+      yield* sql`INSERT INTO project_runtime_handoffs
+      (handoff_id, project_id, task_id, created_at, payload_json)
+      VALUES (${workerHandoff.handoffId}, ${projectId}, ${taskId},
+        ${timestamp}, ${JSON.stringify(workerHandoff)})`;
+      state.runs = [{ id: "run-1", status: "completed" }];
+
+      const terminal = yield* service.reconcileAttempt(projectId, worker.attemptId);
+      assert.equal(terminal.status, "completed");
+      assert.equal(state.launchCalls.length, 2);
+      assert.equal(state.launchCalls[1]?.modelSelection.instanceId, syntheticReviewerId);
+      assert.include(state.launchCalls[1]?.initialMessage?.text ?? "", worker.attemptId);
+      assert.include(state.launchCalls[1]?.initialMessage?.text ?? "", workerHandoff.handoffId);
+      const listed = yield* service.listAttempts(projectId, { taskId: syntheticReviewTaskId });
+      assert.equal(listed.attempts.length, 1);
+      const review = yield* service.readAttempt(projectId, listed.attempts[0]!.attemptId);
+      assert.equal(review.status, "launched");
+      yield* service.reconcileAttempt(projectId, worker.attemptId);
+      assert.equal(state.launchCalls.length, 2);
+
+      const reviewed = syntheticHandoff(review, "pass");
+      state.handoffs!.set(reviewed.handoffId, reviewed);
+      const updatedReview = { ...reviewTask, revision: 2, latestHandoffId: reviewed.handoffId };
+      state.tasks!.set(syntheticReviewTaskId, updatedReview);
+      yield* sql`UPDATE project_runtime_tasks SET revision = 2, payload_json = ${JSON.stringify(updatedReview)}
+      WHERE project_id = ${projectId} AND task_id = ${syntheticReviewTaskId}`;
+      yield* sql`INSERT INTO project_runtime_handoffs
+      (handoff_id, project_id, task_id, created_at, payload_json)
+      VALUES (${reviewed.handoffId}, ${projectId}, ${syntheticReviewTaskId},
+        ${timestamp}, ${JSON.stringify(reviewed)})`;
+
+      yield* service.reconcileAttempt(projectId, review.attemptId);
+      yield* service.reconcileAttempt(projectId, review.attemptId);
+      assert.equal(state.launchCalls.length, 2);
+      assert.isEmpty(
+        (yield* service.listAttempts(projectId, {
+          taskId: syntheticRepairTaskId,
+        })).attempts,
+      );
+      assert.equal(state.tasks!.get(taskId)?.verification.milestone, "none");
+    }).pipe(Effect.provide(makeLayer(state)));
+  },
+);
+
+it.effect(
+  "a failed review launches one authorized repair, and restart/replay does not duplicate it",
+  () => {
+    const state = makeState({ threadExists: true });
+    const { implementation, reviewTask, repairTask } = continuationFixture(state);
+    return Effect.gen(function* () {
+      const service = yield* RuntimeTaskExecutionService.RuntimeTaskExecutionService;
+      const sql = yield* SqlClient.SqlClient;
+      yield* seedDatabase;
+      yield* sql`UPDATE project_runtime_tasks SET payload_json = ${JSON.stringify(implementation)}
+      WHERE project_id = ${projectId} AND task_id = ${taskId}`;
+      for (const candidate of [reviewTask, repairTask]) {
+        yield* sql`INSERT INTO project_runtime_tasks
+        (task_id, project_id, status, revision, created_at, payload_json)
+        VALUES (${candidate.taskId}, ${projectId}, ${candidate.status},
+          ${candidate.revision}, ${timestamp}, ${JSON.stringify(candidate)})`;
+      }
+      const worker = yield* service.execute(projectId, { taskId, expectedTaskRevision: 1 });
+      const workerHandoff = syntheticHandoff(worker, "none");
+      state.handoffs!.set(workerHandoff.handoffId, workerHandoff);
+      const nextWorker = {
+        ...implementation,
+        revision: 2,
+        latestHandoffId: workerHandoff.handoffId,
+      };
+      state.tasks!.set(taskId, nextWorker);
+      yield* sql`UPDATE project_runtime_tasks SET revision = 2, payload_json = ${JSON.stringify(nextWorker)}
+      WHERE project_id = ${projectId} AND task_id = ${taskId}`;
+      yield* sql`INSERT INTO project_runtime_handoffs
+      (handoff_id, project_id, task_id, created_at, payload_json)
+      VALUES (${workerHandoff.handoffId}, ${projectId}, ${taskId},
+        ${timestamp}, ${JSON.stringify(workerHandoff)})`;
+      state.runs = [{ id: "run-1", status: "completed" }];
+      yield* service.reconcileAttempt(projectId, worker.attemptId);
+      const reviewSummaries = yield* service.listAttempts(projectId, {
+        taskId: syntheticReviewTaskId,
+      });
+      const review = yield* service.readAttempt(projectId, reviewSummaries.attempts[0]!.attemptId);
+      const failing = syntheticHandoff(review, "fail");
+      state.handoffs!.set(failing.handoffId, failing);
+      const nextReview = { ...reviewTask, revision: 2, latestHandoffId: failing.handoffId };
+      state.tasks!.set(syntheticReviewTaskId, nextReview);
+      yield* sql`UPDATE project_runtime_tasks SET revision = 2, payload_json = ${JSON.stringify(nextReview)}
+      WHERE project_id = ${projectId} AND task_id = ${syntheticReviewTaskId}`;
+      yield* sql`INSERT INTO project_runtime_handoffs
+      (handoff_id, project_id, task_id, created_at, payload_json)
+      VALUES (${failing.handoffId}, ${projectId}, ${syntheticReviewTaskId},
+        ${timestamp}, ${JSON.stringify(failing)})`;
+
+      yield* service.reconcileAttempt(projectId, review.attemptId);
+      assert.equal(state.launchCalls.length, 3);
+      assert.include(state.launchCalls[2]?.initialMessage?.text ?? "", review.attemptId);
+      assert.include(state.launchCalls[2]?.initialMessage?.text ?? "", failing.handoffId);
+      const repairs = yield* service.listAttempts(projectId, { taskId: syntheticRepairTaskId });
+      assert.equal(repairs.attempts.length, 1);
+      assert.equal(repairs.attempts[0]?.status, "launched");
+
+      // Simulates a recovered process running its startup reconciliation path.
+      state.runs = [{ id: "run-1", status: "running" }];
+      yield* service.reconcileActiveAttempts();
+      state.runs = [{ id: "run-1", status: "completed" }];
+      yield* service.reconcileAttempt(projectId, review.attemptId);
+      assert.equal(state.launchCalls.length, 3);
+      assert.equal(
+        (yield* service.listAttempts(projectId, {
+          taskId: syntheticRepairTaskId,
+        })).attempts.length,
+        1,
+      );
+    }).pipe(Effect.provide(makeLayer(state)));
+  },
+);
+
+it.effect.each([false, true])(
+  "classifies a typed launch denial separately from an ordinary failure (%s)",
+  (denied) => {
+    const state = makeState({
+      launchError: denied
+        ? new ThreadLaunchService.ThreadLaunchError({
+            operation: "release-run",
+            commandId: CommandId.make("denied"),
+            projectId,
+            cause: new OrchestratorDispatchError({
+              commandId: CommandId.make("denied"),
+              commandType: "prepared-run.release",
+              cause: new EventSinkCommitDenied({ reason: "revoked" }),
+            }),
+          })
+        : new Error("checkout failed"),
+    });
+    return Effect.gen(function* () {
+      const service = yield* RuntimeTaskExecutionService.RuntimeTaskExecutionService;
+      yield* seedDatabase;
+      const attempt = yield* service.execute(projectId, { taskId, expectedTaskRevision: 1 });
+      assert.equal(attempt.status, denied ? "cancelled" : "failed");
+      assert.include(attempt.failure ?? "", denied ? "revoked" : "could not be launched");
+    }).pipe(Effect.provide(makeLayer(state)));
+  },
+);

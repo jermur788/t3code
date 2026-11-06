@@ -1,4 +1,5 @@
 import * as DevelopmentProfileService from "../developmentProfiles/DevelopmentProfileService.ts";
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, it } from "@effect/vitest";
 import {
@@ -125,7 +126,7 @@ const makeLayer = (state: State, dbPath: string) =>
         Layer.provideMerge(DevelopmentProfileService.layer),
         Layer.provideMerge(SqlitePersistence.layerFromPath(dbPath)),
         Layer.provideMerge(ContinuationGate.layer(true)),
-        Layer.provide(NodeServices.layer),
+        Layer.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
       ),
     ),
     Layer.provideMerge(
@@ -197,7 +198,7 @@ const makeLayer = (state: State, dbPath: string) =>
         dispatch: () => Effect.succeed({} as never),
       }),
     ),
-    Layer.provide(NodeServices.layer),
+    Layer.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
   );
 
 type Services =
@@ -435,7 +436,7 @@ it.effect("dispatches one review from a file-backed restart and never elevates t
       assert.equal(finalSource.status, "ready");
       assert.equal(reviewRequestKey, `cont:v1:r:${created.worker.attemptId}`);
     }),
-  ).pipe(Effect.provide(NodeServices.layer)),
+  ).pipe(Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
 );
 
 it.effect("replays a persisted pending review receipt with its original ids after restart", () =>
@@ -511,7 +512,7 @@ it.effect("replays a persisted pending review receipt with its original ids afte
         { attemptId: reviewAttempt.attemptId, status: "pending" },
       ]);
     }),
-  ).pipe(Effect.provide(NodeServices.layer)),
+  ).pipe(Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
 );
 
 it.effect("bounds two repairs across restarts and leaves one durable operator blocker", () =>
@@ -662,7 +663,7 @@ it.effect("bounds two repairs across restarts and leaves one durable operator bl
       assert.equal(restarted.source.status, "blocked");
       assert.equal(restarted.source.revision, source.revision);
     }),
-  ).pipe(Effect.provide(NodeServices.layer)),
+  ).pipe(Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
 );
 
 it.effect("keeps a failed or ambiguous review launch from authorizing more work", () =>
@@ -743,5 +744,5 @@ it.effect("keeps a failed or ambiguous review launch from authorizing more work"
       assert.isEmpty(ambiguousResult.repairs.attempts);
       assert.equal(ambiguousState.launches.length, 2);
     }),
-  ).pipe(Effect.provide(NodeServices.layer)),
+  ).pipe(Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
 );

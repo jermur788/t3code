@@ -1,3 +1,4 @@
+// @effect-diagnostics processEnvInEffect:off -- D4_RED_BASELINE selects the unguarded control for the red baseline.
 // @effect-diagnostics nodeBuiltinImport:off -- This integration fixture controls independent Node processes and disposable database files.
 import * as Effect from "effect/Effect";
 import * as NodeChildProcess from "node:child_process";

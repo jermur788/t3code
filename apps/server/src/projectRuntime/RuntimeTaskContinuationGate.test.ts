@@ -1,4 +1,5 @@
 import * as DevelopmentProfileService from "../developmentProfiles/DevelopmentProfileService.ts";
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, it } from "@effect/vitest";
 import {
@@ -120,7 +121,7 @@ const makeLayer = (state: State, dbPath: string, gateEnabled: boolean) =>
         Layer.provideMerge(DevelopmentProfileService.layer),
         Layer.provideMerge(SqlitePersistence.layerFromPath(dbPath)),
         Layer.provideMerge(ContinuationGate.layer(gateEnabled)),
-        Layer.provide(NodeServices.layer),
+        Layer.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
       ),
     ),
     Layer.provideMerge(
@@ -180,7 +181,7 @@ const makeLayer = (state: State, dbPath: string, gateEnabled: boolean) =>
         dispatch: () => Effect.succeed({} as never),
       }),
     ),
-    Layer.provide(NodeServices.layer),
+    Layer.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
   );
 
 type Services =
@@ -465,7 +466,7 @@ it.effect("rejects a new policy while off but keeps ordinary task operations", (
         }),
       );
     }),
-  ).pipe(Effect.provide(NodeServices.layer)),
+  ).pipe(Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
 );
 
 it.effect("allows removing stale policy and unrelated edits while off", () =>
@@ -534,7 +535,7 @@ it.effect("allows removing stale policy and unrelated edits while off", () =>
         }),
       );
     }),
-  ).pipe(Effect.provide(NodeServices.layer)),
+  ).pipe(Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
 );
 
 it.effect("startup recovery dispatches no automatic review or repair while off", () =>
@@ -561,7 +562,7 @@ it.effect("startup recovery dispatches no automatic review or repair while off",
       );
       assert.equal(state.launches.length, 1);
     }),
-  ).pipe(Effect.provide(NodeServices.layer)),
+  ).pipe(Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
 );
 
 it.effect("a pending review replay is cancelled, never launched, while off", () =>
@@ -616,7 +617,7 @@ it.effect("a pending review replay is cancelled, never launched, while off", () 
       assert.equal(replayed.attemptsAfter, replayed.attemptsBefore);
       assert.equal(state.launches.length, 2);
     }),
-  ).pipe(Effect.provide(NodeServices.layer)),
+  ).pipe(Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
 );
 
 it.effect("a pending review with a possible thread records reconcile_required while off", () =>
@@ -658,7 +659,7 @@ it.effect("a pending review with a possible thread records reconcile_required wh
       assert.match(replayed.failure ?? "", /disabled/i);
       assert.equal(state.launches.length, 2);
     }),
-  ).pipe(Effect.provide(NodeServices.layer)),
+  ).pipe(Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
 );
 
 it.effect("treats an unreadable thread as ambiguous while off, never as absent", () =>
@@ -700,7 +701,7 @@ it.effect("treats an unreadable thread as ambiguous while off, never as absent",
       assert.match(replayed.failure ?? "", /disabled/i);
       assert.equal(state.launches.length, 2);
     }),
-  ).pipe(Effect.provide(NodeServices.layer)),
+  ).pipe(Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
 );
 
 it.effect("public execute cannot replay a pending continuation receipt while off", () =>
@@ -746,7 +747,7 @@ it.effect("public execute cannot replay a pending continuation receipt while off
       assert.match(executed.failure ?? "", /disabled/i);
       assert.equal(state.launches.length, 2);
     }),
-  ).pipe(Effect.provide(NodeServices.layer)),
+  ).pipe(Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
 );
 
 it.effect("gate-on withdrawal still treats an unreadable thread as ambiguous", () =>
@@ -800,7 +801,7 @@ it.effect("gate-on withdrawal still treats an unreadable thread as ambiguous", (
       assert.match(replayed.failure ?? "", /authorization/i);
       assert.equal(state.launches.length, 2);
     }),
-  ).pipe(Effect.provide(NodeServices.layer)),
+  ).pipe(Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
 );
 
 it.effect("a pending repair replay is cancelled, never launched, while off", () =>
@@ -863,5 +864,5 @@ it.effect("a pending repair replay is cancelled, never launched, while off", () 
       assert.match(replayed.failure ?? "", /disabled/i);
       assert.equal(state.launches.length, 3);
     }),
-  ).pipe(Effect.provide(NodeServices.layer)),
+  ).pipe(Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
 );

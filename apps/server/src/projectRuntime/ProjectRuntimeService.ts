@@ -46,6 +46,7 @@ import { type SqlError } from "effect/sql/SqlError";
 import { PersistenceSqlError } from "../persistence/Errors.ts";
 import { ProjectNotFoundError } from "../project/ProjectService.ts";
 import { disabledContext, packContext } from "./ProjectRuntimeContext.ts";
+import { ContinuationGate } from "./RuntimeTaskContinuationGate.ts";
 
 const WriteContext = Schema.Struct({ actor: ProjectRuntimeActor });
 type WriteContext = typeof WriteContext.Type;
@@ -287,6 +288,10 @@ function applyTaskPatch(
     if (patch.routing === null) delete result.routing;
     else result.routing = patch.routing;
   }
+  if (patch.continuation !== undefined) {
+    if (patch.continuation === null) delete result.continuation;
+    else result.continuation = patch.continuation;
+  }
   return result;
 }
 
@@ -321,6 +326,18 @@ const validateTask = Effect.fn("ProjectRuntimeService.validateTask")(function* (
   projectId: ProjectId,
   task: ProjectRuntimeTask,
 ) {
+  if (
+    task.continuation !== undefined &&
+    (task.continuation.reviewTaskId === task.taskId ||
+      task.continuation.repairTaskId === task.taskId ||
+      task.continuation.repairTaskId === task.continuation.reviewTaskId)
+  ) {
+    return yield* new ProjectRuntimeInvalidTransitionError({
+      projectId,
+      taskId: task.taskId,
+      violation: "continuation_requires_operator",
+    });
+  }
   if (task.status === "blocked" && task.blocker === null) {
     return yield* new ProjectRuntimeInvalidTransitionError({
       projectId,
@@ -347,6 +364,7 @@ const validateTask = Effect.fn("ProjectRuntimeService.validateTask")(function* (
 
 const make = Effect.gen(function* () {
   const sql = yield* SqlClient.SqlClient;
+  const continuationEnabled = (yield* ContinuationGate).enabled;
   const developmentProfiles = yield* DevelopmentProfileService.DevelopmentProfileService;
   const random = yield* SecureRandom.SecureRandom;
   const newId = random
@@ -592,10 +610,28 @@ const make = Effect.gen(function* () {
       const { actor } = yield* decodeWriteContext(context);
       yield* requireEnabled(projectId);
       const timestamp = yield* now;
+      const taskId = ProjectRuntimeTaskId.make(yield* newId);
+      // Synthetic continuation is a server-controlled experiment. A task
+      // payload, owner or agent actor can never grant it while the gate is off.
+      if (data.continuation !== undefined && !continuationEnabled) {
+        return yield* new ProjectRuntimeInvalidTransitionError({
+          projectId,
+          taskId,
+          violation: "continuation_disabled",
+        });
+      }
+      // MCP/worker actors cannot self-grant continuation authority.
+      if (data.continuation !== undefined && !actor.startsWith("user:")) {
+        return yield* new ProjectRuntimeInvalidTransitionError({
+          projectId,
+          taskId,
+          violation: "continuation_requires_operator",
+        });
+      }
       const record: ProjectRuntimeTask = {
         ...data,
         projectId,
-        taskId: ProjectRuntimeTaskId.make(yield* newId),
+        taskId,
         owner: data.owner ?? actor,
         status: data.status ?? "planned",
         blocker: data.blocker === undefined ? null : { ...data.blocker, createdAt: timestamp },
@@ -633,8 +669,24 @@ const make = Effect.gen(function* () {
     function* (projectId, input, context) {
       const { taskId, expectedRevision, ...patch } = yield* decodeTaskUpdateInput(input);
       const { actor } = yield* decodeWriteContext(context);
+      // Explicit removal (`continuation: null`) and unrelated edits stay
+      // available so an operator can revoke stale policy while the gate is off.
+      if (patch.continuation !== undefined && patch.continuation !== null && !continuationEnabled) {
+        return yield* new ProjectRuntimeInvalidTransitionError({
+          projectId,
+          taskId,
+          violation: "continuation_disabled",
+        });
+      }
       const existing = yield* readTask(projectId, taskId);
       yield* checkRevision(projectId, "task", existing.revision, expectedRevision, taskId);
+      if (patch.continuation !== undefined && !actor.startsWith("user:")) {
+        return yield* new ProjectRuntimeInvalidTransitionError({
+          projectId,
+          taskId,
+          violation: "continuation_requires_operator",
+        });
+      }
       const timestamp = yield* now;
       const record: ProjectRuntimeTask = {
         ...applyTaskPatch(existing, patch, timestamp),

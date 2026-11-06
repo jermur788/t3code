@@ -111,7 +111,8 @@ export class ServerConfig extends Context.Service<
   static readonly layerTest = (
     cwd: string,
     baseDirOrPrefix: string | { readonly prefix: string },
-  ) => layerTest(cwd, baseDirOrPrefix);
+    overrides?: TestConfigOverrides,
+  ) => layerTest(cwd, baseDirOrPrefix, overrides);
 }
 
 export const make = (config: ServerConfig["Service"]) => ServerConfig.of(config);
@@ -210,9 +211,15 @@ export const ensureServerDirectories = Effect.fn(function* (derivedPaths: Server
   }
 });
 
+interface TestConfigOverrides {
+  // Builds of the production server root otherwise launch a real browser via the startup path.
+  readonly noBrowser?: boolean;
+}
+
 const makeTest = Effect.fn("ServerConfig.makeTest")(function* (
   cwd: string,
   baseDirOrPrefix: string | { readonly prefix: string },
+  overrides?: TestConfigOverrides,
 ) {
   const devUrl = undefined;
   const fs = yield* FileSystem.FileSystem;
@@ -258,13 +265,16 @@ const makeTest = Effect.fn("ServerConfig.makeTest")(function* (
     staticDir: undefined,
     devUrl,
     devAllowedOrigins: [],
-    noBrowser: false,
+    noBrowser: overrides?.noBrowser ?? false,
     startupPresentation: "browser",
   });
 });
 
-export const layerTest = (cwd: string, baseDirOrPrefix: string | { readonly prefix: string }) =>
-  Layer.effect(ServerConfig, makeTest(cwd, baseDirOrPrefix));
+export const layerTest = (
+  cwd: string,
+  baseDirOrPrefix: string | { readonly prefix: string },
+  overrides?: TestConfigOverrides,
+) => Layer.effect(ServerConfig, makeTest(cwd, baseDirOrPrefix, overrides));
 
 export const resolveStaticDir = Effect.fn(function* () {
   const { join, resolve } = yield* Path.Path;

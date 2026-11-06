@@ -1,4 +1,5 @@
 import * as DevelopmentProfileService from "../developmentProfiles/DevelopmentProfileService.ts";
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, it } from "@effect/vitest";
 import {
@@ -153,7 +154,7 @@ const makeLayer = (state: State, dbPath: string) => {
     Layer.provideMerge(DevelopmentProfileService.layer),
     Layer.provideMerge(SqlitePersistence.layerFromPath(dbPath)),
     Layer.provideMerge(ContinuationGate.layer(true)),
-    Layer.provide(NodeServices.layer),
+    Layer.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
   );
   const runtime = Layer.effect(
     ProjectRuntimeService.ProjectRuntimeService,
@@ -251,7 +252,7 @@ const makeLayer = (state: State, dbPath: string) => {
         dispatch: () => Effect.succeed({} as never),
       }),
     ),
-    Layer.provide(NodeServices.layer),
+    Layer.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
   );
 };
 
@@ -447,7 +448,7 @@ it.effect("still accepts an ordinary, non-reserved request key", () =>
       assert.equal(replay.attemptId, tasks.attemptId);
       assert.equal(state.launches.length, 1);
     }),
-  ).pipe(Effect.provide(NodeServices.layer)),
+  ).pipe(Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
 );
 
 it.effect("rejects a caller-supplied repair key for a passing review", () =>
@@ -491,7 +492,7 @@ it.effect("rejects a caller-supplied repair key for a passing review", () =>
       );
       assert.isEmpty(repairs.attempts);
     }),
-  ).pipe(Effect.provide(NodeServices.layer)),
+  ).pipe(Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
 );
 
 it.effect("rejects a caller-supplied repair key after the synthetic budget is exhausted", () =>
@@ -579,7 +580,7 @@ it.effect("rejects a caller-supplied repair key after the synthetic budget is ex
       );
       assert.equal(repairs.attempts.length, 2);
     }),
-  ).pipe(Effect.provide(NodeServices.layer)),
+  ).pipe(Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
 );
 
 it.effect("rejects a caller-supplied repair key after the source task is cancelled", () =>
@@ -623,7 +624,7 @@ it.effect("rejects a caller-supplied repair key after the source task is cancell
       assert.equal(rejected._tag, "RuntimeExecutionRejectedError");
       assert.equal(state.launches.length, 2);
     }),
-  ).pipe(Effect.provide(NodeServices.layer)),
+  ).pipe(Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
 );
 
 it.effect("does not dispatch a review when the source is cancelled during authorization", () =>
@@ -706,7 +707,7 @@ it.effect("does not dispatch a review when the source is cancelled during author
       assert.equal(result.source.status, "cancelled");
       assert.isEmpty(result.reviews.attempts);
     }),
-  ).pipe(Effect.provide(NodeServices.layer)),
+  ).pipe(Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
 );
 
 it.effect("does not dispatch a review when continuation is removed during authorization", () =>
@@ -782,7 +783,7 @@ it.effect("does not dispatch a review when continuation is removed during author
       );
       assert.isEmpty(reviews.attempts);
     }),
-  ).pipe(Effect.provide(NodeServices.layer)),
+  ).pipe(Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
 );
 
 it.effect("does not replay a pending review after continuation is withdrawn on restart", () =>
@@ -833,7 +834,7 @@ it.effect("does not replay a pending review after continuation is withdrawn on r
       assert.match(replayed.failure ?? "", /authorization/i);
       assert.equal(state.launches.length, 2);
     }),
-  ).pipe(Effect.provide(NodeServices.layer)),
+  ).pipe(Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
 );
 
 it.effect("does not replay a pending review after the source is cancelled on restart", () =>
@@ -880,7 +881,7 @@ it.effect("does not replay a pending review after the source is cancelled on res
       assert.equal(replayed.status, "cancelled");
       assert.equal(state.launches.length, 2);
     }),
-  ).pipe(Effect.provide(NodeServices.layer)),
+  ).pipe(Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
 );
 
 it.effect("keeps a pending replay ambiguous when a launched thread may already exist", () =>
@@ -929,7 +930,7 @@ it.effect("keeps a pending replay ambiguous when a launched thread may already e
       assert.match(replayed.failure ?? "", /authorization/i);
       assert.equal(state.launches.length, 2);
     }),
-  ).pipe(Effect.provide(NodeServices.layer)),
+  ).pipe(Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
 );
 
 it.effect("records one durable blocked outcome for a terminal failed review", () =>
@@ -975,7 +976,7 @@ it.effect("records one durable blocked outcome for a terminal failed review", ()
       assert.equal(repeated.blocker?.createdAt, stopped.blocker?.createdAt);
       assert.equal(state.launches.length, 2);
     }),
-  ).pipe(Effect.provide(NodeServices.layer)),
+  ).pipe(Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
 );
 
 it.effect("records one blocked outcome for contradictory review evidence without repair", () =>
@@ -1045,7 +1046,7 @@ it.effect("records one blocked outcome for contradictory review evidence without
       );
       assert.isEmpty(repairs.attempts);
     }),
-  ).pipe(Effect.provide(NodeServices.layer)),
+  ).pipe(Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
 );
 
 it.effect("keeps ambiguous review execution observable instead of blocked", () =>
@@ -1077,7 +1078,7 @@ it.effect("keeps ambiguous review execution observable instead of blocked", () =
       assert.equal(result.source.blocker, null);
       assert.equal(state.launches.length, 2);
     }),
-  ).pipe(Effect.provide(NodeServices.layer)),
+  ).pipe(Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
 );
 
 const forcePending = (attemptId: string) =>
@@ -1166,7 +1167,7 @@ it.effect("does not replay a pending review after the accepted source scope chan
       assert.equal(restarted.source.revision, replayed.source.revision);
       assert.equal(restarted.source.scope, editedScope);
     }),
-  ).pipe(Effect.provide(NodeServices.layer)),
+  ).pipe(Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
 );
 
 it.effect("does not replay a pending review after the reviewer task scope changes", () =>
@@ -1225,7 +1226,7 @@ it.effect("does not replay a pending review after the reviewer task scope change
       assert.equal(restarted.source.revision, replayed.source.revision);
       assert.equal(restarted.source.status, "blocked");
     }),
-  ).pipe(Effect.provide(NodeServices.layer)),
+  ).pipe(Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
 );
 
 it.effect("does not replay a pending repair after the reviewer acceptance criteria change", () =>
@@ -1291,7 +1292,7 @@ it.effect("does not replay a pending repair after the reviewer acceptance criter
       assert.equal(repairs.attempts.length, 1);
       assert.equal(repairs.attempts[0]?.status, "cancelled");
     }),
-  ).pipe(Effect.provide(NodeServices.layer)),
+  ).pipe(Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
 );
 
 it.effect("does not replay a pending repair after the repair target scope changes", () =>
@@ -1356,7 +1357,7 @@ it.effect("does not replay a pending repair after the repair target scope change
       );
       assert.equal(target.scope, editedScope);
     }),
-  ).pipe(Effect.provide(NodeServices.layer)),
+  ).pipe(Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
 );
 
 it.effect("does not replay a pending repair after the accepted source scope changes", () =>
@@ -1414,7 +1415,7 @@ it.effect("does not replay a pending repair after the accepted source scope chan
       assert.equal(replayed.source.blocker, null);
       assert.equal(replayed.source.verification.milestone, "none");
     }),
-  ).pipe(Effect.provide(NodeServices.layer)),
+  ).pipe(Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
 );
 
 type OperatorDecision = "done" | "deferred" | "withdraw";
@@ -1536,7 +1537,7 @@ const reviewFailureStopRace = (decision: OperatorDecision) =>
       if (decision === "withdraw") assert.equal(restarted.source.continuation, undefined);
       else assert.equal(restarted.source.status, decision);
     }),
-  ).pipe(Effect.provide(NodeServices.layer));
+  ).pipe(Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)));
 
 it.effect("a delayed reviewer failure does not overwrite a newer done decision", () =>
   reviewFailureStopRace("done"),
@@ -1597,7 +1598,7 @@ it.effect("rejects every malformed continuation-style key without spending budge
         assert.isEmpty(repairAttempts.attempts);
       }
     }),
-  ).pipe(Effect.provide(NodeServices.layer)),
+  ).pipe(Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
 );
 
 it.effect("still accepts an ordinary key on the same repair task", () =>
@@ -1623,7 +1624,7 @@ it.effect("still accepts an ordinary key on the same repair task", () =>
       assert.equal(launched.status, "launched");
       assert.equal(state.launches.length, 1);
     }),
-  ).pipe(Effect.provide(NodeServices.layer)),
+  ).pipe(Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
 );
 
 /**
@@ -1708,7 +1709,7 @@ it.effect(
         assert.equal(reviews.attempts.length, 1);
         assert.equal(state.launches.length, 2);
       }),
-    ).pipe(Effect.provide(NodeServices.layer)),
+    ).pipe(Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
 );
 
 /**
@@ -1808,7 +1809,7 @@ it.effect(
         assert.isUndefined(source.continuation);
         assert.equal(source.status, "ready");
       }),
-    ).pipe(Effect.provide(NodeServices.layer)),
+    ).pipe(Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
 );
 
 it.effect("rejects case-variant continuation keys without spending repair budget", () =>
@@ -1853,5 +1854,5 @@ it.effect("rejects case-variant continuation keys without spending repair budget
         assert.isEmpty(attempts.attempts);
       }
     }),
-  ).pipe(Effect.provide(NodeServices.layer)),
+  ).pipe(Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
 );

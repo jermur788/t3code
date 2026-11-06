@@ -1,3 +1,12 @@
+import * as SqlClient from "effect/sql/SqlClient";
+import {
+  PrivateContinuationAuthorization,
+  launchGuard,
+  preparationGuard,
+  cancellationGuard,
+  reconcilePreparation,
+} from "../projectRuntime/ContinuationCommitGuard.ts";
+import { ContinuationGate } from "../projectRuntime/RuntimeTaskContinuationGate.ts";
 import type {
   GuestShareId,
   OrchestrationV2SearchThreadInput,
@@ -130,7 +139,7 @@ import {
   isBufferedProviderNotification,
   isUndeliveredMailboxSteer,
 } from "./NotificationMailbox.ts";
-import { EventSinkV2 } from "./EventSink.ts";
+import { EventSinkCommitDenied, isCommitDenied, EventSinkV2 } from "./EventSink.ts";
 import {
   decideGuestMessageSend,
   guestShareAfterCancelledSend,
@@ -1094,6 +1103,10 @@ function lastDeliveredRunForProviderThread(
 }
 
 const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(function* () {
+  const sql = yield* SqlClient.SqlClient;
+  // Missing gate disables continuation authority; ordinary runs need no continuation grant.
+  const continuationGate = yield* Effect.serviceOption(ContinuationGate);
+  const continuationEnabled = Option.isSome(continuationGate) && continuationGate.value.enabled;
   const checkpointService = yield* CheckpointServiceV2;
   const commandPolicy = yield* CommandPolicyV2;
   const contextHandoffService = yield* ContextHandoffServiceV2;
@@ -10419,13 +10432,24 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
   const dispatchPreparedRunFail = Effect.fn("Orchestrator.dispatchPreparedRunFail")(function* (
     command: Extract<OrchestrationV2Command, { readonly type: "prepared-run.fail" }>,
     events: Ref.Ref<Array<OrchestrationV2DomainEvent>>,
+    revokedCommand?: Extract<
+      OrchestrationV2Command,
+      { readonly type: "prepared-run.release" | "prepared-run.retry" }
+    >,
   ) {
     const projection = yield* loadProjectionForCommand(
       command,
       ["runs", "attempts", "nodes", "providerThreads", "turnItems"],
       { turnItemTypes: ["command_execution"], turnItemRunId: command.runId },
     );
-    const state = preparedRunState(command, projection);
+    // A background preparation callback can finish after revocation cancelled the run.
+    // Preserve that terminal projection and accept replay without emitting more work.
+    if (
+      revokedCommand === undefined &&
+      projection.runs.some((run) => run.id === command.runId && run.status === "cancelled")
+    )
+      return;
+    const state = preparedRunState(revokedCommand ?? command, projection);
     if (state === null) {
       return yield* new OrchestratorDispatchError({
         commandId: command.commandId,
@@ -10442,7 +10466,11 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
       nodeId: state.rootNode.id,
       providerInstanceId: state.run.providerInstanceId,
       occurredAt: now,
-      payload: { ...state.attempt, status: "failed", completedAt: now },
+      payload: {
+        ...state.attempt,
+        status: revokedCommand === undefined ? "failed" : "cancelled",
+        completedAt: now,
+      },
     });
     yield* emitEvent({
       type: "node.updated",
@@ -10451,7 +10479,11 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
       nodeId: state.rootNode.id,
       providerInstanceId: state.run.providerInstanceId,
       occurredAt: now,
-      payload: { ...state.rootNode, status: "failed", completedAt: now },
+      payload: {
+        ...state.rootNode,
+        status: revokedCommand === undefined ? "failed" : "cancelled",
+        completedAt: now,
+      },
     });
     yield* emitEvent({
       type: "turn-item.updated",
@@ -10509,7 +10541,11 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
       nodeId: state.rootNode.id,
       providerInstanceId: state.run.providerInstanceId,
       occurredAt: now,
-      payload: { ...state.run, status: "failed", completedAt: now },
+      payload: {
+        ...state.run,
+        status: revokedCommand === undefined ? "failed" : "cancelled",
+        completedAt: now,
+      },
     });
   });
 
@@ -13809,6 +13845,29 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
       } satisfies OrchestratorV2DispatchResult;
     }
 
+    if (command.type === "prepared-run.release" || command.type === "prepared-run.retry") {
+      const compensation = yield* commandReceipts
+        .getByCommandId(CommandId.make(`${command.commandId}:revoked-cancel`))
+        .pipe(
+          Effect.mapError(
+            (cause) =>
+              new OrchestratorDispatchError({
+                commandId: command.commandId,
+                commandType: command.type,
+                cause,
+              }),
+          ),
+        );
+      if (Option.isSome(compensation))
+        return yield* new OrchestratorDispatchError({
+          commandId: command.commandId,
+          commandType: command.type,
+          cause: new EventSinkCommitDenied({
+            reason: "Continuation authorization revoked before release.",
+          }),
+        });
+    }
+
     // Recheck under the lock; the user may have raised modes since sender preflight.
     const limit = yield* DispatchModeLimit;
     if (limit !== undefined) {
@@ -13825,6 +13884,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
       Effect.filterOrFail(
         (planned) =>
           planned.events.length > 0 ||
+          command.type === "prepared-run.fail" ||
           command.type === "thread.background-work.settle" ||
           command.type === "thread.interrupt.unresponsive" ||
           command.type === "thread.stop" ||
@@ -13928,8 +13988,16 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
       } satisfies OrchestratorV2DispatchResult;
     }
     const acceptedAt = plan.events.at(-1)?.occurredAt ?? (yield* DateTime.now);
+    const privateAuthorization = yield* PrivateContinuationAuthorization;
+    const commitGuard =
+      command.type === "message.dispatch" && privateAuthorization !== undefined
+        ? launchGuard(privateAuthorization, continuationEnabled)
+        : command.type === "prepared-run.release" || command.type === "prepared-run.retry"
+          ? preparationGuard(command.threadId, command.runId, continuationEnabled)
+          : undefined;
     const committed = yield* eventSink
       .commitCommand({
+        ...(commitGuard === undefined ? {} : { commitGuard }),
         commandId: command.commandId,
         threadId: commandThreadId(command),
         commandType: command.type,
@@ -13944,6 +14012,59 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
           : { updateDelegatedCompletionOnlyRunId: plan.updateDelegatedCompletionOnlyRunId }),
       })
       .pipe(
+        Effect.catchTags({
+          EventSinkCommitDenied: (denial) => {
+            if (command.type !== "prepared-run.release" && command.type !== "prepared-run.retry")
+              return Effect.fail(denial);
+            return Effect.gen(function* () {
+              const cancellationEvents = yield* Ref.make<Array<OrchestrationV2DomainEvent>>([]);
+              const compensationId = CommandId.make(`${command.commandId}:revoked-cancel`);
+              yield* dispatchPreparedRunFail(
+                {
+                  type: "prepared-run.fail",
+                  commandId: compensationId,
+                  threadId: command.threadId,
+                  runId: command.runId,
+                  failure: {
+                    class: "unknown",
+                    message: denial.reason,
+                    code: null,
+                    retryable: false,
+                  },
+                },
+                cancellationEvents,
+                command,
+              );
+              return yield* eventSink
+                .commitCommand({
+                  commandId: compensationId,
+                  threadId: command.threadId,
+                  commandType: "prepared-run.fail",
+                  acceptedAt,
+                  commitGuard: cancellationGuard(command.threadId, command.runId),
+                  events: yield* Ref.get(cancellationEvents),
+                  effects: [],
+                })
+                .pipe(
+                  Effect.catchTags({
+                    EventSinkCommitDenied: Effect.fn("Orchestrator.reconcileRevokedPreparation")(
+                      function* () {
+                        yield* reconcilePreparation(sql, command.threadId);
+                        yield* dispatchWithReceiptEffect({
+                          type: "thread.stop",
+                          threadId: command.threadId,
+                          commandId: CommandId.make(`${command.commandId}:revoked-stop`),
+                        }).pipe(Effect.ignore);
+                        return yield* denial;
+                      },
+                      Effect.mapError((cause) => (isCommitDenied(cause) ? cause : denial)),
+                    ),
+                  }),
+                  Effect.flatMap(() => Effect.fail(denial)),
+                );
+            });
+          },
+        }),
         Effect.mapError(
           (cause) =>
             new OrchestratorDispatchError({
@@ -14535,6 +14656,7 @@ export const layer: Layer.Layer<
   OrchestratorV2,
   never,
   | CheckpointServiceV2
+  | SqlClient.SqlClient
   | FileSystem.FileSystem
   | Path.Path
   | CommandPolicyV2
