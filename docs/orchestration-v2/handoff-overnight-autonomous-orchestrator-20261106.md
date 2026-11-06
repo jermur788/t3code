@@ -1,5 +1,8 @@
 # PASTE INTO T3 CODE — Overnight conditional DeepSeek orchestration (U → R → H)
 
+**LATEST OWNER CLARIFICATION (2026-11-06 10:24):** User confirms prior Stage R Claude Opus fallback was approved. Earlier statements describing that specific use as unauthorized are superseded. Different-provider independent review and dispatch-budget audit are still required before G-R final pass; this does not authorize unrestricted future Opus use. See [decision record](stage-r-opus-owner-approval-clarification-20261106.md).
+
+
 **State:** **AUTHORIZED CONDITIONAL LOCAL EXECUTION / HANDOFF PREPARED / NOT DISPATCHED**.  
 **New user authority:** 2026-11-06 00:14 Europe/Dublin: permit maximum safe continuation while asleep **if the manager-set measurable gates pass**, without asking ChatGPT between accepted steps.  
 **Binding amendment:** [Overnight conditional-autonomy amendment](overnight-conditional-autonomy-amendment-20261106.md). This is a narrow superseding authority relative to the earlier [upstream-only trial](upstream-catchup-isolated-trial-governing-spec-20261105.md); it permits downstream **local-only conditional** R and H stages, **not main merge, push, release or production**.
