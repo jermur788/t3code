@@ -1,5 +1,6 @@
 import { assert, it } from "@effect/vitest";
 import * as NodeServices from "@effect/platform-node/NodeServices";
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import {
   AdaptiveCapacityPoolId,
   AdaptiveCapacitySnapshotId,
@@ -61,6 +62,9 @@ import * as ProjectionMaintenance from "../orchestration-v2/ProjectionMaintenanc
 import * as ProjectionStore from "../orchestration-v2/ProjectionStore.ts";
 import * as AdaptiveRoutingService from "./AdaptiveRoutingService.ts";
 import * as OrchestrationEvidenceService from "./OrchestrationEvidenceService.ts";
+import * as ProjectRuntimeService from "./ProjectRuntimeService.ts";
+import * as RuntimeTaskExecutionService from "./RuntimeTaskExecutionService.ts";
+import * as ContinuationFixture from "./RuntimeTaskContinuationTest.layer.ts";
 
 const projectId = ProjectId.make("ev0-project");
 const opencode = ProviderInstanceId.make("opencode");
@@ -669,8 +673,7 @@ const layerPruneTest = Layer.mergeAll(
   OrchestrationEvidenceService.layer.pipe(Layer.provide(pruneStores)),
 );
 
-const makeFilePruneLayer = (dbPath: string) => {
-  const database = SqlitePersistence.layerFromPath(dbPath);
+const makeFilePruneLayer = (dbPath: string, database = SqlitePersistence.layerFromPath(dbPath)) => {
   const eventStore = EventStore.layer.pipe(Layer.provideMerge(database));
   const projectionStore = ProjectionStore.layer.pipe(Layer.provideMerge(database));
   const stores = Layer.mergeAll(database, eventStore, projectionStore, Digest.layerWebCrypto);
@@ -1566,6 +1569,114 @@ it.effect("keeps the pruning marker and project isolation after a file-backed re
       );
     }),
   ).pipe(Effect.provide(NodeServices.layer)),
+);
+
+it.effect(
+  "K3: truncation, pruning and reopen preserve revoked continuation authority and receipts",
+  () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const fs = yield* FileSystem.FileSystem;
+        const home = yield* fs.makeTempDirectoryScoped();
+        const dbPath = `${home}/userdata/statev2.sqlite`;
+        const state = ContinuationFixture.makeState();
+        const destination = ContinuationFixture.projectId;
+        const makeRecoveryLayer = () => {
+          const database = SqlitePersistence.layerFromPath(dbPath);
+          return Layer.mergeAll(
+            makeFilePruneLayer(dbPath, database),
+            ContinuationFixture.makeLayer(state, dbPath, true, database),
+          );
+        };
+        const saved = yield* Effect.gen(function* () {
+          const runtime = yield* ProjectRuntimeService.ProjectRuntimeService;
+          const execution = yield* RuntimeTaskExecutionService.RuntimeTaskExecutionService;
+          const sink = yield* EventSink.EventSinkV2;
+          const maintenance = yield* ProjectionMaintenance.ProjectionMaintenanceV2;
+          const evidence = yield* OrchestrationEvidenceService.OrchestrationEvidenceService;
+          const tasks = yield* ContinuationFixture.seedAndCreateTasks(state);
+          const worker = yield* execution.execute(destination, {
+            taskId: tasks.source.taskId,
+            expectedTaskRevision: tasks.source.revision,
+          });
+          const handoff = yield* ContinuationFixture.appendHandoff(worker, {
+            milestone: "none",
+            result: "none",
+          });
+          ContinuationFixture.completeRun(state, worker.threadId);
+          yield* execution.reconcileAttempt(destination, worker.attemptId);
+          const current = yield* runtime.readTask(destination, tasks.source.taskId);
+          const source = yield* runtime.updateTask(
+            destination,
+            {
+              taskId: current.taskId,
+              expectedRevision: current.revision,
+              continuation: null,
+            },
+            { actor: "user:maintainer" },
+          );
+          const workerThread = ThreadId.make(worker.threadId);
+          const workerRun = RunId.make(worker.runId!);
+          yield* sink.write({
+            events: [
+              v2ThreadCreated(workerThread, "K3 synthetic worker", destination),
+              v2RunCreatedFor(workerThread, workerRun),
+              ...Array.from({ length: 1_001 }, (_, index) =>
+                v2NodeUpdated(
+                  NodeId.make(`node:k3-prune-${index}`),
+                  createdAttempt,
+                  workerThread,
+                  workerRun,
+                ),
+              ),
+            ],
+          });
+          const truncated = yield* evidence.exportTask(destination, source.taskId);
+          const truncation = truncated.events.find(
+            (entry) => entry.recordType === "orchestration-v2-truncation",
+          );
+          assert.isDefined(truncation);
+          assert.equal(
+            truncation?.facts.find((fact) => fact.key === "status")?.value,
+            "incomplete",
+          );
+          assert.equal(
+            truncation?.facts.find((fact) => fact.key === "completeness")?.value,
+            "unknown",
+          );
+          assert.equal((yield* maintenance.pruneEventStore()).deletedEventCount, 0);
+          yield* TestClock.adjust("1 day");
+          assert.isAbove((yield* maintenance.pruneEventStore()).deletedEventCount, 0);
+          return { source, handoff, attempts: yield* execution.listAttempts(destination, {}) };
+        }).pipe(Effect.provide(makeRecoveryLayer()));
+
+        const reopen = Effect.gen(function* () {
+          const runtime = yield* ProjectRuntimeService.ProjectRuntimeService;
+          const execution = yield* RuntimeTaskExecutionService.RuntimeTaskExecutionService;
+          const evidence = yield* OrchestrationEvidenceService.OrchestrationEvidenceService;
+          yield* execution.reconcileActiveAttempts();
+          assert.deepEqual(yield* runtime.readTask(destination, saved.source.taskId), saved.source);
+          assert.deepEqual(
+            yield* runtime.readHandoff(destination, saved.handoff.handoffId),
+            saved.handoff,
+          );
+          assert.deepEqual(yield* execution.listAttempts(destination, {}), saved.attempts);
+          const exported = yield* evidence.exportTask(destination, saved.source.taskId);
+          const marker = exported.events.find(
+            (entry) => entry.recordType === "orchestration-v2-pruned",
+          );
+          assert.isDefined(marker);
+          assert.equal(marker?.facts.find((fact) => fact.key === "status")?.value, "incomplete");
+          assert.equal(marker?.facts.find((fact) => fact.key === "completeness")?.value, "unknown");
+          assert.isTrue(marker!.unknownFields.includes("completeness"));
+          assert.lengthOf(state.launches, 2);
+          return exported;
+        });
+        const first = yield* reopen.pipe(Effect.provide(makeRecoveryLayer()));
+        const replay = yield* reopen.pipe(Effect.provide(makeRecoveryLayer()));
+        assert.deepEqual(replay, first);
+      }),
+    ).pipe(Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
 );
 
 it.effect("keeps pruned markers decodable for long thread identifiers", () =>
