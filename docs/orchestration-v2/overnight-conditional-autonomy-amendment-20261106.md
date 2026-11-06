@@ -1,5 +1,8 @@
 # Overnight conditional-autonomy amendment — upstream trial → continuation/D4 → D2/K3
 
+**LATEST OWNER CLARIFICATION (2026-11-06 10:24):** User confirms prior Stage R Claude Opus fallback was approved. Earlier statements describing that specific use as unauthorized are superseded. Different-provider independent review and dispatch-budget audit are still required before G-R final pass; this does not authorize unrestricted future Opus use. See [decision record](stage-r-opus-owner-approval-clarification-20261106.md).
+
+
 **Authority:** New user instruction 2026-11-06 00:14 Europe/Dublin: "I want to do as much work as possible while I'm asleep, create an amendment for the orch agent so that it can continue on without your input if the work meets certain targets that you can set in the handoff."  
 **Classification:** **ACCEPTED CONDITIONAL LOCAL-ONLY EXECUTION AUTHORIZATION**, a narrow amendment to the [2026-11-05 authorized upstream trial](upstream-catchup-isolated-trial-governing-spec-20261105.md) and [Coordination/Handoff Protocol](../../02_COORDINATION_HANDOFF_PROTOCOL.md). Not a change to stable coordination invariants.  
 **Status at authoring:** **AMENDMENT PREPARED / NOT DISPATCHED**; no automatic browser-to-T3 Code connection established; no work launched by writing this document.  
