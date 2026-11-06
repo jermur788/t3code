@@ -68,6 +68,20 @@ Within a new H worktree, **limited authorized work**:
 - Every stage/attempt: write authoritative **T3 Project Runtime task/attempt/handoff** if available. Otherwise append to a **new, restricted local evidence ledger** outside source worktrees, with UTC, owner, exact branch/base, command exits, failure/review results, quotas and next gate. The GitHub planning branch contains specifications only; **no private logs/evidence/sensitive paths/tokens** should be pushed. DeepSeek may move to next stage only after reading actual worker + reviewer evidence, not worker self-assertion.
 - **No fabricated async promise:** a Markdown amendment is not an active agent or automation. It cannot start local workers by itself. Continue autonomously only while an existing supported T3 Code process/session genuinely runs; otherwise return a restart-ready handoff.
 
+### 6.1 Mandatory decision-by-decision routing ledger (user clarification, 2026-11-06 00:21)
+
+**The DeepSeek orchestration chat MUST persist its OWN routing decisions, not merely worker final results.** For **every proposed, selected, rejected, deferred, retried, re-routed or escalated** technical-worker/reviewer assignment, append a durable entry **before dispatch if possible**, then append the observed outcome immediately on return. Include:
+
+1. UTC timestamp; U/R/H stage; task and attempt identifiers; exact local base/worktree owner; current gate and remaining total/cycle budget.
+2. **Routing decision** (dispatch, retry, swap provider/subscription, postpone, stop, independent review), selected provider/model/subscription **non-sensitive alias**, requested and actually observed reasoning effort; any considered alternative that materially affected choice.
+3. **Reason:** task difficulty/risk and model fit, estimated/observed resource cost or UNKNOWN, subscription remaining quota/reset/cooldown from actual provider telemetry or UNKNOWN, independence from implementation author, worktree ownership/conflict constraints.
+4. Dispatch status, actual provider result/error/timeout/rate-limit, test/review evidence refs and exits (as applicable), acceptance verdict, corrective action, next authorized task or reason for stopping.
+5. All gate promotions: reference the exact U/R/H checklist, test outputs and **independent reviewer** result; record who/what authorized promotion. A self-reported worker DONE is never sufficient.
+
+**Durability target:** authoritative T3 Runtime task/attempt/routing/handoff records if supported; otherwise a **restricted local append-only routing ledger** under the existing overnight evidence owner, not a source worktree. Never claim a Runtime write succeeded without checking the result. If a real durable ledger write is unavailable, **stop before the next worker dispatch**, report `OPERATIONAL BLOCKER: ROUTING LEDGER UNAVAILABLE`, and return a restart-ready handoff. Chat text alone is **not** an acceptable ledger. Do not copy private routing logs or account details to the public GitHub repository.
+
+**Audit rule:** stage completion must include ledger continuity (every dispatch and review accounted for), actual-versus-requested effort, subscription selection/re-routing reasons, and accurate quotas or UNKNOWN. The Overall Manager may publish sanitized high-level **state summaries** on the planning branch; the local T3 Code orchestrator is responsible for writing the actual host-local ledger. This ChatGPT browser session does **not** have direct access to that local ledger.
+
 ## 7. Non-negotiable hard stops
 
 Immediately stop and return to user/manager for **PRODUCT DECISION / INTEGRATION CONFLICT / UPSTREAM COMPATIBILITY / SECURITY REVIEW REQUIRED / OPERATIONAL BLOCKER** on any of:
