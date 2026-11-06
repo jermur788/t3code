@@ -36,6 +36,14 @@
 
 **`G-U FINAL PROMOTION HOLD`:** the user explicitly requires a durable **per-routing-decision** log. The U handoff reports a private ledger path and 3 writer + 2 reviewer dispatches, but does NOT prove each decision was logged; the browser manager cannot read the local file. **Before any new R technical worker dispatch, first execute [this coordinator-only routing audit and gate handoff](handoff-upstream-to-r-routing-gate-20261106.md).** Inspect local Runtime/ledger, reconcile missing historical decisions truthfully, verify durable write, then append `G-U FINAL PASS` only if supported. If ledger unavailable, STOP. This later instruction **supersedes** the old paragraph that assumes U has not yet started. H remains gated on real R result. No source push/merge/release.
 
+## 2026-11-06 10:11 Stage R return — superseding next action
+
+**U ledger audit has now RETURNED:** G-U FINAL PASS worker-reported with all five trial assignments accounted for and retrospective fields clearly labeled. **Stage R has also already been IMPLEMENTED and tested** locally: K1/K2 8/8 full-root, focused 206/210, changed-file 294, 36 package typechecks all worker-reported PASS; no main merge/push. **DO NOT redispatch U or Stage R implementation.**
+
+**G-R FINAL PASS is NOT accepted yet under the binding overnight authorization.** R implementation switched from failed Codex sharing-limit dispatch to **Opus 5.5 Medium without the overnight-required separate owner approval**, and R's final reviewer was **another Claude subscription**, not a different provider. Independent review must be from **Codex GPT-6.1 SOL Medium** or another expressly permitted genuinely different provider, READ ONLY, on the immutable R final source. The overnight amendment says same-provider review must stop gate promotion. Two R repair cycles are spent; if real material defect remains, STOP, don't silently start third repair. Report/ledger must separately account for **13 distinct technical assignments plus 7 reported same-lane continuation turns** against 18 real-dispatch cap.
+
+**NEXT:** use the narrower [R cross-provider review and routing audit handoff](handoff-stage-r-cross-provider-review-gate-20261106.md) as the **immediate instruction**. Its first step is checking the current remote planning docs, the actual local R candidate/ledger and provider availability. **Do not start H** until qualifying R review + budget/authority ledger permit a durable G-R FINAL PASS. H is still conditionally preapproved **local only**, but may stop for quota/resources. No public push, main merge, release, live paid provider or Opus calls.
+
 ## Manager note
 
 The extra R/H stages are **not** implied by the earlier upstream-only authority; they rely on the **new explicit overnight instruction** and the detailed gating amendment. Each stage stays local-only. This packet itself does **not** start a T3 Code worker.
