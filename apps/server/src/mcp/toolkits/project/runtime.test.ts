@@ -39,6 +39,7 @@ import * as SqlitePersistence from "../../../persistence/Sqlite.ts";
 import * as ManagedProjectFolders from "../../../project/ManagedProjectFolders.ts";
 import * as ProjectService from "../../../project/ProjectService.ts";
 import * as ProjectRuntimeService from "../../../projectRuntime/ProjectRuntimeService.ts";
+import * as ContinuationGate from "../../../projectRuntime/RuntimeTaskContinuationGate.ts";
 import * as ProjectRuntimeSourceAccess from "../../../projectRuntime/ProjectRuntimeSourceAccess.ts";
 import * as ServerSettings from "../../../serverSettings.ts";
 import * as SourceControlRepositoryService from "../../../sourceControl/SourceControlRepositoryService.ts";
@@ -98,6 +99,7 @@ const layerWorkspace = WorkspaceFileSystem.layer.pipe(
 
 const layerRuntime = ProjectRuntimeSourceAccess.layer.pipe(
   Layer.provideMerge(ProjectRuntimeService.layer),
+  Layer.provideMerge(ContinuationGate.layer(false)),
   Layer.provideMerge(DevelopmentProfileService.layer),
   Layer.provideMerge(ProjectStore.layer),
   Layer.provideMerge(layerWorkspace),

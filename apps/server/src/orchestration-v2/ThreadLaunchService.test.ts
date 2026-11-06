@@ -1,3 +1,14 @@
+import * as RuntimeExecution from "../projectRuntime/RuntimeTaskExecutionService.ts";
+import * as ProjectRuntime from "../projectRuntime/ProjectRuntimeService.ts";
+import * as RuntimeRouting from "../runtimeRouting/RuntimeRoutingService.ts";
+import { RuntimeRoutingProviderView } from "../runtimeRouting/RuntimeRoutingProviderView.ts";
+import * as ContinuationGate from "../projectRuntime/RuntimeTaskContinuationGate.ts";
+import {
+  ProjectRuntimeTaskId,
+  type ProjectRuntimeTask,
+  ProviderInstanceId as RuntimeProviderInstanceId,
+} from "@t3tools/contracts";
+import { PrivateContinuationAuthorization } from "../projectRuntime/ContinuationCommitGuard.ts";
 import * as DocumentText from "../provider/DocumentText.ts";
 import * as Scheduler from "../scheduling/Scheduler.ts";
 import * as WorktreeSetupTracker from "../project/WorktreeSetupTracker.ts";
@@ -67,6 +78,7 @@ import * as ProviderReplayHarness from "./testkit/ProviderReplayHarness.ts";
 import * as RemoteDelegation from "../peer/RemoteDelegation.ts";
 import type * as ProviderAdapter from "@t3tools/provider-core/server/ProviderAdapter";
 
+const sharedContinuationGateLayer = ContinuationGate.layer(true);
 const projectId = ProjectId.make("project:launch-test");
 const otherProjectId = ProjectId.make("project:launch-other");
 const encodeThreadProjection = Schema.encodeEffect(OrchestrationV2ThreadProjectionJson);
@@ -118,6 +130,8 @@ const claudeAdapter = {
 } as ProviderAdapter.ProviderAdapterV2["Service"];
 
 interface HarnessOptions {
+  readonly releaseDenied?: Deferred.Deferred<unknown>;
+  readonly beforeRelease?: Effect.Effect<void, never, SqlClient.SqlClient>;
   readonly closeTerminal?: TerminalManager.TerminalManager["Service"]["close"];
   readonly adapters?: ReadonlyArray<ProviderAdapter.ProviderAdapterV2["Service"]>;
   readonly managedFolders?: Layer.Layer<ManagedProjectFolders.ManagedProjectFolders>;
@@ -141,7 +155,7 @@ function makeHarness(options: HarnessOptions = {}) {
     { name: "thread-launch" },
     layerRegistry,
     { databaseLayer: layerDatabase, runEffectWorker: false },
-  );
+  ).pipe(Layer.provide(sharedContinuationGateLayer));
   const layerServerSettings = ServerSettings.layerTest(options.serverSettings);
   const layerReceipts = CommandReceiptStore.layer.pipe(Layer.provide(layerDatabase));
   const layerThreadManagement = ThreadManagement.layer.pipe(
@@ -235,7 +249,32 @@ function makeHarness(options: HarnessOptions = {}) {
     Layer.provide(
       Layer.mergeAll(
         layerExternalServices,
-        layerThreadManagement,
+        options.beforeRelease === undefined
+          ? layerThreadManagement
+          : Layer.effect(
+              ThreadManagement.ThreadManagementService,
+              Effect.gen(function* () {
+                const threads = yield* ThreadManagement.ThreadManagementService;
+                const sql = yield* SqlClient.SqlClient;
+                const beforeRelease = options.beforeRelease!.pipe(
+                  Effect.provideService(SqlClient.SqlClient, sql),
+                );
+                return {
+                  ...threads,
+                  dispatch: (command: Parameters<typeof threads.dispatch>[0]) =>
+                    command.type === "prepared-run.release"
+                      ? beforeRelease.pipe(
+                          Effect.andThen(threads.dispatch(command)),
+                          Effect.tapError((error) =>
+                            options.releaseDenied === undefined
+                              ? Effect.void
+                              : Deferred.succeed(options.releaseDenied, error),
+                          ),
+                        )
+                      : threads.dispatch(command),
+                };
+              }),
+            ).pipe(Layer.provide(Layer.mergeAll(layerThreadManagement, layerDatabase))),
         layerReceipts,
         IdAllocator.layer,
       ),
@@ -281,6 +320,7 @@ function makeHarness(options: HarnessOptions = {}) {
       layerThreadManagement,
       layerTitleRegeneration,
       layerOutbox,
+      layerReceipts,
       layerDatabase,
       layerExternalServices,
     ),
@@ -2210,6 +2250,383 @@ it.effect("shared intake preserves durable attachment bytes after a lost launch 
     }
   }).pipe(Effect.provide(Layer.mergeAll(harness.layer, layerFiles)));
 });
+
+it.effect(
+  "refuses a revoked private continuation on the real launch path without committing a run",
+  () => {
+    const harness = makeHarness();
+    return Effect.gen(function* () {
+      const launches = yield* ThreadLaunch.ThreadLaunchService;
+      const threads = yield* ThreadManagement.ThreadManagementService;
+      const sql = yield* SqlClient.SqlClient;
+      const input = launchInput({
+        command: "command:revoked-private",
+        thread: "thread:revoked-private",
+        message: "Review",
+      });
+      const denied = yield* launches.launch(input).pipe(
+        Effect.provideService(PrivateContinuationAuthorization, {
+          projectId,
+          sourceTaskId: "source",
+          sourceRevision: 1,
+          targetTaskId: "target",
+          targetRevision: 1,
+          attemptId: "revoked",
+          threadId: input.threadId,
+          requestKey: "cont:revoked",
+          kind: "r",
+        }),
+        Effect.exit,
+      );
+      assert.equal(denied._tag, "Failure");
+      if (Exit.isFailure(denied)) {
+        const failure = Cause.squash(denied.cause);
+        assert.instanceOf(failure, ThreadLaunch.ThreadLaunchError);
+        assert.equal(
+          ((failure as ThreadLaunch.ThreadLaunchError).cause as { _tag?: string })?._tag,
+          "OrchestratorDispatchError",
+        );
+        assert.equal(
+          ((failure as ThreadLaunch.ThreadLaunchError).cause as { cause?: { _tag?: string } }).cause
+            ?._tag,
+          "EventSinkCommitDenied",
+        );
+      }
+      const projection = yield* threads.getThreadProjection(input.threadId);
+      assert.isEmpty(projection.runs);
+      const effects =
+        yield* sql`SELECT * FROM orchestration_v2_effect_outbox WHERE json_extract(payload_json, '$.type') = 'provider-turn.start'`;
+      assert.isEmpty(effects);
+      const receipts =
+        yield* sql`SELECT * FROM orchestration_command_receipts WHERE command_type = 'message.dispatch' AND status = 'accepted'`;
+      assert.isEmpty(receipts);
+    }).pipe(Effect.provide(harness.layer));
+  },
+);
+
+it.effect.each(["release", "retry"] as const)(
+  "denied %s terminates the complete preparation projection and re-denies replay",
+  (action) =>
+    Effect.gen(function* () {
+      const entered = yield* Deferred.make<void>();
+      const blocked = yield* Deferred.make<void>();
+      const harness = makeHarness({
+        runSetup: () =>
+          Deferred.succeed(entered, undefined).pipe(
+            Effect.andThen(Deferred.await(blocked)),
+            Effect.as({ status: "no-script" as const }),
+          ),
+      });
+      yield* Effect.gen(function* () {
+        const launches = yield* ThreadLaunch.ThreadLaunchService;
+        const threads = yield* ThreadManagement.ThreadManagementService;
+        const sql = yield* SqlClient.SqlClient;
+        const launched = yield* launches.launch(
+          launchInput({
+            command: "command:denied-release",
+            thread: "thread:denied-release",
+            message: "Prepare",
+            workspace: { type: "worktree", baseRef: "main" },
+          }),
+        );
+        yield* Deferred.await(entered);
+        const runId = launched.projection.runs[0]!.id;
+        if (action === "retry")
+          yield* threads.dispatch({
+            type: "prepared-run.fail",
+            commandId: CommandId.make("command:denied-release:initial-failure"),
+            threadId: launched.threadId,
+            runId,
+            failure: {
+              class: "unknown",
+              message: "distinct original setup failure",
+              code: null,
+              retryable: true,
+            },
+          });
+
+        const initialErrorId =
+          action === "retry"
+            ? (yield* threads.getThreadProjection(launched.threadId)).turnItems.find(
+                (item) =>
+                  item.type === "error" &&
+                  item.failure.message === "distinct original setup failure",
+              )?.id
+            : undefined;
+        if (action === "retry") assert.isDefined(initialErrorId);
+        yield* sql`INSERT OR IGNORE INTO projection_projects (project_id, title, workspace_root, scripts_json, created_at, updated_at) VALUES (${projectId}, 'Revocation', '/tmp/revocation', '[]', '2026-11-05', '2026-11-05')`;
+        yield* sql`INSERT INTO project_runtime (project_id, enabled, revision, created_at, updated_at) VALUES (${projectId}, 1, 1, '2026-11-05', '2026-11-05')`;
+        yield* sql`INSERT INTO project_runtime_tasks (project_id, task_id, status, revision, created_at, payload_json) VALUES (${projectId}, 'revoked-target', 'ready', 1, '2026-11-05', '{}')`;
+        const authorization = {
+          projectId,
+          sourceTaskId: "withdrawn-source",
+          sourceRevision: 1,
+          targetTaskId: "revoked-target",
+          targetRevision: 1,
+          attemptId: "missing",
+          threadId: launched.threadId,
+          requestKey: "cont:revoked",
+          kind: "r",
+        };
+        yield* sql`INSERT INTO project_runtime_execution_attempts (attempt_id, project_id, task_id, status, revision, thread_id, request_key, created_at, updated_at, payload_json) VALUES ('missing', ${projectId}, 'revoked-target', 'pending', 1, ${launched.threadId}, 'cont:revoked', '2026-11-05', '2026-11-05', ${JSON.stringify({ continuationAuthorization: authorization })})`;
+        yield* sql`UPDATE orchestration_v2_projection_runs SET payload_json = json_set(payload_json, '$.userMessageId', 'message:runtime-execution:missing') WHERE run_id = ${runId}`;
+        const command = {
+          type:
+            action === "release"
+              ? ("prepared-run.release" as const)
+              : ("prepared-run.retry" as const),
+          threadId: launched.threadId,
+          runId,
+          commandId: CommandId.make("command:denied-release:manual"),
+        };
+        for (const _ of [0, 1]) {
+          const denied = yield* threads.dispatch(command).pipe(Effect.flip);
+          assert.equal(denied._tag, "OrchestratorDispatchError");
+          assert.equal(
+            (denied as { cause?: { _tag?: string } }).cause?._tag,
+            "EventSinkCommitDenied",
+          );
+        }
+        assert.isEmpty(
+          yield* sql`SELECT * FROM orchestration_v2_effect_outbox WHERE json_extract(payload_json, '$.type') = 'provider-turn.start'`,
+        );
+        assert.isEmpty(
+          yield* (yield* EffectOutbox.EffectOutboxV2).listByCommandId(command.commandId),
+        );
+        const projection = yield* threads.getThreadProjection(launched.threadId);
+        assert.equal(projection.runs[0]?.status, "cancelled");
+        const lateFailure = {
+          type: "prepared-run.fail" as const,
+          commandId: CommandId.make("command:denied-release:late-failure"),
+          threadId: launched.threadId,
+          runId,
+          failure: {
+            class: "unknown" as const,
+            message: "late setup failure",
+            code: null,
+            retryable: true,
+          },
+        };
+        for (const _ of [0, 1]) yield* threads.dispatch(lateFailure);
+        const afterLateFailure = yield* threads.getThreadProjection(launched.threadId);
+        for (const field of ["runs", "attempts", "nodes", "turnItems"] as const)
+          assert.deepEqual(afterLateFailure[field], projection[field]);
+        assert.isEmpty(
+          yield* (yield* EffectOutbox.EffectOutboxV2).listByCommandId(lateFailure.commandId),
+        );
+        const errorItems = projection.turnItems.filter((item) => item.type === "error");
+        assert.isNotEmpty(errorItems);
+        if (action === "retry")
+          assert.isTrue(errorItems.some((item) => item.id === initialErrorId));
+        for (const item of errorItems) {
+          assert.notEqual(item.failure.message, "distinct original setup failure");
+          assert.include(item.failure.message, "revoked");
+        }
+        const [runtimeAttempt] = yield* sql<{
+          status: string;
+        }>`SELECT status FROM project_runtime_execution_attempts WHERE attempt_id = 'missing'`;
+        assert.equal(runtimeAttempt?.status, "cancelled");
+        assert.equal(projection.attempts[0]?.status, "cancelled");
+        assert.equal(projection.nodes[0]?.status, "cancelled");
+        assert.isTrue(
+          projection.turnItems.some(
+            (item) => item.type === "command_execution" && item.status === "failed",
+          ),
+        );
+        assert.isTrue(
+          projection.turnItems.some((item) => item.type === "error" && item.status === "failed"),
+        );
+        assert.isTrue(
+          Option.isNone(
+            yield* (yield* CommandReceiptStore.CommandReceiptStoreV2).getByCommandId(
+              command.commandId,
+            ),
+          ),
+        );
+      }).pipe(Effect.provide(harness.layer));
+    }),
+);
+
+it.effect("Runtime preserves real release compensation without a revision-CAS fallback", () =>
+  Effect.gen(function* () {
+    const releaseDenied = yield* Deferred.make<unknown>();
+    const harness = makeHarness({
+      releaseDenied,
+      beforeRelease: Effect.gen(function* () {
+        const sql = yield* SqlClient.SqlClient;
+        yield* sql`DELETE FROM project_runtime_tasks WHERE task_id = 'source-policy'`.pipe(
+          Effect.orDie,
+        );
+      }),
+    });
+    yield* Effect.gen(function* () {
+      const sql = yield* SqlClient.SqlClient;
+      const launches = yield* ThreadLaunch.ThreadLaunchService;
+      const taskId = ProjectRuntimeTaskId.make("runtime-target");
+      const task: ProjectRuntimeTask = {
+        taskId,
+        projectId,
+        title: "Target",
+        scope: "Review",
+        owner: "user:test",
+        acceptanceCriteria: [],
+        status: "ready",
+        blocker: null,
+        verification: { milestone: "none", evidence: [] },
+        latestHandoffId: null,
+        revision: 1,
+        createdAt: project.createdAt,
+        updatedAt: project.updatedAt,
+        createdBy: "user:test",
+        updatedBy: "user:test",
+      };
+      yield* sql`INSERT INTO projection_projects (project_id,title,workspace_root,scripts_json,created_at,updated_at) VALUES (${projectId},'Runtime','/repo','[]',${project.createdAt},${project.updatedAt})`;
+      yield* sql`INSERT INTO project_runtime (project_id,enabled,revision,created_at,updated_at) VALUES (${projectId},1,1,${project.createdAt},${project.updatedAt})`;
+      yield* sql`INSERT INTO project_runtime_tasks (project_id,task_id,status,revision,created_at,payload_json) VALUES (${projectId},${taskId},'ready',1,${project.createdAt},'{}')`;
+      yield* sql`INSERT INTO project_runtime_tasks (project_id,task_id,status,revision,created_at,payload_json) VALUES (${projectId},'source-policy','ready',1,${project.createdAt},${JSON.stringify({ continuation: { mode: "synthetic", reviewTaskId: taskId } })})`;
+      let denial: unknown;
+      const runtimeLayer = RuntimeExecution.layer.pipe(
+        Layer.provide(
+          Layer.mergeAll(
+            sharedContinuationGateLayer,
+            Layer.mock(ProjectRuntime.ProjectRuntimeService)({
+              getStatus: () => Effect.succeed({ enabled: true, version: 1, revision: 1 }),
+              readTask: () => Effect.succeed(task),
+            }),
+            Layer.mock(RuntimeRouting.RuntimeRoutingService)({
+              resolveRoute: () =>
+                Effect.succeed({
+                  projectId,
+                  taskId,
+                  role: "implementation",
+                  status: "resolved",
+                  source: "project",
+                  selected: {
+                    source: "project",
+                    candidateIndex: 0,
+                    candidate: {
+                      providerInstanceId: modelSelection.instanceId,
+                      model: modelSelection.model,
+                    },
+                    providerInstanceId: modelSelection.instanceId,
+                    driverKind: ProviderDriverKind.make("codex"),
+                    model: modelSelection.model,
+                    isolation: "shared",
+                    eligibility: "eligible-at-resolution",
+                  },
+                  inheritedFrom: null,
+                  rejected: [],
+                  failure: null,
+                  revisions: { task: 1, projectRouting: 1, profile: null, assignment: null },
+                }),
+            }),
+            Layer.succeed(RuntimeRoutingProviderView, {
+              read: Effect.succeed({
+                providers: [
+                  {
+                    instanceId: modelSelection.instanceId,
+                    driver: ProviderDriverKind.make("codex"),
+                    enabled: true,
+                    installed: true,
+                    status: "ready" as const,
+                    auth: { status: "authenticated" as const },
+                    version: null,
+                    checkedAt: project.createdAt,
+                    models: [
+                      {
+                        slug: modelSelection.model,
+                        name: "Test",
+                        isCustom: false,
+                        capabilities: null,
+                      },
+                    ],
+                    slashCommands: [],
+                    skills: [],
+                  },
+                ],
+                orchestrationCapableInstanceIds: new Set([RuntimeProviderInstanceId.make("codex")]),
+                settings: DEFAULT_SERVER_SETTINGS,
+                capacityByInstanceId: new Map(),
+              }),
+            }),
+            Layer.mock(ThreadLaunch.ThreadLaunchService)({
+              checkWorktreeBase: launches.checkWorktreeBase,
+              launch: (input) =>
+                Effect.gen(function* () {
+                  const [row] = yield* sql<{
+                    attempt_id: string;
+                  }>`SELECT attempt_id FROM project_runtime_execution_attempts WHERE thread_id = ${input.threadId}`.pipe(
+                    Effect.orDie,
+                  );
+                  const authorization = {
+                    projectId,
+                    sourceTaskId: "source-policy",
+                    sourceRevision: 1,
+                    targetTaskId: taskId,
+                    targetRevision: 1,
+                    attemptId: row!.attempt_id,
+                    threadId: input.threadId!,
+                    requestKey: "cont:runtime-release",
+                    kind: "r" as const,
+                  };
+                  yield* sql`UPDATE project_runtime_execution_attempts SET request_key = ${authorization.requestKey}, payload_json = json_set(payload_json, '$.continuationAuthorization', json(${JSON.stringify(authorization)})) WHERE thread_id = ${input.threadId}`.pipe(
+                    Effect.orDie,
+                  );
+                  return yield* launches.launch(input).pipe(
+                    // Production launch forks and suppresses preparation failures. Bridge
+                    // its real release denial here to exercise Runtime's catch boundary.
+                    Effect.andThen(() => Deferred.await(releaseDenied)),
+                    Effect.flatMap((cause) =>
+                      Effect.fail(
+                        new ThreadLaunch.ThreadLaunchError({
+                          operation: "release-run",
+                          commandId: input.commandId,
+                          projectId,
+                          threadId: input.threadId!,
+                          cause,
+                        }),
+                      ),
+                    ),
+                    Effect.provideService(PrivateContinuationAuthorization, authorization),
+                    Effect.tapError((error) =>
+                      Effect.gen(function* () {
+                        denial = error;
+                        // Remove the compensation revision bump to prove Runtime preserves
+                        // cancellation by status, independently of a stale-revision CAS.
+                        yield* sql`UPDATE project_runtime_execution_attempts SET revision = 1, payload_json = json_set(payload_json, '$.revision', 1) WHERE thread_id = ${input.threadId}`.pipe(
+                          Effect.orDie,
+                        );
+                      }),
+                    ),
+                  );
+                }),
+            }),
+          ),
+        ),
+      );
+      const attempt = yield* RuntimeExecution.RuntimeTaskExecutionService.use((runtime) =>
+        runtime.execute(projectId, { taskId, expectedTaskRevision: 1 }),
+      ).pipe(Effect.provide(runtimeLayer));
+      assert.equal(attempt.status, "cancelled");
+      assert.instanceOf(denial, ThreadLaunch.ThreadLaunchError);
+      assert.equal((denial as ThreadLaunch.ThreadLaunchError).operation, "release-run");
+      assert.equal(
+        ((denial as ThreadLaunch.ThreadLaunchError).cause as { cause: { _tag: string } }).cause
+          ._tag,
+        "EventSinkCommitDenied",
+      );
+      const [stored] = yield* sql<{
+        status: string;
+        revision: number;
+      }>`SELECT status, revision FROM project_runtime_execution_attempts WHERE attempt_id = ${attempt.attemptId}`;
+      assert.equal(stored?.status, "cancelled");
+      assert.equal(stored?.revision, attempt.revision);
+      assert.isEmpty(
+        yield* sql`SELECT * FROM orchestration_v2_effect_outbox WHERE json_extract(payload_json, '$.type') = 'provider-turn.start'`,
+      );
+    }).pipe(Effect.provide(Layer.mergeAll(harness.layer, NodeCrypto.layer)));
+  }),
+);
 
 it.effect("cancels tracked setup before provider work is released", () =>
   Effect.gen(function* () {

@@ -81,6 +81,7 @@ it.effect.each([
     ),
   );
   const executor = EffectWorker.layerExecutor.pipe(
+    Layer.provide(SqlitePersistence.layerMemory),
     Layer.provide(
       Layer.mergeAll(
         finalization,

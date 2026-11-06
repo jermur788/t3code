@@ -31,6 +31,7 @@ import * as ThreadCommandExecutor from "../orchestration-v2/ThreadCommandExecuto
 import { planThreadDeletion } from "../orchestration-v2/ThreadDeletion.ts";
 import * as SqlitePersistence from "../persistence/Sqlite.ts";
 import * as ProjectRuntimeService from "../projectRuntime/ProjectRuntimeService.ts";
+import * as ContinuationGate from "../projectRuntime/RuntimeTaskContinuationGate.ts";
 import * as ServerSettings from "../serverSettings.ts";
 import * as WorkspacePaths from "../workspace/WorkspacePaths.ts";
 import * as ProjectEnrichmentService from "./ProjectEnrichmentService.ts";
@@ -42,7 +43,10 @@ const layerEventPersistence = EventSink.layer.pipe(
   Layer.provideMerge(Layer.merge(EventStore.layer, ProjectionStore.layer)),
 );
 const layerServices = Layer.mergeAll(
-  ProjectRuntimeService.layer.pipe(Layer.provideMerge(DevelopmentProfileService.layer)),
+  ProjectRuntimeService.layer.pipe(
+    Layer.provideMerge(DevelopmentProfileService.layer),
+    Layer.provideMerge(ContinuationGate.layer(false)),
+  ),
   LegacyV1ThreadImporter.layer.pipe(Layer.provideMerge(layerEventPersistence)),
   ProjectionReplay.layer.pipe(Layer.provide(layerEventPersistence)),
   ProjectStore.layer,
