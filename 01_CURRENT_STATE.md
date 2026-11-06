@@ -1,6 +1,6 @@
 # T3 Fork — Current State and Roadmap
 
-**Updated:** 2026-11-06 after 10:24 owner confirmed prior Stage R Opus approval. No Opus-authority deviation; G-R remains on independent cross-provider review and dispatch-ledger audit hold.
+**Updated:** 2026-11-06 after 11:40 user requested separate cooperative upstream PR #28777 conflict/test contribution handoff; packet PREPARED / NOT DISPATCHED. Stage R G-R review HOLD remains unchanged.
 **Classification:** CURRENT PROJECT STATE — authoritative snapshot for manager continuation, not a code change.  
 **Repository:** [jermur788/t3code](https://github.com/jermur788/t3code)  
 **Maintained on:** `planning/resource-efficient-continuation-20261103` — **not fork main**.  
