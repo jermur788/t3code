@@ -29,6 +29,8 @@ import * as SqlClient from "effect/sql/SqlClient";
 import * as Effect from "effect/Effect";
 import * as Queue from "effect/Queue";
 import * as Deferred from "effect/Deferred";
+import * as ProjectionStore from "../orchestration-v2/ProjectionStore.ts";
+import * as ProjectionReplay from "../orchestration-v2/testkit/ProjectionReplay.ts";
 import { OrchestrationEffectWorkerV2 } from "../orchestration-v2/EffectWorker.ts";
 import { ProviderRuntimeRecoveryService } from "../orchestration-v2/ProviderRuntimeRecoveryService.ts";
 import { ServerSettingsService } from "../serverSettings.ts";
@@ -390,6 +392,10 @@ const assemble = Effect.fn("D4FullServerAssembly.assemble")(function* (
   });
 
   return {
+    replay: yield* ProjectionReplay.ProjectionReplay.pipe(
+      Effect.provide(ProjectionReplay.layer.pipe(Layer.provide(ProjectionStore.layer))),
+      Effect.provide(context),
+    ),
     execution,
     runtime,
     recovery: Context.get(context, ProviderRuntimeRecoveryService),
@@ -868,6 +874,26 @@ it.effect(
         assert.deepEqual(replayed.run, settled.run);
         assert.deepEqual(replayed.attempts, settled.attempts);
         assert.equal(replayed.attempts[0]?.status, "cancelled");
+        const lateFail = {
+          type: "prepared-run.fail" as const,
+          commandId: CommandId.make(`${launchId}:fail-after-rebuild`),
+          threadId,
+          runId,
+          failure: { class: "unknown" as const, message: "late", code: null, retryable: false },
+        };
+        assert.isTrue((yield* a.replay.rebuild).valid);
+        const afterRebuild = yield* a.dispatch(lateFail);
+        assert.isEmpty(afterRebuild.storedEvents);
+        assert.deepEqual(yield* a.dispatch(lateFail), { ...afterRebuild, replayed: true });
+        assert.isTrue((yield* a.replay.rebuild).valid);
+        assert.deepEqual(yield* a.dispatch(lateFail), { ...afterRebuild, replayed: true });
+        assert.isEmpty(
+          (yield* a.dispatch({
+            ...lateFail,
+            commandId: CommandId.make(`${launchId}:fail-after-second-rebuild`),
+          })).storedEvents,
+        );
+        assert.deepEqual((yield* observe).events, settled.events);
         assert.equal(a.adapterCalls(), 0);
       }),
     ),

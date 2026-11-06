@@ -10485,11 +10485,18 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
       ["runs", "attempts", "nodes", "providerThreads", "turnItems"],
       { turnItemTypes: ["command_execution"], turnItemRunId: command.runId },
     );
-    // A background preparation callback can finish after revocation cancelled the run.
-    // Preserve that terminal projection and accept replay without emitting more work.
+    // Revocation compensation persists a failed preparation item with a cancelled run.
+    // Archive cancels the preparation item; these projections also survive event pruning.
     if (
       revokedCommand === undefined &&
-      projection.runs.some((run) => run.id === command.runId && run.status === "cancelled")
+      projection.runs.some((run) => run.id === command.runId && run.status === "cancelled") &&
+      projection.turnItems.some(
+        (item) =>
+          item.runId === command.runId &&
+          item.type === "command_execution" &&
+          item.input === WORKSPACE_PREPARATION_INPUT &&
+          item.status === "failed",
+      )
     )
       return;
     const state = preparedRunState(revokedCommand ?? command, projection);

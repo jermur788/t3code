@@ -5049,6 +5049,66 @@ it.layer(layerTest)("OrchestrationV2LayerLive lifecycle", (it) => {
     }),
   );
 
+  it.effect.each(["thread.archive", "thread.stop"] as const)(
+    "rejects late preparation failures after %s even with a revocation-shaped command id",
+    (type) =>
+      Effect.gen(function* () {
+        const orchestrator = yield* Orchestrator.OrchestratorV2;
+        const maintenance = yield* ProjectionReplay.ProjectionReplay;
+        const threadId = ThreadId.make(`late-fail-${type}`);
+        yield* createTestThread(orchestrator, {
+          type: "thread.create",
+          createdBy: "user",
+          creationSource: "web",
+          commandId: CommandId.make(`${type}:create`),
+          threadId,
+          projectId: ProjectId.make(`${type}:project`),
+          title: "Late preparation failure",
+          modelSelection,
+          runtimeMode: "full-access",
+          interactionMode: "default",
+          branch: null,
+          worktreePath: null,
+        });
+        yield* orchestrator.dispatch({
+          type: "message.dispatch",
+          createdBy: "user",
+          creationSource: "web",
+          commandId: CommandId.make(`${type}:message`),
+          threadId,
+          messageId: MessageId.make(`${type}:message`),
+          text: "Prepare workspace",
+          attachments: [],
+          modelSelection,
+          dispatchMode: { type: "defer_start" },
+        });
+        const run = (yield* orchestrator.getThreadProjection(threadId)).runs[0]!;
+        yield* orchestrator.dispatch({
+          type,
+          commandId: CommandId.make(`${type}:revoked-cancel`),
+          threadId,
+        });
+        for (const replay of [false, true]) {
+          if (replay) assert.isTrue((yield* maintenance.rebuild).valid);
+          const error = yield* orchestrator
+            .dispatch({
+              type: "prepared-run.fail",
+              commandId: CommandId.make(`${type}:late:${replay}`),
+              threadId,
+              runId: run.id,
+              failure: { class: "unknown", message: "late", code: null, retryable: false },
+            })
+            .pipe(Effect.flip);
+          assert.equal(error._tag, "OrchestratorDispatchError");
+          assert.equal(error.cause, `Run ${run.id} is not awaiting workspace preparation.`);
+          assert.equal(
+            (yield* orchestrator.getThreadProjection(threadId)).runs[0]?.status,
+            type === "thread.archive" ? "cancelled" : "interrupted",
+          );
+        }
+      }),
+  );
+
   it.effect.each([false, true])(
     "promotes only one queued run after each terminal run (notification: %s)",
     (automatic) =>
