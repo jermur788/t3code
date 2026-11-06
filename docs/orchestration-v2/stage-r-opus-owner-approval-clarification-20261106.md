@@ -1,0 +1,11 @@
+# Stage R — owner confirmation of Opus approval
+
+**Decision clarification:** On 2026-11-06 at 10:24 local time, the user explicitly stated: **"i apporved opus"** in direct response to the manager's assertion that Opus lacked approval. The user is the final authority over provider use. Treat this as **owner confirmation that the Stage R Claude Opus fallback was approved**. Do not continue to classify its past use as an unauthorized routing event.
+
+**Evidence boundary:** The current conversation does not establish the exact earlier timestamp or mechanism of that approval, nor any material paid API spend. Preserve the coordinator's recorded routing rationale, provider-instance/subscription, effective effort, quota and spend evidence (or UNKNOWN); do not invent when it was approved or claim cost verified from this correction. The older overnight "no Opus without approval" default was therefore **satisfied for the specific Stage R fallback as confirmed by the owner**; this clarification does not confer unrestricted approval for future Opus dispatches, paid API calls, production, major architecture changes, Git push or integration.
+
+**Separately still open:** The accepted overnight G-R gate requires an independent **different-provider** read-only review. The Stage R implementer was Claude Opus, and the reported reviewer was a separate Claude subscription/context, not a different provider. A different subscription alone does not satisfy the stronger cross-provider requirement. The reviewed R code and tests can retain their reported status, but **G-R FINAL PASS is HELD only for the outstanding cross-provider review and verified 18-dispatch budget/ledger accounting**. No H implementation until those checks pass. The user has not waived independent cross-provider review by confirming Opus approval.
+
+**Current action:** [R cross-provider review and routing audit handoff](handoff-stage-r-cross-provider-review-gate-20261106.md) remains the next safe local work; remove the old 'unauthorized Opus' accusation from active instructions. Stage R code stays isolated/unpushed. [Current State](../../01_CURRENT_STATE.md) and [manager handoff](../../OVERALL_MANAGER_HANDOFF.md) govern subsequent progress.
+
+**Status:** **OPUS FALLBACK OWNER-CONFIRMED / CROSS-PROVIDER G-R REVIEW HOLD / STAGE H NOT STARTED / NOT INTEGRATED**.
