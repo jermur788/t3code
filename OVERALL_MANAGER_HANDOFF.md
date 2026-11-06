@@ -65,6 +65,9 @@ Historical chats are supporting evidence; do not treat them as authoritative if 
 
 ## Open risks and milestone context
 
+- **Upstream PR #28777 Nov 5 Maria feedback (read-only):** [Maria confirms branch updated and 28 CI passes](https://github.com/pingdotgg/t3code/pull/28777#issuecomment-6637277589), [no context-budget-increase label needed](https://github.com/pingdotgg/t3code/pull/28777#discussion_r4487097364). The separate [our test-only `original-interrupted` patch](https://github.com/jermur788/t3code/blob/research/pr-28777-continuation-regression-20261103/docs/orchestration-v2/research-pr28777-original-interrupted-corrected.patch) was **not included** in current upstream PR diff/test source (checked browser connector). PR remains OPEN/UNMERGED; current GitHub API says `mergeable_state=dirty` after base advanced, so Maria's earlier no-conflicts statement was point-in-time. Live provider-session retention unverified. [Current State](01_CURRENT_STATE.md) has full note. No public reply, push or patch integration requested.
+
+
 - **Stage R Opus fallback was OWNER-APPROVED:** user explicitly corrected the manager on 2026-11-06 at 10:24. The earlier unsupported unauthorized-use finding is **withdrawn**. Original approval time/details and any cost remain evidence to record accurately or UNKNOWN; no blanket future Opus authorization.
 - **G-R CROSS-PROVIDER REVIEW HOLD:** R implementer Claude Opus and reviewer another Claude account/context; despite tests and review findings reportedly resolved, independent *different-provider* read-only reviewer is still required, ideally Codex SOL Medium. No H without verified gate and remaining capacity.
 - **Routing cap:** 13 distinct worker/reviewer assignments reported, plus seven same-lane continuation turns. Classify actual dispatch vs resume from provider ledger, max 18. Two R repair cycles already consumed; new material fixes require separate scope.
