@@ -25,6 +25,7 @@ import {
   ProjectRuntimeSourceUpdateInput,
   type ProjectRuntimeStatus,
   ProjectRuntimeTask,
+  type ProjectRuntimeContinuationPolicy,
   type ProjectRuntimeTaskBlockerInput,
   ProjectRuntimeTaskCreateInput,
   ProjectRuntimeTaskId,
@@ -630,6 +631,9 @@ const make = Effect.gen(function* () {
       }
       const record: ProjectRuntimeTask = {
         ...data,
+        ...(data.continuation === undefined
+          ? {}
+          : { continuation: yield* stampContinuation(projectId, data.continuation) }),
         projectId,
         taskId,
         owner: data.owner ?? actor,
@@ -663,6 +667,64 @@ const make = Effect.gen(function* () {
     sql.withTransaction,
     sqlErrors,
   );
+  // The policy is accepted against the targets as the operator saw them at this write.
+  const stampContinuation = Effect.fn("ProjectRuntimeService.stampContinuation")(function* (
+    projectId: ProjectId,
+    policy: ProjectRuntimeContinuationPolicy,
+  ) {
+    const { acceptedTargetRevisions: _ignored, ...rest } = policy;
+    const rows = yield* sql<{ readonly task_id: string; readonly revision: number }>`
+      SELECT task_id, revision FROM project_runtime_tasks
+      WHERE project_id = ${projectId}
+        AND task_id IN (${policy.reviewTaskId}, ${policy.repairTaskId ?? policy.reviewTaskId})`;
+    const revisionOf = (taskId: string | undefined) =>
+      rows.find((row) => row.task_id === taskId)?.revision;
+    const review = revisionOf(policy.reviewTaskId);
+    const repair = revisionOf(policy.repairTaskId);
+    // A target missing here was never accepted; a later operator-created target stays unstamped.
+    return {
+      ...rest,
+      acceptedTargetRevisions: {
+        ...(review === undefined ? {} : { review }),
+        ...(repair === undefined ? {} : { repair }),
+      },
+    };
+  });
+
+  // A review or repair packet is built from its target task when the continuation dispatches.
+  // While an active policy names a target, agents may write to it only as that target's own
+  // attempt (its handoff is the review result). Operator edits stay allowed; the dispatch then
+  // finds a revision the policy did not accept and waits for the operator to save it again.
+  const requireUnlockedContinuationTarget = Effect.fn(
+    "ProjectRuntimeService.requireUnlockedContinuationTarget",
+  )(function* (
+    projectId: ProjectId,
+    taskId: ProjectRuntimeTaskId,
+    actor: string,
+    handoff: boolean,
+  ) {
+    if (actor.startsWith("user:")) return;
+    const sources = yield* sql`SELECT 1 FROM project_runtime_tasks
+      WHERE project_id = ${projectId} AND task_id <> ${taskId}
+        AND status IN ('planned', 'ready', 'active', 'review')
+        AND json_extract(payload_json, '$.continuation.mode') = 'synthetic'
+        AND (json_extract(payload_json, '$.continuation.reviewTaskId') = ${taskId}
+          OR json_extract(payload_json, '$.continuation.repairTaskId') = ${taskId})
+      LIMIT 1`;
+    if (sources.length === 0) return;
+    if (handoff) {
+      const own = yield* sql`SELECT 1 FROM project_runtime_execution_attempts
+        WHERE project_id = ${projectId} AND task_id = ${taskId} AND 'thread:' || thread_id = ${actor}
+        LIMIT 1`;
+      if (own.length > 0) return;
+    }
+    return yield* new ProjectRuntimeInvalidTransitionError({
+      projectId,
+      taskId,
+      violation: "continuation_requires_operator",
+    });
+  });
+
   const updateTask: ProjectRuntimeService["Service"]["updateTask"] = Effect.fn(
     "ProjectRuntimeService.updateTask",
   )(
@@ -687,9 +749,14 @@ const make = Effect.gen(function* () {
           violation: "continuation_requires_operator",
         });
       }
+      yield* requireUnlockedContinuationTarget(projectId, taskId, actor, false);
       const timestamp = yield* now;
+      const stamped =
+        patch.continuation === undefined || patch.continuation === null
+          ? patch
+          : { ...patch, continuation: yield* stampContinuation(projectId, patch.continuation) };
       const record: ProjectRuntimeTask = {
-        ...applyTaskPatch(existing, patch, timestamp),
+        ...applyTaskPatch(existing, stamped, timestamp),
         revision: existing.revision + 1,
         updatedAt: timestamp,
         updatedBy: actor,
@@ -753,6 +820,7 @@ const make = Effect.gen(function* () {
           currentRevision: task.revision,
         });
       }
+      yield* requireUnlockedContinuationTarget(projectId, task.taskId, actor, true);
       const {
         taskId,
         expectedTaskRevision,

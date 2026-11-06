@@ -132,6 +132,10 @@ const claudeAdapter = {
 interface HarnessOptions {
   readonly releaseDenied?: Deferred.Deferred<unknown>;
   readonly beforeRelease?: Effect.Effect<void, never, SqlClient.SqlClient>;
+  readonly onDispatched?: (command: {
+    readonly type: string;
+    readonly commandId: string;
+  }) => Effect.Effect<void>;
   readonly closeTerminal?: TerminalManager.TerminalManager["Service"]["close"];
   readonly adapters?: ReadonlyArray<ProviderAdapter.ProviderAdapterV2["Service"]>;
   readonly managedFolders?: Layer.Layer<ManagedProjectFolders.ManagedProjectFolders>;
@@ -249,20 +253,21 @@ function makeHarness(options: HarnessOptions = {}) {
     Layer.provide(
       Layer.mergeAll(
         layerExternalServices,
-        options.beforeRelease === undefined
+        options.beforeRelease === undefined && options.onDispatched === undefined
           ? layerThreadManagement
           : Layer.effect(
               ThreadManagement.ThreadManagementService,
               Effect.gen(function* () {
                 const threads = yield* ThreadManagement.ThreadManagementService;
                 const sql = yield* SqlClient.SqlClient;
-                const beforeRelease = options.beforeRelease!.pipe(
+                const beforeRelease = (options.beforeRelease ?? Effect.void).pipe(
                   Effect.provideService(SqlClient.SqlClient, sql),
                 );
+                const onDispatched = options.onDispatched ?? (() => Effect.void);
                 return {
                   ...threads,
                   dispatch: (command: Parameters<typeof threads.dispatch>[0]) =>
-                    command.type === "prepared-run.release"
+                    (command.type === "prepared-run.release"
                       ? beforeRelease.pipe(
                           Effect.andThen(threads.dispatch(command)),
                           Effect.tapError((error) =>
@@ -271,11 +276,14 @@ function makeHarness(options: HarnessOptions = {}) {
                               : Deferred.succeed(options.releaseDenied, error),
                           ),
                         )
-                      : threads.dispatch(command),
+                      : threads.dispatch(command)
+                    ).pipe(Effect.ensuring(onDispatched(command))),
                 };
               }),
             ).pipe(Layer.provide(Layer.mergeAll(layerThreadManagement, layerDatabase))),
         layerReceipts,
+        layerDatabase,
+        sharedContinuationGateLayer,
         IdAllocator.layer,
       ),
     ),
@@ -2443,6 +2451,108 @@ it.effect.each(["release", "retry"] as const)(
             ),
           ),
         );
+      }).pipe(Effect.provide(harness.layer));
+    }),
+);
+
+it.effect.each(["checkout", "setup", "release"] as const)(
+  "revocation committed before %s never creates, sets up or keeps a continuation worktree",
+  (stage) =>
+    Effect.gen(function* () {
+      const entered = yield* Deferred.make<void>();
+      const unblock = yield* Deferred.make<void>();
+      const failed = yield* Deferred.make<void>();
+      const hold = <A>(value: A) =>
+        Deferred.succeed(entered, undefined).pipe(
+          Effect.andThen(Deferred.await(unblock)),
+          Effect.as(value),
+        );
+      const launchCommand = "command:revoked-worktree";
+      const harness = makeHarness({
+        onDispatched: (command) =>
+          command.commandId === `${launchCommand}:fail`
+            ? Deferred.succeed(failed, undefined)
+            : Effect.void,
+        // Each hold runs strictly before the guarded side effect of its stage.
+        hasCommit: (input) =>
+          stage === "checkout" && input.refName.startsWith("refs/heads/")
+            ? hold(false)
+            : Effect.succeed(false),
+        createWorktree: (input, options) =>
+          Effect.gen(function* () {
+            yield* options?.progress?.onWorktreeClaimed?.("/repo-worktrees/revoked") ?? Effect.void;
+            const result = {
+              worktree: {
+                path: "/repo-worktrees/revoked",
+                refName: input.newRefName,
+                headSha: "abc",
+              },
+            } as never;
+            return stage === "setup" ? yield* hold(result) : result;
+          }),
+        runSetup: () =>
+          stage === "release"
+            ? hold({ status: "no-script" as const })
+            : Effect.succeed({ status: "no-script" as const }),
+      });
+      yield* Effect.gen(function* () {
+        const launches = yield* ThreadLaunch.ThreadLaunchService;
+        const threads = yield* ThreadManagement.ThreadManagementService;
+        const sql = yield* SqlClient.SqlClient;
+        const launched = yield* launches.launch(
+          launchInput({
+            command: launchCommand,
+            thread: "thread:revoked-worktree",
+            message: "Review",
+            workspace: { type: "worktree", baseRef: "main" },
+          }),
+        );
+        yield* Deferred.await(entered);
+        const runId = launched.projection.runs[0]!.id;
+        // Committed revocation: the authorization's source task no longer exists.
+        yield* sql`INSERT OR IGNORE INTO projection_projects (project_id, title, workspace_root, scripts_json, created_at, updated_at) VALUES (${projectId}, 'Revocation', '/repo', '[]', '2026-11-06', '2026-11-06')`;
+        yield* sql`INSERT INTO project_runtime (project_id, enabled, revision, created_at, updated_at) VALUES (${projectId}, 1, 1, '2026-11-06', '2026-11-06')`;
+        yield* sql`INSERT INTO project_runtime_tasks (project_id, task_id, status, revision, created_at, payload_json) VALUES (${projectId}, 'revoked-target', 'ready', 1, '2026-11-06', '{}')`;
+        const authorization = {
+          projectId,
+          sourceTaskId: "withdrawn-source",
+          sourceRevision: 1,
+          targetTaskId: "revoked-target",
+          targetRevision: 1,
+          attemptId: "revoked-worktree",
+          threadId: launched.threadId,
+          requestKey: "cont:revoked-worktree",
+          kind: "r",
+        };
+        yield* sql`INSERT INTO project_runtime_execution_attempts (attempt_id, project_id, task_id, status, revision, thread_id, request_key, created_at, updated_at, payload_json) VALUES ('revoked-worktree', ${projectId}, 'revoked-target', 'pending', 1, ${launched.threadId}, 'cont:revoked-worktree', '2026-11-06', '2026-11-06', ${JSON.stringify({ continuationAuthorization: authorization })})`;
+        yield* sql`UPDATE orchestration_v2_projection_runs SET payload_json = json_set(payload_json, '$.userMessageId', 'message:runtime-execution:revoked-worktree') WHERE run_id = ${runId}`;
+        yield* Deferred.succeed(unblock, undefined);
+        yield* Deferred.await(failed);
+
+        const projection = yield* threads.getThreadProjection(launched.threadId);
+        assert.equal(projection.runs[0]?.status, "cancelled");
+        assert.isNull(projection.thread.worktreePath);
+        assert.isNull(projection.thread.branch);
+        const [runtimeAttempt] = yield* sql<{
+          status: string;
+        }>`SELECT status FROM project_runtime_execution_attempts WHERE attempt_id = 'revoked-worktree'`;
+        assert.equal(runtimeAttempt?.status, "cancelled");
+        assert.isEmpty(
+          yield* sql`SELECT * FROM orchestration_v2_effect_outbox WHERE json_extract(payload_json, '$.type') = 'provider-turn.start'`,
+        );
+        assert.equal(harness.createWorktree.mock.calls.length, stage === "checkout" ? 0 : 1);
+        assert.equal(harness.runSetup.mock.calls.length, stage === "release" ? 1 : 0);
+        const created = stage === "checkout" ? 0 : 1;
+        assert.equal(harness.removeWorktree.mock.calls.length, created);
+        assert.equal(harness.deleteLocalBranch.mock.calls.length, created);
+        if (created === 1) {
+          assert.equal(harness.removeWorktree.mock.calls[0]![0].path, "/repo-worktrees/revoked");
+          // The background rename may land first; cleanup must delete whichever name exists.
+          assert.include(
+            [harness.createWorktree.mock.calls[0]![0].newRefName, "generated-branch"],
+            harness.deleteLocalBranch.mock.calls[0]![0].refName,
+          );
+        }
       }).pipe(Effect.provide(harness.layer));
     }),
 );

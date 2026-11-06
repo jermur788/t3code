@@ -31,6 +31,8 @@ import * as Layer from "effect/Layer";
 import * as ServerConfig from "../config.ts";
 import { WorktreeSetupTracker } from "../project/WorktreeSetupTracker.ts";
 import { layerMakeServer } from "../server.ts";
+import { GitWorkflowService } from "../git/GitWorkflowService.ts";
+import { ProjectSetupScriptRunner } from "../project/ProjectSetupScriptRunner.ts";
 
 const timestamp = "2026-11-05T00:00:00.000Z";
 const projectId = ProjectId.make("assembly6-project");
@@ -57,7 +59,10 @@ const causeChain = (error: unknown): ReadonlyArray<string> => {
  * drive is the real service instance from that root; the only seams are spies that delegate to
  * the real implementation, and the provider adapters, which are spied but never replaced.
  */
-const assemble = Effect.fn("D4FullServerAssembly.assemble")(function* (label: string) {
+const assemble = Effect.fn("D4FullServerAssembly.assemble")(function* (
+  label: string,
+  options: { readonly reviewIsolation?: "worktree" } = {},
+) {
   const previous = process.env[CONTINUATION_GATE_ENV];
   yield* Effect.acquireRelease(
     Effect.sync(() => {
@@ -122,20 +127,49 @@ const assemble = Effect.fn("D4FullServerAssembly.assemble")(function* (label: st
   assert.equal(config.noBrowser, true);
   const fs = yield* FileSystem.FileSystem;
   const databases = yield* sql<{ name: string; file: string }>`PRAGMA database_list`;
-  assert.equal(databases.find((db) => db.name === "main")?.file, config.dbPath);
+  const productionFile = databases.find((db) => db.name === "main")?.file;
+  assert.equal(productionFile, config.dbPath);
   const stat = yield* fs.stat(config.dbPath);
-  const identity = {
-    dbPath: config.dbPath,
-    realpath: yield* fs.realPath(config.dbPath),
-    inode: String(stat.ino),
-    sameSqlClient: sql === Context.get(context, SqlClient.SqlClient),
-  };
-  assert.isTrue(identity.sameSqlClient);
-  process.stdout.write(`assembly6-identity ${label} ${JSON.stringify(identity)}\n`);
 
-  // The production writer's open transaction must exclude an independent connection.
+  // An independent writer on the configured path must reach the very database the production
+  // client writes: a marker crosses in both directions and both files share one inode.
   const second = new NodeSqlite.DatabaseSync(config.dbPath);
+  let identity: Record<string, unknown> = {};
   try {
+    const secondFile = (
+      second.prepare("PRAGMA database_list").all() as Array<{
+        name: string;
+        file: string;
+      }>
+    ).find((db) => db.name === "main")?.file;
+    assert.isString(secondFile);
+    const secondStat = yield* fs.stat(secondFile!);
+    const productionStat = yield* fs.stat(productionFile!);
+    assert.equal(String(secondStat.ino), String(productionStat.ino));
+    yield* sql`CREATE TABLE d4_identity_marker (writer TEXT NOT NULL)`;
+    yield* sql`INSERT INTO d4_identity_marker (writer) VALUES ('production')`;
+    second.exec("INSERT INTO d4_identity_marker (writer) VALUES ('independent')");
+    const seenByIndependent = (
+      second.prepare("SELECT writer FROM d4_identity_marker ORDER BY writer").all() as Array<{
+        writer: string;
+      }>
+    ).map((row) => row.writer);
+    const seenByProduction = (yield* sql<{
+      writer: string;
+    }>`SELECT writer FROM d4_identity_marker ORDER BY writer`).map((row) => row.writer);
+    assert.deepEqual(seenByIndependent, ["independent", "production"]);
+    assert.deepEqual(seenByProduction, seenByIndependent);
+    yield* sql`DROP TABLE d4_identity_marker`;
+    identity = {
+      dbPath: config.dbPath,
+      realpath: yield* fs.realPath(config.dbPath),
+      inode: String(stat.ino),
+      writerInodes: [String(productionStat.ino), String(secondStat.ino)],
+      sharedMarker: seenByProduction,
+    };
+    process.stdout.write(`assembly6-identity ${label} ${JSON.stringify(identity)}\n`);
+
+    // The production writer's open transaction must exclude the independent connection.
     second.exec("PRAGMA busy_timeout = 0");
     yield* sql.unsafe("BEGIN IMMEDIATE");
     try {
@@ -156,6 +190,21 @@ const assemble = Effect.fn("D4FullServerAssembly.assemble")(function* (label: st
     Number(yield* spawner.exitCode(ChildProcess.make("git", ["init", "--quiet", workspaceRoot]))),
     0,
   );
+  const runGit = (args: ReadonlyArray<string>) =>
+    spawner.string(
+      ChildProcess.make("git", [
+        "-C",
+        workspaceRoot,
+        "-c",
+        "user.name=D4",
+        "-c",
+        "user.email=d4@example.invalid",
+        ...args,
+      ]),
+    );
+  // A worktree route needs a base commit; the root route keeps the bare repository.
+  if (options.reviewIsolation === "worktree")
+    yield* runGit(["commit", "--quiet", "--allow-empty", "-m", "base"]);
   yield* sql`INSERT INTO projection_projects
     (project_id, title, workspace_root, scripts_json, default_model_selection_json, created_at, updated_at)
     VALUES (${projectId}, 'Assembly6', ${workspaceRoot}, '[]',
@@ -196,7 +245,13 @@ const assemble = Effect.fn("D4FullServerAssembly.assemble")(function* (label: st
             routing: {
               role: "implementation",
               candidates: [
-                { providerInstanceId: claude!.instanceId, model: claude!.models[0]!.slug },
+                {
+                  providerInstanceId: claude!.instanceId,
+                  model: claude!.models[0]!.slug,
+                  ...(options.reviewIsolation === undefined
+                    ? {}
+                    : { isolation: options.reviewIsolation }),
+                },
               ],
               fallback: "fail",
             },
@@ -261,6 +316,11 @@ const assemble = Effect.fn("D4FullServerAssembly.assemble")(function* (label: st
     trackerFinishes.push({ threadId, phase, error });
     return trackerFinish(threadId, phase, error);
   });
+  const git = Context.get(context, GitWorkflowService);
+  const createWorktree = vi.spyOn(git, "createWorktree");
+  const removeWorktree = vi.spyOn(git, "removeWorktree");
+  const setupScripts = Context.get(context, ProjectSetupScriptRunner);
+  const runSetup = vi.spyOn(setupScripts, "runForThread");
   const dispatch = threads.dispatch;
   const dispatchSpy = vi.spyOn(threads, "dispatch").mockImplementation((command) =>
     (beforeDispatch.current?.(command) ?? Effect.void).pipe(
@@ -344,6 +404,11 @@ const assemble = Effect.fn("D4FullServerAssembly.assemble")(function* (label: st
     completeRunOf,
     appendHandoff,
     identity,
+    workspaceRoot,
+    runGit,
+    createWorktree,
+    removeWorktree,
+    runSetup,
   };
 });
 
@@ -424,10 +489,9 @@ it.effect("production root: continuation revoke-first denies run creation (0 run
       assert.deepEqual(workerCounts, [1, 1, 4]);
       const workerReceipts = yield* a.acceptedReceiptIds;
 
-      // Authorization is captured and persisted by the real dispatcher; the operator revoke then
-      // commits strictly before the continuation's run-creating `message.dispatch` commit.
-      // A same-process second connection cannot hold the writer lock while production waits:
-      // the SQLite driver is synchronous, so the wait would block the only thread that can commit.
+      // The revoke commits after authorization is persisted but before the dispatcher's decision;
+      // the sink's commit recheck denies the run. The decision-to-commit window needs a second
+      // process holding the writer lock: ContinuationCommitGuard.test.ts covers it.
       let revoked = false;
       a.beforeDispatch.current = (command) =>
         command.type === "message.dispatch" &&
@@ -795,6 +859,86 @@ it.effect(
         assert.deepEqual(replayed.attempts, settled.attempts);
         assert.equal(replayed.attempts[0]?.status, "cancelled");
         assert.equal(a.adapterCalls(), 0);
+      }),
+    ),
+);
+
+it.effect.each(["worktree", "setup", "release"] as const)(
+  "production root: worktree review revoked before %s never creates, sets up or keeps a worktree",
+  (stage) =>
+    provide(
+      Effect.gen(function* () {
+        const a = yield* assemble(`worktree-${stage}`, { reviewIsolation: "worktree" });
+        const worker = yield* settleSourceWorker(a);
+        const baseline = yield* a.counts;
+        const branchesBefore = yield* a.runGit(["branch", "--list", "--format=%(refname:short)"]);
+        // The source worker ran on the shared route, so nothing below is the source's worktree.
+        assert.equal(a.createWorktree.mock.calls.length, 0);
+        const setupCallsBefore = a.runSetup.mock.calls.length;
+
+        // Hold in front of the real dispatcher at the command that precedes the stage.
+        const suffix = {
+          worktree: ":progress:worktree",
+          setup: ":progress:setup",
+          release: ":release",
+        }[stage];
+        const reached = yield* Deferred.make<string>();
+        const gate = yield* Deferred.make<void>();
+        a.beforeDispatch.current = (command) =>
+          command.commandId.endsWith(suffix) && command.commandId.includes(":runtime-execution:")
+            ? Deferred.succeed(reached, command.commandId).pipe(
+                Effect.andThen(Deferred.await(gate)),
+              )
+            : Effect.void;
+        yield* a.execution.reconcileAttempt(projectId, worker.attemptId);
+        const held = yield* Deferred.await(reached);
+        const review = (yield* continuationRows(a))[0]!;
+        const launchId = `command:runtime-execution:${review.attempt_id}:launch`;
+        assert.equal(held, `${launchId}${suffix}`);
+        const createdAtHold = a.createWorktree.mock.calls.length;
+        assert.equal(createdAtHold, stage === "worktree" ? 0 : 1);
+
+        yield* a.revoke;
+        yield* Deferred.succeed(gate, undefined);
+        assert.equal(yield* Queue.take(a.failSettled), `${launchId}:fail`);
+
+        const finalRun = yield* a.sql<{ status: string }>`
+          SELECT status FROM orchestration_v2_projection_runs WHERE thread_id = ${review.thread_id}`;
+        const finalAttempt = (yield* continuationRows(a))[0]!;
+        const counts = yield* a.counts;
+        const thread = yield* a.sql<{ worktree_path: string | null; branch: string | null }>`
+          SELECT json_extract(payload_json, '$.worktreePath') AS worktree_path,
+            json_extract(payload_json, '$.branch') AS branch
+          FROM orchestration_v2_projection_threads WHERE thread_id = ${review.thread_id}`;
+        const branchesAfter = yield* a.runGit(["branch", "--list", "--format=%(refname:short)"]);
+        const worktreeList = yield* a.runGit(["worktree", "list", "--porcelain"]);
+        const created = a.createWorktree.mock.calls.length;
+        const setupCalls = a.runSetup.mock.calls.length - setupCallsBefore;
+        process.stdout.write(
+          `assembly8-worktree-${stage} run=${finalRun[0]?.status} attempt=${finalAttempt.status} createWorktreeCalls=${created} setupCalls=${setupCalls} removeWorktreeCalls=${a.removeWorktree.mock.calls.length} worktreePath=${JSON.stringify(thread[0]?.worktree_path)} branch=${JSON.stringify(thread[0]?.branch)} branches=${JSON.stringify(branchesAfter.trim().split("\n"))} worktrees=${worktreeList.split("\n").filter((line) => line.startsWith("worktree ")).length} newProviderTurnStartEffects=${counts[1]! - baseline[1]!} adapter=${a.adapterCalls()}\n`,
+        );
+
+        assert.equal(finalRun[0]?.status, "cancelled");
+        assert.equal(finalAttempt.status, "cancelled");
+        assert.equal(counts[1]! - baseline[1]!, 0);
+        assert.equal(a.adapterCalls(), 0);
+        // Revoked before checkout: no worktree is ever created. After: the one created is removed.
+        assert.equal(created, createdAtHold);
+        assert.equal(a.removeWorktree.mock.calls.length, created);
+        // The setup script runs only when the revocation came after it.
+        assert.equal(setupCalls, stage === "release" ? 1 : 0);
+        assert.isNull(thread[0]?.worktree_path ?? null);
+        assert.isNull(thread[0]?.branch ?? null);
+        assert.equal(branchesAfter, branchesBefore);
+        // Only the main checkout remains registered.
+        assert.equal(
+          worktreeList.split("\n").filter((line) => line.startsWith("worktree ")).length,
+          1,
+        );
+        if (created === 1) {
+          const path = a.removeWorktree.mock.calls[0]![0].path;
+          assert.isFalse(yield* (yield* FileSystem.FileSystem).exists(path));
+        }
       }),
     ),
 );

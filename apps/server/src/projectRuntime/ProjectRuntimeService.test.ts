@@ -1608,7 +1608,12 @@ it.effect("requires an operator to grant or change experimental continuation aut
       { ...taskInput, continuation: policy },
       actor,
     );
-    assert.deepEqual(source.continuation, policy);
+    // The server stamps the target revisions the operator accepted.
+    const accepted = {
+      ...policy,
+      acceptedTargetRevisions: { review: review.revision, repair: repair.revision },
+    };
+    assert.deepEqual(source.continuation, accepted);
     const deniedUpdate = yield* service
       .updateTask(
         projectA,
@@ -1617,7 +1622,7 @@ it.effect("requires an operator to grant or change experimental continuation aut
       )
       .pipe(Effect.flip);
     assert.instanceOf(deniedUpdate, ProjectRuntimeInvalidTransitionError);
-    assert.deepEqual((yield* service.readTask(projectA, source.taskId)).continuation, policy);
+    assert.deepEqual((yield* service.readTask(projectA, source.taskId)).continuation, accepted);
 
     const cleared = yield* service.updateTask(
       projectA,

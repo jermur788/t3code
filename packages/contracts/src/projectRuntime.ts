@@ -469,6 +469,16 @@ export const ProjectRuntimeContinuationPolicy = Schema.Struct({
   reviewTaskId: ProjectRuntimeTaskId,
   repairTaskId: Schema.optionalKey(ProjectRuntimeTaskId),
   maxRepairCycles: NonNegativeInt.check(Schema.isLessThanOrEqualTo(2)),
+  /**
+   * Server-stamped when an operator saves the policy; any client value is replaced. An operator
+   * edit to a target after this point blocks its dispatch until the policy is saved again.
+   */
+  acceptedTargetRevisions: Schema.optionalKey(
+    Schema.Struct({
+      review: Schema.optionalKey(PositiveInt),
+      repair: Schema.optionalKey(PositiveInt),
+    }),
+  ),
 });
 export type ProjectRuntimeContinuationPolicy = typeof ProjectRuntimeContinuationPolicy.Type;
 

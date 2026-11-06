@@ -1856,3 +1856,204 @@ it.effect("rejects case-variant continuation keys without spending repair budget
     }),
   ).pipe(Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
 );
+
+/** Runs the worker through its handoff and returns before the review is dispatched. */
+const workerReadyForReview = (state: State) =>
+  Effect.gen(function* () {
+    const service = yield* RuntimeTaskExecutionService.RuntimeTaskExecutionService;
+    const tasks = yield* seedAndCreateTasks(state);
+    const worker = yield* service.execute(projectId, {
+      taskId: tasks.source.taskId,
+      expectedTaskRevision: tasks.source.revision,
+    });
+    yield* appendHandoff(worker, { milestone: "none", result: "none" });
+    completeRun(state, worker.threadId);
+    return { ...tasks, worker };
+  });
+
+const reviewAttempts = (taskId: string) =>
+  Effect.gen(function* () {
+    const sql = yield* SqlClient.SqlClient;
+    return yield* sql<{ readonly attempt_id: string }>`SELECT attempt_id
+      FROM project_runtime_execution_attempts WHERE project_id = ${projectId} AND task_id = ${taskId}`;
+  });
+
+it.effect("a worker cannot edit a continuation target, so the review packet stays accepted", () =>
+  Effect.scoped(
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const dir = yield* fs.makeTempDirectoryScoped();
+      const state = makeState();
+      yield* process(
+        state,
+        `${dir}/continuation.sqlite`,
+        Effect.gen(function* () {
+          const runtime = yield* ProjectRuntimeService.ProjectRuntimeService;
+          const service = yield* RuntimeTaskExecutionService.RuntimeTaskExecutionService;
+          const created = yield* workerReadyForReview(state);
+          const workerActor = `thread:${created.worker.threadId}`;
+          const injected = "INJECTED-REVIEW-SCOPE-7a41";
+          for (const taskId of [created.review.taskId, created.repair.taskId]) {
+            const target = yield* runtime.readTask(projectId, taskId);
+            const edit = yield* runtime
+              .updateTask(
+                projectId,
+                {
+                  taskId,
+                  expectedRevision: target.revision,
+                  scope: injected,
+                  owner: created.source.owner,
+                },
+                { actor: workerActor },
+              )
+              .pipe(Effect.flip);
+            assert.equal(edit._tag, "ProjectRuntimeInvalidTransitionError");
+            assert.equal(
+              (edit as { violation?: string }).violation,
+              "continuation_requires_operator",
+            );
+            // A foreign handoff would also reach the packet's latest-handoff section.
+            const handoff = yield* runtime
+              .appendHandoff(
+                projectId,
+                {
+                  taskId,
+                  expectedTaskRevision: target.revision,
+                  checkpoint: "foreign",
+                  summary: injected,
+                  filesChanged: [],
+                },
+                {
+                  actor: workerActor,
+                  threadId: ThreadId.make(created.worker.threadId),
+                  providerInstanceId: created.worker.modelSelection.instanceId,
+                  model: created.worker.modelSelection.model,
+                },
+              )
+              .pipe(Effect.flip);
+            assert.equal(
+              (handoff as { violation?: string }).violation,
+              "continuation_requires_operator",
+            );
+            const after = yield* runtime.readTask(projectId, taskId);
+            assert.equal(after.revision, target.revision);
+            assert.notEqual(after.scope, injected);
+          }
+
+          yield* service.reconcileAttempt(projectId, created.worker.attemptId);
+          const review = yield* attemptByKey(
+            created.review.taskId,
+            `cont:v1:r:${created.worker.attemptId}`,
+          );
+          assert.equal(state.launches.length, 2);
+          assert.equal(review.receipt.packet.taskRevision, created.review.revision);
+          assert.notInclude(state.launches[1]?.initialMessage?.text ?? "", injected);
+          assert.include(state.launches[1]?.initialMessage?.text ?? "", "Owner: user:reviewer");
+        }),
+      );
+    }),
+  ).pipe(Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
+);
+
+it.effect(
+  "an operator edit after acceptance blocks the review until the policy is saved again",
+  () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const fs = yield* FileSystem.FileSystem;
+        const dir = yield* fs.makeTempDirectoryScoped();
+        const state = makeState();
+        yield* process(
+          state,
+          `${dir}/continuation.sqlite`,
+          Effect.gen(function* () {
+            const runtime = yield* ProjectRuntimeService.ProjectRuntimeService;
+            const service = yield* RuntimeTaskExecutionService.RuntimeTaskExecutionService;
+            const created = yield* workerReadyForReview(state);
+            assert.deepEqual(created.source.continuation?.acceptedTargetRevisions, {
+              review: created.review.revision,
+              repair: created.repair.revision,
+            });
+            const review = yield* runtime.readTask(projectId, created.review.taskId);
+            const edited = yield* runtime.updateTask(
+              projectId,
+              { taskId: review.taskId, expectedRevision: review.revision, scope: "Operator edit" },
+              { actor: "user:maintainer" },
+            );
+            yield* service.reconcileAttempt(projectId, created.worker.attemptId);
+            assert.equal(state.launches.length, 1);
+            assert.lengthOf(yield* reviewAttempts(created.review.taskId), 0);
+
+            // Saving the policy again accepts the edited target; a client-sent stamp is ignored.
+            const source = yield* runtime.readTask(projectId, created.source.taskId);
+            const resaved = yield* runtime.updateTask(
+              projectId,
+              {
+                taskId: source.taskId,
+                expectedRevision: source.revision,
+                continuation: {
+                  ...source.continuation!,
+                  acceptedTargetRevisions: { review: 99, repair: 99 },
+                },
+              },
+              { actor: "user:maintainer" },
+            );
+            assert.deepEqual(resaved.continuation?.acceptedTargetRevisions, {
+              review: edited.revision,
+              repair: created.repair.revision,
+            });
+          }),
+        );
+      }),
+    ).pipe(Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
+);
+
+it.effect("does not dispatch a repair owned by the reviewer that would grade it", () =>
+  Effect.scoped(
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const dir = yield* fs.makeTempDirectoryScoped();
+      const state = makeState();
+      yield* process(
+        state,
+        `${dir}/continuation.sqlite`,
+        Effect.gen(function* () {
+          const runtime = yield* ProjectRuntimeService.ProjectRuntimeService;
+          const service = yield* RuntimeTaskExecutionService.RuntimeTaskExecutionService;
+          const tasks = yield* seedAndCreateTasks(state);
+          // The operator assigns the repair to the reviewer and accepts that policy.
+          const repair = yield* runtime.updateTask(
+            projectId,
+            { taskId: tasks.repair.taskId, expectedRevision: 1, owner: tasks.review.owner },
+            { actor: "user:maintainer" },
+          );
+          const source = yield* runtime.updateTask(
+            projectId,
+            {
+              taskId: tasks.source.taskId,
+              expectedRevision: tasks.source.revision,
+              continuation: tasks.source.continuation!,
+            },
+            { actor: "user:maintainer" },
+          );
+          assert.equal(source.continuation?.acceptedTargetRevisions?.repair, repair.revision);
+          const worker = yield* service.execute(projectId, {
+            taskId: source.taskId,
+            expectedTaskRevision: source.revision,
+          });
+          yield* appendHandoff(worker, { milestone: "none", result: "none" });
+          completeRun(state, worker.threadId);
+          yield* service.reconcileAttempt(projectId, worker.attemptId);
+          const review = yield* attemptByKey(tasks.review.taskId, `cont:v1:r:${worker.attemptId}`);
+          assert.equal(state.launches.length, 2);
+
+          completeRun(state, review.threadId);
+          yield* appendHandoff(review, { milestone: "none", result: "fail" });
+          yield* service.reconcileAttempt(projectId, review.attemptId);
+          assert.equal(state.launches.length, 2);
+          assert.lengthOf(yield* reviewAttempts(tasks.repair.taskId), 0);
+        }),
+      );
+    }),
+  ).pipe(Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
+);

@@ -1145,12 +1145,48 @@ const make = Effect.gen(function* () {
           independentReview: boolean,
         ) {
           const target = yield* runtime.readTask(projectId, targetTaskId);
+          const reviewer = independentReview
+            ? target
+            : yield* runtime.readTask(projectId, policy.reviewTaskId);
           if (
             !EXECUTABLE_TASK_STATUSES.has(target.status) ||
             target.projectId !== sourceTask.projectId ||
-            (independentReview && target.owner === sourceTask.owner)
+            (independentReview && target.owner === sourceTask.owner) ||
+            // A repair owned by the reviewer would grade its own fix in the next review.
+            (!independentReview && target.owner === reviewer.owner)
           )
             return;
+          // ProjectRuntimeService locks active targets to the operator's accepted state plus
+          // the target's own attempt handoffs. Re-check the last writer here so a packet is
+          // never built from a revision some other actor produced.
+          const accepted = policy.acceptedTargetRevisions;
+          // Unstamped policies come only from direct storage writes, never an operator save.
+          if (
+            target.updatedBy.startsWith("user:") &&
+            accepted !== undefined &&
+            (independentReview ? accepted.review : accepted.repair) !== target.revision
+          ) {
+            yield* Effect.logWarning("runtime-execution.continuation-target-unaccepted", {
+              projectId,
+              taskId: targetTaskId,
+              revision: target.revision,
+            });
+            return;
+          }
+          if (!target.updatedBy.startsWith("user:")) {
+            const ownWriter = yield* sql`SELECT 1 FROM project_runtime_execution_attempts
+              WHERE project_id = ${projectId} AND task_id = ${targetTaskId}
+                AND 'thread:' || thread_id = ${target.updatedBy}
+              LIMIT 1`;
+            if (ownWriter.length === 0) {
+              yield* Effect.logWarning("runtime-execution.continuation-target-foreign-writer", {
+                projectId,
+                taskId: targetTaskId,
+                updatedBy: target.updatedBy,
+              });
+              return;
+            }
+          }
 
           const active = yield* sql<{ readonly request_key: string | null }>`SELECT request_key
             FROM project_runtime_execution_attempts
