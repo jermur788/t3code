@@ -20,6 +20,7 @@ import * as Fiber from "effect/Fiber";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as SqlClient from "effect/sql/SqlClient";
+import * as TestClock from "effect/testing/TestClock";
 
 import * as ThreadLaunchService from "../orchestration-v2/ThreadLaunchService.ts";
 import type { ThreadLaunchInput } from "../orchestration-v2/ThreadLaunchService.ts";
@@ -2056,4 +2057,218 @@ it.effect("does not dispatch a repair owned by the reviewer that would grade it"
       );
     }),
   ).pipe(Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
+);
+
+/** The first review fails, so the source is blocked with its accepted policy still saved. */
+const blockedAfterFailedReview = (state: State) =>
+  Effect.gen(function* () {
+    const runtime = yield* ProjectRuntimeService.ProjectRuntimeService;
+    const service = yield* RuntimeTaskExecutionService.RuntimeTaskExecutionService;
+    const created = yield* workerReadyForReview(state);
+    yield* service.reconcileAttempt(projectId, created.worker.attemptId);
+    const reviewer = yield* attemptByKey(
+      created.review.taskId,
+      `cont:v1:r:${created.worker.attemptId}`,
+    );
+    yield* forceAttemptStatus(reviewer.attemptId, "failed");
+    state.runs.delete(reviewer.threadId);
+    yield* service.reconcileActiveAttempts();
+    const source = yield* runtime.readTask(projectId, created.source.taskId);
+    assert.equal(source.status, "blocked");
+    return { ...created, source, reviewer, reviewerActor: `thread:${reviewer.threadId}` };
+  });
+
+/** Reopens the source without saving its policy again, then runs a worker to its handoff. */
+const reopenAndHandOff = (state: State, sourceTaskId: ProjectRuntimeTask["taskId"]) =>
+  Effect.gen(function* () {
+    const runtime = yield* ProjectRuntimeService.ProjectRuntimeService;
+    const service = yield* RuntimeTaskExecutionService.RuntimeTaskExecutionService;
+    const blocked = yield* runtime.readTask(projectId, sourceTaskId);
+    const reopened =
+      blocked.status === "ready"
+        ? blocked
+        : yield* runtime.updateTask(
+            projectId,
+            {
+              taskId: sourceTaskId,
+              expectedRevision: blocked.revision,
+              status: "ready",
+              blocker: null,
+            },
+            { actor: "user:maintainer" },
+          );
+    // Root attempts sharing an instant are ambiguous and never continue.
+    yield* TestClock.adjust("1 second");
+    const worker = yield* service.execute(projectId, {
+      taskId: sourceTaskId,
+      expectedTaskRevision: reopened.revision,
+    });
+    yield* appendHandoff(worker, { milestone: "none", result: "none" });
+    completeRun(state, worker.threadId);
+    yield* service.reconcileAttempt(projectId, worker.attemptId);
+    return worker;
+  });
+
+/** Writes a target revision as a thread would have before the lock existed. */
+const forceThreadRevision = (
+  taskId: string,
+  actor: string,
+  patch: { readonly scope: string; readonly owner: string },
+  handoff: boolean,
+) =>
+  Effect.gen(function* () {
+    const sql = yield* SqlClient.SqlClient;
+    const [row] = yield* sql<{ readonly revision: number }>`SELECT revision
+      FROM project_runtime_tasks WHERE project_id = ${projectId} AND task_id = ${taskId}`;
+    const revision = row!.revision;
+    if (handoff) {
+      const handoffPayload = JSON.stringify({ taskRevision: revision, createdBy: actor });
+      yield* sql`INSERT INTO project_runtime_handoffs (handoff_id, project_id, task_id, created_at, payload_json)
+        VALUES (${`forced-${taskId}-${revision}`}, ${projectId}, ${taskId}, ${timestamp}, ${handoffPayload})`;
+    }
+    yield* sql`UPDATE project_runtime_tasks SET revision = ${revision + 1},
+      payload_json = json_set(payload_json, '$.scope', ${patch.scope}, '$.owner', ${patch.owner},
+        '$.revision', ${revision + 1}, '$.updatedBy', ${actor})
+      WHERE project_id = ${projectId} AND task_id = ${taskId}`;
+  });
+
+it.effect(
+  "a completed reviewer cannot rewrite its target while the source is blocked, nor reach a later packet",
+  () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const fs = yield* FileSystem.FileSystem;
+        const dir = yield* fs.makeTempDirectoryScoped();
+        const state = makeState();
+        yield* process(
+          state,
+          `${dir}/continuation.sqlite`,
+          Effect.gen(function* () {
+            const runtime = yield* ProjectRuntimeService.ProjectRuntimeService;
+            const created = yield* blockedAfterFailedReview(state);
+            const injected = { scope: "INJECTED-REVIEW-SCOPE-b3", owner: "user:intruder" };
+            const target = yield* runtime.readTask(projectId, created.review.taskId);
+            const edit = yield* runtime
+              .updateTask(
+                projectId,
+                { taskId: target.taskId, expectedRevision: target.revision, ...injected },
+                { actor: created.reviewerActor },
+              )
+              .pipe(Effect.flip);
+            assert.equal(
+              (edit as { violation?: string }).violation,
+              "continuation_requires_operator",
+            );
+            const unchanged = yield* runtime.readTask(projectId, target.taskId);
+            assert.equal(unchanged.revision, target.revision);
+            assert.equal(unchanged.owner, "user:reviewer");
+
+            // Even a revision written past the lock is not one the operator accepted.
+            yield* forceThreadRevision(target.taskId, created.reviewerActor, injected, false);
+            const launchesBefore = state.launches.length;
+            yield* reopenAndHandOff(state, created.source.taskId);
+            assert.equal(state.launches.length, launchesBefore + 1);
+            assert.lengthOf(yield* reviewAttempts(created.review.taskId), 1);
+            for (const launch of state.launches)
+              assert.notInclude(launch.initialMessage?.text ?? "", injected.scope);
+          }),
+        );
+      }),
+    ).pipe(Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
+);
+
+it.effect(
+  "a completed reviewer handoff after an operator edit does not make the edit dispatchable",
+  () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const fs = yield* FileSystem.FileSystem;
+        const dir = yield* fs.makeTempDirectoryScoped();
+        const state = makeState();
+        yield* process(
+          state,
+          `${dir}/continuation.sqlite`,
+          Effect.gen(function* () {
+            const runtime = yield* ProjectRuntimeService.ProjectRuntimeService;
+            const created = yield* blockedAfterFailedReview(state);
+            const target = yield* runtime.readTask(projectId, created.review.taskId);
+            const edited = yield* runtime.updateTask(
+              projectId,
+              {
+                taskId: target.taskId,
+                expectedRevision: target.revision,
+                scope: "Operator edit pending acceptance",
+              },
+              { actor: "user:maintainer" },
+            );
+            const handoff = yield* runtime
+              .appendHandoff(
+                projectId,
+                {
+                  taskId: edited.taskId,
+                  expectedTaskRevision: edited.revision,
+                  checkpoint: "stale-reviewer",
+                  summary: "INJECTED-HANDOFF-b4",
+                  filesChanged: [],
+                },
+                {
+                  actor: created.reviewerActor,
+                  threadId: ThreadId.make(created.reviewer.threadId),
+                  providerInstanceId: created.reviewer.modelSelection.instanceId,
+                  model: created.reviewer.modelSelection.model,
+                },
+              )
+              .pipe(Effect.flip);
+            assert.equal(
+              (handoff as { violation?: string }).violation,
+              "continuation_requires_operator",
+            );
+            assert.equal(
+              (yield* runtime.readTask(projectId, edited.taskId)).revision,
+              edited.revision,
+            );
+
+            // A handoff written past the lock still leaves the operator edit unaccepted.
+            const injected = { scope: "INJECTED-REVIEW-SCOPE-b4", owner: "user:intruder" };
+            yield* forceThreadRevision(edited.taskId, created.reviewerActor, injected, true);
+            yield* reopenAndHandOff(state, created.source.taskId);
+            assert.lengthOf(yield* reviewAttempts(created.review.taskId), 1);
+
+            // Saving the policy again accepts the current target and dispatches it.
+            const forced = yield* runtime.readTask(projectId, edited.taskId);
+            const restored = yield* runtime.updateTask(
+              projectId,
+              {
+                taskId: forced.taskId,
+                expectedRevision: forced.revision,
+                scope: "Operator accepted scope",
+                owner: "user:reviewer",
+              },
+              { actor: "user:maintainer" },
+            );
+            const source = yield* runtime.readTask(projectId, created.source.taskId);
+            const resaved = yield* runtime.updateTask(
+              projectId,
+              {
+                taskId: source.taskId,
+                expectedRevision: source.revision,
+                continuation: source.continuation!,
+              },
+              { actor: "user:maintainer" },
+            );
+            assert.equal(resaved.continuation?.acceptedTargetRevisions?.review, restored.revision);
+            const worker = yield* reopenAndHandOff(state, source.taskId);
+            const review = yield* attemptByKey(
+              created.review.taskId,
+              `cont:v1:r:${worker.attemptId}`,
+            );
+            assert.equal(review.receipt.packet.taskRevision, restored.revision);
+            assert.include(
+              state.launches.at(-1)?.initialMessage?.text ?? "",
+              "Operator accepted scope",
+            );
+          }),
+        );
+      }),
+    ).pipe(Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
 );

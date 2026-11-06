@@ -691,10 +691,10 @@ const make = Effect.gen(function* () {
     };
   });
 
-  // A review or repair packet is built from its target task when the continuation dispatches.
-  // While an active policy names a target, agents may write to it only as that target's own
-  // attempt (its handoff is the review result). Operator edits stay allowed; the dispatch then
-  // finds a revision the policy did not accept and waits for the operator to save it again.
+  // Dispatch builds review/repair packets from the target, so while any policy names it (in any
+  // source status: a blocked source reopens without a re-save) agents may write it only as a
+  // handoff from the target's in-progress attempt. Operator edits are allowed; dispatch then
+  // sees an unaccepted revision and waits for the policy to be saved again.
   const requireUnlockedContinuationTarget = Effect.fn(
     "ProjectRuntimeService.requireUnlockedContinuationTarget",
   )(function* (
@@ -706,7 +706,6 @@ const make = Effect.gen(function* () {
     if (actor.startsWith("user:")) return;
     const sources = yield* sql`SELECT 1 FROM project_runtime_tasks
       WHERE project_id = ${projectId} AND task_id <> ${taskId}
-        AND status IN ('planned', 'ready', 'active', 'review')
         AND json_extract(payload_json, '$.continuation.mode') = 'synthetic'
         AND (json_extract(payload_json, '$.continuation.reviewTaskId') = ${taskId}
           OR json_extract(payload_json, '$.continuation.repairTaskId') = ${taskId})
@@ -715,6 +714,7 @@ const make = Effect.gen(function* () {
     if (handoff) {
       const own = yield* sql`SELECT 1 FROM project_runtime_execution_attempts
         WHERE project_id = ${projectId} AND task_id = ${taskId} AND 'thread:' || thread_id = ${actor}
+          AND status IN ('pending', 'launched', 'cancelling', 'reconcile_required')
         LIMIT 1`;
       if (own.length > 0) return;
     }

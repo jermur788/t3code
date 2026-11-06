@@ -1156,36 +1156,37 @@ const make = Effect.gen(function* () {
             (!independentReview && target.owner === reviewer.owner)
           )
             return;
-          // ProjectRuntimeService locks active targets to the operator's accepted state plus
-          // the target's own attempt handoffs. Re-check the last writer here so a packet is
-          // never built from a revision some other actor produced.
-          const accepted = policy.acceptedTargetRevisions;
-          // Unstamped policies come only from direct storage writes, never an operator save.
+          // ProjectRuntimeService locks targets to the operator's accepted revision plus handoffs
+          // from the target's own in-progress attempts. Re-check that whole chain here, whoever
+          // wrote last, so a packet is never built from a revision another actor produced. An
+          // unstamped target was never accepted by an operator save.
+          const accepted = independentReview
+            ? policy.acceptedTargetRevisions?.review
+            : policy.acceptedTargetRevisions?.repair;
+          const ownHandoffs =
+            accepted === undefined || target.revision <= accepted
+              ? []
+              : yield* sql<{ readonly revision: number }>`SELECT DISTINCT
+                  json_extract(h.payload_json, '$.taskRevision') AS revision
+                FROM project_runtime_handoffs h
+                JOIN project_runtime_execution_attempts a
+                  ON a.project_id = h.project_id AND a.task_id = h.task_id
+                    AND 'thread:' || a.thread_id = json_extract(h.payload_json, '$.createdBy')
+                WHERE h.project_id = ${projectId} AND h.task_id = ${targetTaskId}
+                  AND json_extract(h.payload_json, '$.taskRevision') >= ${accepted}
+                  AND json_extract(h.payload_json, '$.taskRevision') < ${target.revision}`;
           if (
-            target.updatedBy.startsWith("user:") &&
-            accepted !== undefined &&
-            (independentReview ? accepted.review : accepted.repair) !== target.revision
+            accepted === undefined ||
+            target.revision < accepted ||
+            ownHandoffs.length !== target.revision - accepted
           ) {
             yield* Effect.logWarning("runtime-execution.continuation-target-unaccepted", {
               projectId,
               taskId: targetTaskId,
               revision: target.revision,
+              acceptedRevision: accepted ?? null,
             });
             return;
-          }
-          if (!target.updatedBy.startsWith("user:")) {
-            const ownWriter = yield* sql`SELECT 1 FROM project_runtime_execution_attempts
-              WHERE project_id = ${projectId} AND task_id = ${targetTaskId}
-                AND 'thread:' || thread_id = ${target.updatedBy}
-              LIMIT 1`;
-            if (ownWriter.length === 0) {
-              yield* Effect.logWarning("runtime-execution.continuation-target-foreign-writer", {
-                projectId,
-                taskId: targetTaskId,
-                updatedBy: target.updatedBy,
-              });
-              return;
-            }
           }
 
           const active = yield* sql<{ readonly request_key: string | null }>`SELECT request_key

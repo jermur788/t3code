@@ -236,6 +236,8 @@ const assemble = Effect.fn("D4FullServerAssembly.assemble")(function* (
               reviewTaskId: reviewId,
               repairTaskId: repairId,
               maxRepairCycles: 2,
+              // What an operator save stamps: both targets accepted at their seeded revision.
+              acceptedTargetRevisions: { review: 1, repair: 1 },
             },
           }
         : {}),

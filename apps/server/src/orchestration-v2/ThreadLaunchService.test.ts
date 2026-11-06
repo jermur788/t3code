@@ -2455,7 +2455,7 @@ it.effect.each(["release", "retry"] as const)(
     }),
 );
 
-it.effect.each(["checkout", "setup", "release"] as const)(
+it.effect.each(["checkout", "setup", "release", "async-setup"] as const)(
   "revocation committed before %s never creates, sets up or keeps a continuation worktree",
   (stage) =>
     Effect.gen(function* () {
@@ -2493,7 +2493,18 @@ it.effect.each(["checkout", "setup", "release"] as const)(
         runSetup: () =>
           stage === "release"
             ? hold({ status: "no-script" as const })
-            : Effect.succeed({ status: "no-script" as const }),
+            : stage === "async-setup"
+              ? hold({
+                  status: "started" as const,
+                  async: true,
+                  scriptId: "setup",
+                  scriptName: "Setup",
+                  scriptCommand: "vp install",
+                  terminalId: "setup",
+                  cwd: "/repo-worktrees/revoked",
+                  completion: Effect.never,
+                })
+              : Effect.succeed({ status: "no-script" as const }),
       });
       yield* Effect.gen(function* () {
         const launches = yield* ThreadLaunch.ThreadLaunchService;
@@ -2541,7 +2552,17 @@ it.effect.each(["checkout", "setup", "release"] as const)(
           yield* sql`SELECT * FROM orchestration_v2_effect_outbox WHERE json_extract(payload_json, '$.type') = 'provider-turn.start'`,
         );
         assert.equal(harness.createWorktree.mock.calls.length, stage === "checkout" ? 0 : 1);
-        assert.equal(harness.runSetup.mock.calls.length, stage === "release" ? 1 : 0);
+        const setupRan = stage === "release" || stage === "async-setup";
+        assert.equal(harness.runSetup.mock.calls.length, setupRan ? 1 : 0);
+        // A still-running async setup is stopped before its worktree is force-removed.
+        assert.equal(harness.closeTerminal.mock.calls.length, stage === "async-setup" ? 1 : 0);
+        if (stage === "async-setup") {
+          assert.equal(harness.closeTerminal.mock.calls[0]![0].terminalId, "setup");
+          assert.isBelow(
+            harness.closeTerminal.mock.invocationCallOrder[0]!,
+            harness.removeWorktree.mock.invocationCallOrder[0]!,
+          );
+        }
         const created = stage === "checkout" ? 0 : 1;
         assert.equal(harness.removeWorktree.mock.calls.length, created);
         assert.equal(harness.deleteLocalBranch.mock.calls.length, created);

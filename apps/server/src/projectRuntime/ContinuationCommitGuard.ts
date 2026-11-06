@@ -34,6 +34,7 @@ const checkAuthorization = Effect.fn("ContinuationCommitGuard.check")(function* 
   const rows = yield* sql`SELECT 1 FROM project_runtime_tasks AS source
     JOIN project_runtime_tasks AS target ON target.project_id = source.project_id
     JOIN project_runtime_execution_attempts AS attempt ON attempt.project_id = source.project_id
+    JOIN project_runtime AS runtime ON runtime.project_id = source.project_id AND runtime.enabled = 1
     WHERE source.project_id = ${a.projectId} AND source.task_id = ${a.sourceTaskId}
       AND source.revision = ${a.sourceRevision}
       AND source.status IN ('planned', 'ready', 'active', 'review')

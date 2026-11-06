@@ -729,7 +729,8 @@ const make = Effect.gen(function* () {
             cancelled ? "cancelled" : "failed",
             cancelled ? null : failureDetail(Cause.squash(cause)),
           );
-          if (cancelled && setupTerminalId)
+          // A denied release removes the worktree below, so an async setup must stop first.
+          if ((cancelled || continuationDenied) && setupTerminalId)
             yield* terminals
               .close({ threadId, terminalId: setupTerminalId, deleteHistory: true })
               .pipe(Effect.ignore);

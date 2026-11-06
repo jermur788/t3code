@@ -99,7 +99,7 @@ it.live(
 );
 
 it.live(
-  "foreign project, source, revision, target, attempt, request and gate cannot authorize a run",
+  "foreign project, source, revision, target, attempt, request, gate or disabled runtime cannot authorize a run",
   () =>
     Effect.promise(async () => {
       const state = await scenario(["identity"]);

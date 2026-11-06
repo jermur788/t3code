@@ -681,6 +681,8 @@ function syntheticTask(
             reviewTaskId: syntheticReviewTaskId,
             repairTaskId: syntheticRepairTaskId,
             maxRepairCycles: 2,
+            // Every fixture target is created at the base task's revision and accepted there.
+            acceptedTargetRevisions: { review: task.revision, repair: task.revision },
           },
         }
       : {}),

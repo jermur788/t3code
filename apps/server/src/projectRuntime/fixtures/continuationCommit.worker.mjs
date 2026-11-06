@@ -267,6 +267,11 @@ await E.runPromise(
         sink.commitCommand({ ...input, commitGuard: G.launchGuard(auth, false) }),
       );
       if (disabled._tag !== "Failure") throw new Error("Disabled gate accepted");
+      yield* sql`UPDATE project_runtime SET enabled = 0 WHERE project_id = ${projectId}`;
+      const runtimeDisabled = yield* E.exit(
+        sink.commitCommand({ ...input, commitGuard: G.launchGuard(auth, true) }),
+      );
+      if (runtimeDisabled._tag !== "Failure") throw new Error("Disabled project runtime accepted");
     }
     console.log(
       "DB_IDENTITY",
