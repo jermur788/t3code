@@ -417,6 +417,7 @@ const assemble = Effect.fn("D4FullServerAssembly.assemble")(function* (
     trackerFinishes,
     tracker,
     adapterCalls,
+    instances,
     completeRunOf,
     appendHandoff,
     identity,
@@ -453,6 +454,21 @@ const continuationRows = (a: Effect.Success<ReturnType<typeof assemble>>) =>
     failure: string | null;
   }>`SELECT attempt_id, thread_id, status, request_key, json_extract(payload_json, '$.failure') AS failure FROM project_runtime_execution_attempts
     WHERE task_id = ${reviewId}`;
+
+// Diagnostic only (D4 day-2 campaign): reads state, never writes. Lines are timestamped by the driver.
+const d4Trace = (a: Effect.Success<ReturnType<typeof assemble>>, label: string) =>
+  Effect.gen(function* () {
+    const attempts = yield* continuationRows(a);
+    const runs =
+      yield* a.sql`SELECT run_id, status, json_extract(payload_json, '$.queueHeld') AS held, json_extract(payload_json, '$.userMessageId') AS message FROM orchestration_v2_projection_runs`;
+    const tasks =
+      yield* a.sql`SELECT task_id, status, revision, json_extract(payload_json, '$.continuation') AS continuation FROM project_runtime_tasks`;
+    const effects = yield* a.effects;
+    const receipts = yield* a.receipts;
+    process.stdout.write(
+      `D4TRACE ${label} ${JSON.stringify({ attempts, runs, tasks, effects, receipts: receipts.map((r) => ({ id: (r as { command_id?: string }).command_id, status: (r as { status?: string }).status })), counts: yield* a.counts, adapterCalls: a.adapterCalls() })}\n`,
+    );
+  });
 
 const provide = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
   effect.pipe(
@@ -1109,10 +1125,13 @@ it.effect.each(["queued-run.start", "queue.resume", "normal"] as const)(
           "disabled provider must hold promotion before revocation",
         );
         const historical = yield* a.receipts;
+        yield* d4Trace(a, `${entry} T1-before-revoke`);
         yield* a.revoke;
+        yield* d4Trace(a, `${entry} T2-after-revoke`);
         yield* setEnabled(true);
         const before = yield* a.counts;
         const result = yield* a.dispatch(command);
+        yield* d4Trace(a, `${entry} T3-after-replay`);
         const after = yield* a.counts;
         process.stdout.write(
           `queue-replay-red entry=${entry} startsBefore=${before[1]} startsAfter=${after[1]} replayed=${result.replayed === true}\n`,
@@ -1134,6 +1153,7 @@ it.effect.each(["queued-run.start", "queue.resume", "normal"] as const)(
           });
           assert.equal((yield* a.counts)[1], before[1]);
         }
+        yield* d4Trace(a, `${entry} T4-pre-assertion`);
         const reconciled = (yield* continuationRows(a))[0]!;
         assert.equal(reconciled.status, "reconcile_required");
         assert.equal(
@@ -1197,6 +1217,134 @@ it.effect.each(["continuation", "ordinary-runtime"] as const)(
         assert.equal((yield* a.counts)[1], before[1] + 1);
         yield* a.dispatch(command);
         assert.equal((yield* a.counts)[1], before[1] + 1);
+        assert.equal(a.adapterCalls(), 0);
+      }),
+    ),
+);
+
+// Deterministic form of the registry-lag race: the claudeAgent instance is not registered when the
+// queued start looks up its adapter, so the start fails before any continuation guard runs.
+const withMissingAdapter = <A, E, R>(
+  a: Effect.Success<ReturnType<typeof assemble>>,
+  body: Effect.Effect<A, E, R>,
+) =>
+  Effect.acquireUseRelease(
+    Effect.sync(() =>
+      vi.spyOn(a.instances, "getInstance").mockImplementation(() => Effect.undefined),
+    ),
+    () => body,
+    (spy) => Effect.sync(() => spy.mockRestore()),
+  );
+
+const heldQueuedRun = Effect.fn("D4FullServerAssembly.heldQueuedRun")(function* (
+  a: Effect.Success<ReturnType<typeof assemble>>,
+  threadId: string,
+) {
+  return (yield* a.sql<{
+    run_id: string;
+    status: string;
+    held: number | null;
+  }>`SELECT run_id, status, json_extract(payload_json, '$.queueHeld') AS held FROM orchestration_v2_projection_runs WHERE thread_id = ${threadId}`)[0]!;
+});
+
+it.effect.each(["queued-run.start", "queue.resume"] as const)(
+  "production root: revoked continuation whose queued start fails (adapter missing) reconciles through %s",
+  (entry) =>
+    provide(
+      Effect.gen(function* () {
+        const a = yield* assemble(`queue-failed-start-${entry}`);
+        const worker = yield* settleSourceWorker(a);
+        yield* a.execution.reconcileAttempt(projectId, worker.attemptId);
+        yield* Queue.take(a.released);
+        const review = (yield* continuationRows(a))[0]!;
+        yield* a.recovery.reconcile("startup");
+        const run = yield* heldQueuedRun(a, review.thread_id);
+        assert.deepEqual([run.status, run.held], ["queued", 1]);
+        const settings = yield* a.settings.getSettings;
+        const instanceId = ProviderInstanceId.make("claudeAgent");
+        yield* a.settings.updateSettings({
+          providerInstances: {
+            [instanceId]: {
+              ...settings.providerInstances[instanceId],
+              driver: ProviderDriverKind.make("claudeAgent"),
+              enabled: true,
+            },
+          },
+        });
+        yield* a.revoke;
+        const threadId = ThreadId.make(review.thread_id);
+        const command = (id: string) =>
+          entry === "queue.resume"
+            ? { type: "queue.resume" as const, threadId, commandId: CommandId.make(id) }
+            : {
+                type: "queued-run.start" as const,
+                threadId,
+                runId: RunId.make(run.run_id),
+                commandId: CommandId.make(id),
+              };
+        const before = (yield* a.counts).slice(0, 2);
+        yield* withMissingAdapter(a, a.dispatch(command(`failed-start:${entry}`)));
+        const reconciled = (yield* continuationRows(a))[0]!;
+        assert.equal(reconciled.status, "reconcile_required");
+        assert.equal(
+          reconciled.failure,
+          "Continuation authorization invalid; queued start blocked. Retained start history does not certify cancellation.",
+        );
+        const fenced = yield* heldQueuedRun(a, review.thread_id);
+        assert.deepEqual([fenced.status, fenced.held], ["queued", 1]);
+        assert.isTrue((yield* a.effects).every((effect) => effect.status === "cancelled"));
+        assert.deepEqual((yield* a.counts).slice(0, 2), before);
+        // Replay and a fresh unhold, with and without the missing adapter, are idempotent.
+        yield* withMissingAdapter(a, a.dispatch(command(`failed-start:${entry}`)));
+        yield* withMissingAdapter(a, a.dispatch(command(`failed-start-again:${entry}`)));
+        yield* a.dispatch(command(`failed-start-after:${entry}`));
+        assert.deepEqual((yield* continuationRows(a))[0], reconciled);
+        assert.deepEqual(yield* heldQueuedRun(a, review.thread_id), fenced);
+        yield* a.drainWorker;
+        assert.deepEqual((yield* a.counts).slice(0, 2), before);
+        assert.equal(a.adapterCalls(), 0);
+      }),
+    ),
+);
+
+it.effect(
+  "production root: an ordinary Runtime run whose queued start fails keeps the ordinary failure",
+  () =>
+    provide(
+      Effect.gen(function* () {
+        const a = yield* assemble("queue-failed-start-ordinary");
+        const attempt = yield* a.execution.execute(projectId, {
+          taskId: sourceId,
+          expectedTaskRevision: 1,
+          clientRequestId: "queue-failed-start-ordinary",
+        });
+        yield* Queue.take(a.released);
+        yield* a.recovery.reconcile("startup");
+        const threadId = attempt.threadId!;
+        const run = yield* heldQueuedRun(a, threadId);
+        assert.deepEqual([run.status, run.held], ["queued", 1]);
+        const before = yield* a.counts;
+        const attemptBefore = yield* a.sql<{ status: string }>`
+          SELECT status FROM project_runtime_execution_attempts WHERE thread_id = ${threadId}`;
+        yield* withMissingAdapter(
+          a,
+          a.dispatch({
+            type: "queued-run.start" as const,
+            threadId,
+            runId: RunId.make(run.run_id),
+            commandId: CommandId.make("failed-start:ordinary"),
+          }),
+        );
+        const after = yield* heldQueuedRun(a, threadId);
+        assert.equal(after.status, "failed");
+        // Ordinary behavior is unchanged: the run fails and the non-continuation attempt is not reconciled.
+        assert.deepEqual(
+          yield* a.sql<{
+            status: string;
+          }>`SELECT status FROM project_runtime_execution_attempts WHERE thread_id = ${threadId}`,
+          attemptBefore,
+        );
+        assert.deepEqual((yield* a.counts).slice(0, 2), before.slice(0, 2));
         assert.equal(a.adapterCalls(), 0);
       }),
     ),
