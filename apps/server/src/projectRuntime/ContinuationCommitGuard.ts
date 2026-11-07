@@ -157,9 +157,30 @@ export const queuedStartReconciliationGuard = (
         payload_json = json_set(payload_json, '$.status', 'reconcile_required', '$.revision', revision + 1,
           '$.failure', 'Continuation authorization invalid; queued start blocked. Retained start history does not certify cancellation.')
       WHERE thread_id = ${threadId} AND request_key GLOB 'cont:*'
-        AND 'message:runtime-execution:' || attempt_id = (
-          SELECT json_extract(payload_json, '$.userMessageId')
-          FROM orchestration_v2_projection_runs WHERE run_id = ${runId})
         AND status IN ('pending', 'launched')`;
+  }),
+});
+
+// A queued start can fail before the preparation guard runs (for example, no registered adapter).
+// Recording that failure must not outrun a revocation: this guard revalidates authorization in the
+// transaction that writes the failure, and signals a revoked continuation with this reason so the
+// caller reconciles the attempt instead of failing the run.
+export const CONTINUATION_REVOKED_BEFORE_FAILURE =
+  "Continuation authorization revoked before the queued start failure was recorded.";
+
+export const queuedStartFailureGuard = (
+  threadId: string,
+  runId: string,
+  enabled: boolean,
+): CommandCommitGuard => ({
+  check: Effect.fn("ContinuationCommitGuard.queuedStartFailure")(function* (sql) {
+    yield* preparationGuard(threadId, runId, enabled)
+      .check(sql)
+      .pipe(
+        Effect.catchTags({
+          EventSinkCommitDenied: () =>
+            Effect.fail(new EventSinkCommitDenied({ reason: CONTINUATION_REVOKED_BEFORE_FAILURE })),
+        }),
+      );
   }),
 });

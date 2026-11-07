@@ -4,6 +4,8 @@ import {
   launchGuard,
   preparationGuard,
   queuedStartReconciliationGuard,
+  queuedStartFailureGuard,
+  CONTINUATION_REVOKED_BEFORE_FAILURE,
   cancellationGuard,
   reconcilePreparation,
 } from "../projectRuntime/ContinuationCommitGuard.ts";
@@ -1657,7 +1659,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
       code: handoffUnsupported ? "context_handoff_unsupported" : "queued_start_failed",
       class: handoffUnsupported ? "validation_error" : "unknown",
     });
-    yield* writeSystemEvents([
+    const failureEvents = [
       ...(attempt !== undefined && rootNode !== undefined
         ? [
             {
@@ -1726,7 +1728,33 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         occurredAt: now,
         payload: { ...queuedRun, status: "failed", queuePosition: null, completedAt: now },
       },
-    ]);
+    ] satisfies ReadonlyArray<Omit<OrchestrationV2DomainEvent, "id">>;
+    // A revoked continuation must stay fenced and reconcile its attempt, not fail the run and leave
+    // a possibly started attempt `launched`. Authorization is revalidated in this very commit.
+    const failureOptions = queuedRun.userMessageId.startsWith("message:runtime-execution:")
+      ? { commitGuard: queuedStartFailureGuard(threadId, queuedRun.id, continuationEnabled) }
+      : {};
+    yield* writeSystemEvents(failureEvents, [], failureOptions).pipe(
+      Effect.catchTags({
+        EventSinkCommitDenied: (denied) =>
+          denied.reason === CONTINUATION_REVOKED_BEFORE_FAILURE
+            ? writeSystemEvents(
+                [
+                  {
+                    type: "run.updated",
+                    threadId,
+                    runId: queuedRun.id,
+                    providerInstanceId: queuedRun.providerInstanceId,
+                    occurredAt: now,
+                    payload: { ...queuedRun, queueHeld: true },
+                  },
+                ],
+                [],
+                { commitGuard: queuedStartReconciliationGuard(threadId, queuedRun.id) },
+              )
+            : Effect.fail(denied),
+      }),
+    );
   });
 
   const startNextQueuedRun = Effect.fn("Orchestrator.startNextQueuedRun")(

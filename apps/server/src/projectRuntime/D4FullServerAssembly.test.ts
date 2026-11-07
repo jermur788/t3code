@@ -417,6 +417,7 @@ const assemble = Effect.fn("D4FullServerAssembly.assemble")(function* (
     trackerFinishes,
     tracker,
     adapterCalls,
+    instances,
     completeRunOf,
     appendHandoff,
     identity,
@@ -1197,6 +1198,235 @@ it.effect.each(["continuation", "ordinary-runtime"] as const)(
         assert.equal((yield* a.counts)[1], before[1] + 1);
         yield* a.dispatch(command);
         assert.equal((yield* a.counts)[1], before[1] + 1);
+        assert.equal(a.adapterCalls(), 0);
+      }),
+    ),
+);
+
+// Deterministic form of the registry-lag race: the claudeAgent instance is not registered when the
+// queued start looks up its adapter, so the start fails before any continuation guard runs.
+const withMissingAdapter = <A, E, R>(
+  a: Effect.Success<ReturnType<typeof assemble>>,
+  body: Effect.Effect<A, E, R>,
+) =>
+  Effect.acquireUseRelease(
+    Effect.sync(() =>
+      vi.spyOn(a.instances, "getInstance").mockImplementation(() => Effect.undefined),
+    ),
+    () => body,
+    (spy) => Effect.sync(() => spy.mockRestore()),
+  );
+
+const heldQueuedRun = Effect.fn("D4FullServerAssembly.heldQueuedRun")(function* (
+  a: Effect.Success<ReturnType<typeof assemble>>,
+  threadId: string,
+) {
+  return (yield* a.sql<{
+    run_id: string;
+    status: string;
+    held: number | null;
+  }>`SELECT run_id, status, json_extract(payload_json, '$.queueHeld') AS held FROM orchestration_v2_projection_runs WHERE thread_id = ${threadId}`)[0]!;
+});
+
+it.effect.each(["queued-run.start", "queue.resume"] as const)(
+  "production root: revoked continuation whose queued start fails (adapter missing) reconciles through %s",
+  (entry) =>
+    provide(
+      Effect.gen(function* () {
+        const a = yield* assemble(`queue-failed-start-${entry}`);
+        const worker = yield* settleSourceWorker(a);
+        yield* a.execution.reconcileAttempt(projectId, worker.attemptId);
+        yield* Queue.take(a.released);
+        const review = (yield* continuationRows(a))[0]!;
+        yield* a.recovery.reconcile("startup");
+        const run = yield* heldQueuedRun(a, review.thread_id);
+        assert.deepEqual([run.status, run.held], ["queued", 1]);
+        const settings = yield* a.settings.getSettings;
+        const instanceId = ProviderInstanceId.make("claudeAgent");
+        yield* a.settings.updateSettings({
+          providerInstances: {
+            [instanceId]: {
+              ...settings.providerInstances[instanceId],
+              driver: ProviderDriverKind.make("claudeAgent"),
+              enabled: true,
+            },
+          },
+        });
+        yield* a.revoke;
+        const threadId = ThreadId.make(review.thread_id);
+        const command = (id: string) =>
+          entry === "queue.resume"
+            ? { type: "queue.resume" as const, threadId, commandId: CommandId.make(id) }
+            : {
+                type: "queued-run.start" as const,
+                threadId,
+                runId: RunId.make(run.run_id),
+                commandId: CommandId.make(id),
+              };
+        const before = (yield* a.counts).slice(0, 2);
+        yield* withMissingAdapter(a, a.dispatch(command(`failed-start:${entry}`)));
+        const reconciled = (yield* continuationRows(a))[0]!;
+        assert.equal(reconciled.status, "reconcile_required");
+        assert.equal(
+          reconciled.failure,
+          "Continuation authorization invalid; queued start blocked. Retained start history does not certify cancellation.",
+        );
+        const fenced = yield* heldQueuedRun(a, review.thread_id);
+        assert.deepEqual([fenced.status, fenced.held], ["queued", 1]);
+        assert.isTrue((yield* a.effects).every((effect) => effect.status === "cancelled"));
+        assert.deepEqual((yield* a.counts).slice(0, 2), before);
+        // Replay and a fresh unhold, with and without the missing adapter, are idempotent.
+        yield* withMissingAdapter(a, a.dispatch(command(`failed-start:${entry}`)));
+        yield* withMissingAdapter(a, a.dispatch(command(`failed-start-again:${entry}`)));
+        yield* a.dispatch(command(`failed-start-after:${entry}`));
+        assert.deepEqual((yield* continuationRows(a))[0], reconciled);
+        assert.deepEqual(yield* heldQueuedRun(a, review.thread_id), fenced);
+        yield* a.drainWorker;
+        assert.deepEqual((yield* a.counts).slice(0, 2), before);
+        assert.equal(a.adapterCalls(), 0);
+      }),
+    ),
+);
+
+// Barrier: revocation commits right after a failure-path transaction rolled back because the
+// continuation was still authorized. A revocation seen before the outcome is recorded must never be
+// overwritten by an ordinary failure. Ordered by the transaction call itself, so no timers.
+const failedStartAfterDecisionBarrier = Effect.fn("D4FullServerAssembly.failedStartBarrier")(
+  function* (a: Effect.Success<ReturnType<typeof assemble>>) {
+    const worker = yield* settleSourceWorker(a);
+    yield* a.execution.reconcileAttempt(projectId, worker.attemptId);
+    yield* Queue.take(a.released);
+    const review = (yield* continuationRows(a))[0]!;
+    yield* a.recovery.reconcile("startup");
+    const run = yield* heldQueuedRun(a, review.thread_id);
+    assert.deepEqual([run.status, run.held], ["queued", 1]);
+    const settings = yield* a.settings.getSettings;
+    const instanceId = ProviderInstanceId.make("claudeAgent");
+    yield* a.settings.updateSettings({
+      providerInstances: {
+        [instanceId]: {
+          ...settings.providerInstances[instanceId],
+          driver: ProviderDriverKind.make("claudeAgent"),
+          enabled: true,
+        },
+      },
+    });
+    // Authorization is still valid when the start is attempted.
+    assert.isDefined((yield* a.runtime.readTask(projectId, sourceId)).continuation);
+    const revokedOnce = yield* Deferred.make<void>();
+    const state = { armed: false };
+    const withTransaction = a.sql.withTransaction;
+    const spies = [
+      vi.spyOn(a.instances, "getInstance").mockImplementation(() => {
+        state.armed = true;
+        return Effect.undefined;
+      }),
+      vi
+        .spyOn(a.sql, "withTransaction")
+        .mockImplementation(((body: Effect.Effect<void>) =>
+          state.armed
+            ? withTransaction(body as Effect.Effect<void>).pipe(
+                Effect.tapError((error) =>
+                  (error as { _tag?: string })._tag === "EventSinkCommitDenied"
+                    ? Deferred.succeed(revokedOnce, undefined).pipe(
+                        Effect.flatMap((first) => (first ? a.revoke : Effect.void)),
+                      )
+                    : Effect.void,
+                ),
+              )
+            : withTransaction(body as Effect.Effect<void>)) as never),
+    ];
+    const before = (yield* a.counts).slice(0, 2);
+    yield* a.dispatch({
+      type: "queue.resume" as const,
+      threadId: ThreadId.make(review.thread_id),
+      commandId: CommandId.make("failed-start:barrier"),
+    });
+    for (const spy of spies) spy.mockRestore();
+    return { review, before, revoked: yield* Deferred.isDone(revokedOnce) };
+  },
+);
+
+it.effect(
+  "production root: revocation between an authorized decision and the failure record is never overwritten",
+  () =>
+    provide(
+      Effect.gen(function* () {
+        const a = yield* assemble("queue-failed-start-barrier");
+        const { review, before, revoked } = yield* failedStartAfterDecisionBarrier(a);
+        const attempt = (yield* continuationRows(a))[0]!;
+        const fenced = yield* heldQueuedRun(a, review.thread_id);
+        process.stdout.write(
+          `barrier revoked=${revoked} attempt=${attempt.status} run=${fenced.status}/${fenced.held}\n`,
+        );
+        if (revoked) {
+          assert.equal(attempt.status, "reconcile_required");
+          assert.equal(
+            attempt.failure,
+            "Continuation authorization invalid; queued start blocked. Retained start history does not certify cancellation.",
+          );
+          assert.deepEqual([fenced.status, fenced.held], ["queued", 1]);
+        } else {
+          // No window opened: the decision and its record were one transaction, so the outcome is
+          // the ordinary failure under a continuation that was still authorized at commit.
+          assert.isDefined((yield* a.runtime.readTask(projectId, sourceId)).continuation);
+          assert.equal(fenced.status, "failed");
+        }
+        assert.deepEqual((yield* a.counts).slice(0, 2), before);
+        yield* a.drainWorker;
+        assert.deepEqual((yield* a.counts).slice(0, 2), before);
+        assert.equal(a.adapterCalls(), 0);
+      }),
+    ),
+);
+
+it.effect(
+  "production root: an ordinary Runtime run whose queued start fails keeps the ordinary failure",
+  () =>
+    provide(
+      Effect.gen(function* () {
+        const a = yield* assemble("queue-failed-start-ordinary");
+        const attempt = yield* a.execution.execute(projectId, {
+          taskId: sourceId,
+          expectedTaskRevision: 1,
+          clientRequestId: "queue-failed-start-ordinary",
+        });
+        yield* Queue.take(a.released);
+        yield* a.recovery.reconcile("startup");
+        const threadId = attempt.threadId!;
+        const run = yield* heldQueuedRun(a, threadId);
+        assert.deepEqual([run.status, run.held], ["queued", 1]);
+        const before = yield* a.counts;
+        const attemptBefore = yield* a.sql<{ status: string }>`
+          SELECT status FROM project_runtime_execution_attempts WHERE thread_id = ${threadId}`;
+        yield* withMissingAdapter(
+          a,
+          a.dispatch({
+            type: "queued-run.start" as const,
+            threadId,
+            runId: RunId.make(run.run_id),
+            commandId: CommandId.make("failed-start:ordinary"),
+          }),
+        );
+        const after = yield* heldQueuedRun(a, threadId);
+        assert.equal(after.status, "failed");
+        assert.equal(after.held ?? 0, 0);
+        assert.equal(
+          (yield* a.sql<{ code: string | null }>`
+            SELECT json_extract(payload_json, '$.failure.code') AS code
+            FROM orchestration_v2_projection_turn_items
+            WHERE thread_id = ${threadId} AND json_extract(payload_json, '$.type') = 'error'`)[0]
+            ?.code,
+          "queued_start_failed",
+        );
+        // Ordinary behavior is unchanged: the run fails and the non-continuation attempt is not reconciled.
+        assert.deepEqual(
+          yield* a.sql<{
+            status: string;
+          }>`SELECT status FROM project_runtime_execution_attempts WHERE thread_id = ${threadId}`,
+          attemptBefore,
+        );
+        assert.deepEqual((yield* a.counts).slice(0, 2), before.slice(0, 2));
         assert.equal(a.adapterCalls(), 0);
       }),
     ),
