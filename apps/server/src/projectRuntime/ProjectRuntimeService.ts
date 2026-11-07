@@ -15,6 +15,7 @@ import {
   ProjectRuntimeInstructionsSaveInput,
   ProjectRuntimeInvalidTransitionError,
   ProjectRuntimeNotFoundError,
+  ProjectRuntimeRequestError,
   ProjectRuntimeSetEnabledInput,
   ProjectRuntimeSource,
   ProjectRuntimeSourceCreateInput,
@@ -25,6 +26,7 @@ import {
   ProjectRuntimeSourceUpdateInput,
   type ProjectRuntimeStatus,
   ProjectRuntimeTask,
+  ProjectRuntimeContinuationPolicy,
   type ProjectRuntimeTaskBlockerInput,
   ProjectRuntimeTaskCreateInput,
   ProjectRuntimeTaskId,
@@ -46,6 +48,7 @@ import { type SqlError } from "effect/sql/SqlError";
 import { PersistenceSqlError } from "../persistence/Errors.ts";
 import { ProjectNotFoundError } from "../project/ProjectService.ts";
 import { disabledContext, packContext } from "./ProjectRuntimeContext.ts";
+import { ContinuationGate } from "./RuntimeTaskContinuationGate.ts";
 
 const WriteContext = Schema.Struct({ actor: ProjectRuntimeActor });
 type WriteContext = typeof WriteContext.Type;
@@ -70,6 +73,7 @@ class ProjectRuntimeIdGenerationError extends Schema.TaggedError<ProjectRuntimeI
 }
 type RuntimeError =
   | ProjectRuntimeError
+  | ProjectRuntimeRequestError
   | ProjectNotFoundError
   | PersistenceSqlError
   | Schema.SchemaError
@@ -171,6 +175,13 @@ const decodeSourceUpdateInput = Schema.decodeUnknownEffect(ProjectRuntimeSourceU
 const decodeSourceRemoveInput = Schema.decodeUnknownEffect(ProjectRuntimeSourceRemoveInput);
 const decodeSourceListInput = Schema.decodeUnknownEffect(ProjectRuntimeSourceListInput);
 const decodeSource = Schema.decodeUnknownEffect(SourceJson);
+const decodeContinuationPolicyInput = Schema.decodeUnknownEffect(ProjectRuntimeContinuationPolicy);
+const decodeContinuationPolicy = Effect.fn("ProjectRuntimeService.decodeContinuationPolicy")(
+  (input: unknown) =>
+    decodeContinuationPolicyInput(input).pipe(
+      Effect.mapError(() => new ProjectRuntimeRequestError({ reason: "invalid_request" })),
+    ),
+);
 const decodeTaskCreateInput = Schema.decodeUnknownEffect(ProjectRuntimeTaskCreateInput);
 const decodeTaskId = Schema.decodeUnknownEffect(ProjectRuntimeTaskId);
 const decodeTaskUpdateInput = Schema.decodeUnknownEffect(ProjectRuntimeTaskUpdateInput);
@@ -287,6 +298,10 @@ function applyTaskPatch(
     if (patch.routing === null) delete result.routing;
     else result.routing = patch.routing;
   }
+  if (patch.continuation !== undefined) {
+    if (patch.continuation === null) delete result.continuation;
+    else result.continuation = patch.continuation;
+  }
   return result;
 }
 
@@ -321,6 +336,14 @@ const validateTask = Effect.fn("ProjectRuntimeService.validateTask")(function* (
   projectId: ProjectId,
   task: ProjectRuntimeTask,
 ) {
+  if (
+    task.continuation !== undefined &&
+    (task.continuation.reviewTaskId === task.taskId ||
+      task.continuation.repairTaskId === task.taskId ||
+      task.continuation.repairTaskId === task.continuation.reviewTaskId)
+  ) {
+    return yield* new ProjectRuntimeRequestError({ reason: "invalid_request" });
+  }
   if (task.status === "blocked" && task.blocker === null) {
     return yield* new ProjectRuntimeInvalidTransitionError({
       projectId,
@@ -347,6 +370,7 @@ const validateTask = Effect.fn("ProjectRuntimeService.validateTask")(function* (
 
 const make = Effect.gen(function* () {
   const sql = yield* SqlClient.SqlClient;
+  const continuationEnabled = (yield* ContinuationGate).enabled;
   const developmentProfiles = yield* DevelopmentProfileService.DevelopmentProfileService;
   const random = yield* SecureRandom.SecureRandom;
   const newId = random
@@ -588,14 +612,36 @@ const make = Effect.gen(function* () {
     "ProjectRuntimeService.createTask",
   )(
     function* (projectId, input, context) {
+      if (input?.continuation !== undefined) yield* decodeContinuationPolicy(input.continuation);
       const data = yield* decodeTaskCreateInput(input);
       const { actor } = yield* decodeWriteContext(context);
       yield* requireEnabled(projectId);
       const timestamp = yield* now;
+      const taskId = ProjectRuntimeTaskId.make(yield* newId);
+      // Synthetic continuation is a server-controlled experiment. A task
+      // payload, owner or agent actor can never grant it while the gate is off.
+      if (data.continuation !== undefined && !continuationEnabled) {
+        return yield* new ProjectRuntimeInvalidTransitionError({
+          projectId,
+          taskId,
+          violation: "continuation_disabled",
+        });
+      }
+      // MCP/worker actors cannot self-grant continuation authority.
+      if (data.continuation !== undefined && !actor.startsWith("user:")) {
+        return yield* new ProjectRuntimeInvalidTransitionError({
+          projectId,
+          taskId,
+          violation: "continuation_requires_operator",
+        });
+      }
       const record: ProjectRuntimeTask = {
         ...data,
+        ...(data.continuation === undefined
+          ? {}
+          : { continuation: yield* stampContinuation(projectId, data.continuation) }),
         projectId,
-        taskId: ProjectRuntimeTaskId.make(yield* newId),
+        taskId,
         owner: data.owner ?? actor,
         status: data.status ?? "planned",
         blocker: data.blocker === undefined ? null : { ...data.blocker, createdAt: timestamp },
@@ -627,17 +673,106 @@ const make = Effect.gen(function* () {
     sql.withTransaction,
     sqlErrors,
   );
+  // The policy is accepted against the targets as the operator saw them at this write.
+  const stampContinuation = Effect.fn("ProjectRuntimeService.stampContinuation")(function* (
+    projectId: ProjectId,
+    policy: ProjectRuntimeContinuationPolicy,
+  ) {
+    const { acceptedTargetRevisions: _ignored, ...rest } = policy;
+    const rows = yield* sql<{ readonly task_id: string; readonly revision: number }>`
+      SELECT task_id, revision FROM project_runtime_tasks
+      WHERE project_id = ${projectId}
+        AND task_id IN (${policy.reviewTaskId}, ${policy.repairTaskId ?? policy.reviewTaskId})`;
+    const revisionOf = (taskId: string | undefined) =>
+      rows.find((row) => row.task_id === taskId)?.revision;
+    const review = revisionOf(policy.reviewTaskId);
+    const repair = revisionOf(policy.repairTaskId);
+    // Missing and foreign-project IDs have the same outcome; never inspect another project's policy.
+    if (review === undefined || (policy.repairTaskId !== undefined && repair === undefined)) {
+      return yield* new ProjectRuntimeNotFoundError({
+        projectId,
+        entity: "task",
+        entityId: review === undefined ? policy.reviewTaskId : policy.repairTaskId!,
+      });
+    }
+    return {
+      ...rest,
+      acceptedTargetRevisions: {
+        ...(review === undefined ? {} : { review }),
+        ...(repair === undefined ? {} : { repair }),
+      },
+    };
+  });
+
+  // Dispatch builds review/repair packets from the target, so while any policy names it (in any
+  // source status: a blocked source reopens without a re-save) agents may write it only as a
+  // handoff from the target's in-progress attempt. Operator edits are allowed; dispatch then
+  // sees an unaccepted revision and waits for the policy to be saved again.
+  const requireUnlockedContinuationTarget = Effect.fn(
+    "ProjectRuntimeService.requireUnlockedContinuationTarget",
+  )(function* (
+    projectId: ProjectId,
+    taskId: ProjectRuntimeTaskId,
+    actor: string,
+    handoff: boolean,
+  ) {
+    if (actor.startsWith("user:")) return;
+    const sources = yield* sql`SELECT 1 FROM project_runtime_tasks
+      WHERE project_id = ${projectId} AND task_id <> ${taskId}
+        AND json_extract(payload_json, '$.continuation.mode') = 'synthetic'
+        AND (json_extract(payload_json, '$.continuation.reviewTaskId') = ${taskId}
+          OR json_extract(payload_json, '$.continuation.repairTaskId') = ${taskId})
+      LIMIT 1`;
+    if (sources.length === 0) return;
+    if (handoff) {
+      const own = yield* sql`SELECT 1 FROM project_runtime_execution_attempts
+        WHERE project_id = ${projectId} AND task_id = ${taskId} AND 'thread:' || thread_id = ${actor}
+          AND status IN ('pending', 'launched', 'cancelling', 'reconcile_required')
+        LIMIT 1`;
+      if (own.length > 0) return;
+    }
+    return yield* new ProjectRuntimeInvalidTransitionError({
+      projectId,
+      taskId,
+      violation: "continuation_requires_operator",
+    });
+  });
+
   const updateTask: ProjectRuntimeService["Service"]["updateTask"] = Effect.fn(
     "ProjectRuntimeService.updateTask",
   )(
     function* (projectId, input, context) {
+      if (input?.continuation !== undefined && input.continuation !== null) {
+        yield* decodeContinuationPolicy(input.continuation);
+      }
       const { taskId, expectedRevision, ...patch } = yield* decodeTaskUpdateInput(input);
       const { actor } = yield* decodeWriteContext(context);
+      // Explicit removal (`continuation: null`) and unrelated edits stay
+      // available so an operator can revoke stale policy while the gate is off.
+      if (patch.continuation !== undefined && patch.continuation !== null && !continuationEnabled) {
+        return yield* new ProjectRuntimeInvalidTransitionError({
+          projectId,
+          taskId,
+          violation: "continuation_disabled",
+        });
+      }
       const existing = yield* readTask(projectId, taskId);
       yield* checkRevision(projectId, "task", existing.revision, expectedRevision, taskId);
+      if (patch.continuation !== undefined && !actor.startsWith("user:")) {
+        return yield* new ProjectRuntimeInvalidTransitionError({
+          projectId,
+          taskId,
+          violation: "continuation_requires_operator",
+        });
+      }
+      yield* requireUnlockedContinuationTarget(projectId, taskId, actor, false);
       const timestamp = yield* now;
+      const stamped =
+        patch.continuation === undefined || patch.continuation === null
+          ? patch
+          : { ...patch, continuation: yield* stampContinuation(projectId, patch.continuation) };
       const record: ProjectRuntimeTask = {
-        ...applyTaskPatch(existing, patch, timestamp),
+        ...applyTaskPatch(existing, stamped, timestamp),
         revision: existing.revision + 1,
         updatedAt: timestamp,
         updatedBy: actor,
@@ -701,6 +836,7 @@ const make = Effect.gen(function* () {
           currentRevision: task.revision,
         });
       }
+      yield* requireUnlockedContinuationTarget(projectId, task.taskId, actor, true);
       const {
         taskId,
         expectedTaskRevision,

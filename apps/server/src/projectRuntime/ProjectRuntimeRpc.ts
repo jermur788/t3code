@@ -1,5 +1,7 @@
 import {
   PROJECT_RUNTIME_RPC_METHODS,
+  PROJECT_RUNTIME_RPCS,
+  RpcScopeAuthorization,
   ProjectRuntimeError,
   ProjectRuntimeRequestError,
   RuntimeRoutingError,
@@ -15,6 +17,22 @@ import * as ProjectRuntimeService from "./ProjectRuntimeService.ts";
 import * as ProjectRuntimeSourceAccess from "./ProjectRuntimeSourceAccess.ts";
 import * as RuntimeRoutingService from "../runtimeRouting/RuntimeRoutingService.ts";
 import * as RuntimeTaskExecutionService from "./RuntimeTaskExecutionService.ts";
+
+// Let task-write policy validation reach the service's typed failure channel. The
+// default RPC decoder turns malformed policy values into defects before handlers run.
+// Client contracts and MCP schemas retain their strict policy schemas.
+export const serverTaskWriteRpcs = PROJECT_RUNTIME_RPCS.filter(
+  (rpc) =>
+    rpc._tag === PROJECT_RUNTIME_RPC_METHODS.createTask ||
+    rpc._tag === PROJECT_RUNTIME_RPC_METHODS.updateTask,
+).map((rpc) =>
+  rpc
+    .setPayload({
+      ...rpc.payloadSchema.fields,
+      continuation: Schema.optionalKey(Schema.Unknown),
+    })
+    .middleware(RpcScopeAuthorization),
+);
 
 const isRuntimeError = Schema.is(ProjectRuntimeError);
 const isRuntimeRequestError = Schema.is(ProjectRuntimeRequestError);

@@ -54,14 +54,25 @@ const projectId = Schema.optional(
   }),
 );
 
-// Routing is user/orchestrator configuration in this gate. Keeping it out of
-// agent-facing tool schemas avoids expanding every Runtime task tool prompt.
-const { routing: _taskRouting, ...AgentProjectRuntimeTaskFields } = ProjectRuntimeTask.fields;
+// Routing and continuation are operator configuration. Keeping them out of agent-facing tool
+// schemas avoids expanding every Runtime task tool prompt, and an agent can neither read the
+// continuation authority nor name it in a write (the service still rejects non-user actors).
+const {
+  routing: _taskRouting,
+  continuation: _taskContinuation,
+  ...AgentProjectRuntimeTaskFields
+} = ProjectRuntimeTask.fields;
 const AgentProjectRuntimeTask = Schema.Struct(AgentProjectRuntimeTaskFields);
-const { routing: _createTaskRouting, ...AgentProjectRuntimeTaskCreateFields } =
-  ProjectRuntimeTaskCreateInput.fields;
-const { routing: _updateTaskRouting, ...AgentProjectRuntimeTaskUpdateFields } =
-  ProjectRuntimeTaskUpdateInput.fields;
+const {
+  routing: _createTaskRouting,
+  continuation: _createTaskContinuation,
+  ...AgentProjectRuntimeTaskCreateFields
+} = ProjectRuntimeTaskCreateInput.fields;
+const {
+  routing: _updateTaskRouting,
+  continuation: _updateTaskContinuation,
+  ...AgentProjectRuntimeTaskUpdateFields
+} = ProjectRuntimeTaskUpdateInput.fields;
 const AgentProjectRuntimeTaskListResult = Schema.Struct({
   ...ProjectRuntimeTaskListResult.fields,
   tasks: Schema.Array(AgentProjectRuntimeTask).check(

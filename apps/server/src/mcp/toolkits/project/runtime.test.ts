@@ -39,6 +39,7 @@ import * as SqlitePersistence from "../../../persistence/Sqlite.ts";
 import * as ManagedProjectFolders from "../../../project/ManagedProjectFolders.ts";
 import * as ProjectService from "../../../project/ProjectService.ts";
 import * as ProjectRuntimeService from "../../../projectRuntime/ProjectRuntimeService.ts";
+import * as ContinuationGate from "../../../projectRuntime/RuntimeTaskContinuationGate.ts";
 import * as ProjectRuntimeSourceAccess from "../../../projectRuntime/ProjectRuntimeSourceAccess.ts";
 import * as ServerSettings from "../../../serverSettings.ts";
 import * as SourceControlRepositoryService from "../../../sourceControl/SourceControlRepositoryService.ts";
@@ -98,6 +99,7 @@ const layerWorkspace = WorkspaceFileSystem.layer.pipe(
 
 const layerRuntime = ProjectRuntimeSourceAccess.layer.pipe(
   Layer.provideMerge(ProjectRuntimeService.layer),
+  Layer.provideMerge(ContinuationGate.layer(false)),
   Layer.provideMerge(DevelopmentProfileService.layer),
   Layer.provideMerge(ProjectStore.layer),
   Layer.provideMerge(layerWorkspace),
@@ -826,6 +828,83 @@ it.effect("creates, reads, lists and updates tasks with server-derived provenanc
       ).tasks,
       0,
     );
+  }).pipe(Effect.scoped, Effect.provide(layerTest)),
+);
+
+it.effect("never shows an agent the continuation policy and never lets it name one", () =>
+  Effect.gen(function* () {
+    const t = yield* setup;
+    const scope = threadScope(threadA);
+    for (const tool of [ProjectTaskCreateTool, ProjectTaskUpdateTool]) {
+      assert.notInclude(JSON.stringify(Tool.getJsonSchema(tool)), "continuation");
+    }
+    const review = yield* t.task(projectA, "Review target");
+    const source = yield* t.task(projectA, "Source with policy");
+    const other = yield* t.task(projectA, "Unrelated");
+    const policy = {
+      version: 1,
+      mode: "synthetic",
+      reviewTaskId: review.taskId,
+      maxRepairCycles: 1,
+    };
+    // Operator-saved policy plus private attempt authority, written as storage holds them.
+    yield* t.sql`UPDATE project_runtime_tasks
+      SET payload_json = json_set(payload_json, '$.continuation', json(${JSON.stringify(policy)}))
+      WHERE task_id = ${source.taskId}`;
+    yield* t.sql`INSERT INTO project_runtime_execution_attempts (attempt_id, project_id, task_id, status, revision, thread_id, request_key, created_at, updated_at, payload_json)
+      VALUES ('attempt-hidden', ${projectA}, ${review.taskId}, 'pending', 1, 'thread-hidden', 'cont:v1:r:hidden', '2026-10-23T00:00:00.000Z', '2026-10-23T00:00:00.000Z', ${JSON.stringify({ continuationAuthorization: { secret: "AUTH-MARKER-5d1e" } })})`;
+    assert.deepEqual((yield* t.runtime.readTask(projectA, source.taskId)).continuation, policy);
+
+    const outputs: Array<unknown> = [];
+    const read = yield* invoke(scope, "t3_project_task_read", { taskId: source.taskId });
+    outputs.push(read);
+    assert.isFalse(read.failed);
+    outputs.push(yield* invoke(scope, "t3_project_task_list", {}));
+    outputs.push(yield* invoke(scope, "t3_project_context", {}));
+    const created = yield* invoke(scope, "t3_project_task_create", {
+      title: "Self-granted",
+      scope: "Scope",
+      acceptanceCriteria: [],
+      continuation: policy,
+    });
+    outputs.push(created);
+    const updated = yield* invoke(scope, "t3_project_task_update", {
+      taskId: other.taskId,
+      expectedRevision: other.revision,
+      title: "Retitled",
+      continuation: { ...policy, reviewTaskId: source.taskId },
+    });
+    outputs.push(updated);
+    // The policy's review target is locked against agents, so its packet stays as accepted.
+    assert.deepEqual(
+      failedWith(
+        yield* invoke(scope, "t3_project_task_update", {
+          taskId: review.taskId,
+          expectedRevision: review.revision,
+          scope: "Injected reviewer instructions",
+        }),
+      ),
+      {
+        _tag: "ProjectRuntimeInvalidTransitionError",
+        projectId: projectA,
+        taskId: review.taskId,
+        violation: "continuation_requires_operator",
+      },
+    );
+    assert.equal((yield* t.runtime.readTask(projectA, review.taskId)).scope, "Scope");
+    for (const output of outputs) {
+      const text = JSON.stringify(output);
+      assert.notInclude(text, "continuation");
+      assert.notInclude(text, "synthetic");
+      assert.notInclude(text, "AUTH-MARKER-5d1e");
+    }
+    // The ignored key never reached the service: nothing stored a policy for the agent.
+    const createdTask = succeeded(ProjectRuntimeTask, created);
+    assert.isUndefined((yield* t.runtime.readTask(projectA, createdTask.taskId)).continuation);
+    const updatedTask = succeeded(ProjectRuntimeTask, updated);
+    assert.equal(updatedTask.title, "Retitled");
+    assert.isUndefined((yield* t.runtime.readTask(projectA, other.taskId)).continuation);
+    assert.deepEqual((yield* t.runtime.readTask(projectA, source.taskId)).continuation, policy);
   }).pipe(Effect.scoped, Effect.provide(layerTest)),
 );
 

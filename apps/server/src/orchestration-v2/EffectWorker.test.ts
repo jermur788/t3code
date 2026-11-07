@@ -1,3 +1,7 @@
+import * as NodeServices from "@effect/platform-node/NodeServices";
+import * as SqlClient from "effect/sql/SqlClient";
+import * as SqlitePersistence from "../persistence/Sqlite.ts";
+import * as ContinuationGate from "../projectRuntime/RuntimeTaskContinuationGate.ts";
 import { assert, it } from "@effect/vitest";
 import {
   CheckpointId,
@@ -77,6 +81,7 @@ function restartEffect(
 }
 
 function layerExecutorFor(input: {
+  readonly sql?: SqlClient.SqlClient;
   readonly events: Ref.Ref<ReadonlyArray<string>>;
   readonly failFirstStart?: Ref.Ref<boolean>;
   readonly threads?: Partial<ThreadManagementService.ThreadManagementService["Service"]>;
@@ -160,6 +165,10 @@ function layerExecutorFor(input: {
     Layer.provide(
       Layer.mergeAll(
         layerDependencies,
+        input.sql === undefined
+          ? SqlitePersistence.layerMemory.pipe(Layer.provide(NodeServices.layer))
+          : Layer.succeed(SqlClient.SqlClient, input.sql),
+        ContinuationGate.layer(true),
         Layer.mock(ThreadManagementService.ThreadManagementService)(input.threads ?? {}),
         ServerSettings.layerTest(
           input.continueAfterRestart === true ? { continueThreadsAfterServerUpdate: true } : {},
@@ -634,4 +643,71 @@ it.effect.each(["confirmed", "unconfirmed", "failed"] as const)(
         outcome === "confirmed" ? ["stop-child", "settle-child"] : ["stop-child"],
       );
     }),
+);
+
+it.effect.each([false, true])(
+  "a revoked persisted start effect cannot call the provider after recovery (valid provenance: %s)",
+  (validProvenance) =>
+    Effect.gen(function* () {
+      const sql = yield* SqlClient.SqlClient;
+      const events = yield* Ref.make<ReadonlyArray<string>>([]);
+      yield* sql`INSERT INTO projection_projects (project_id,title,workspace_root,scripts_json,created_at,updated_at)
+      VALUES ('revoked-project','Revoked','/disposable','[]','2026-11-05','2026-11-05')`;
+      yield* sql`INSERT INTO project_runtime (project_id,enabled,revision,created_at,updated_at)
+      VALUES ('revoked-project',1,1,'2026-11-05','2026-11-05')`;
+      yield* sql`INSERT INTO project_runtime_tasks (project_id,task_id,status,revision,created_at,payload_json)
+      VALUES ('revoked-project','target','ready',1,'2026-11-05','{}')`;
+      yield* sql`INSERT INTO project_runtime_execution_attempts
+      (attempt_id,project_id,task_id,status,revision,thread_id,request_key,created_at,updated_at,payload_json)
+      VALUES ('revoked-attempt','revoked-project','target','launched',1,${threadId},'cont:v1:r:root','2026-11-05','2026-11-05','{}')`;
+      yield* sql`INSERT INTO orchestration_v2_projection_runs
+      (run_id,thread_id,ordinal,provider,status,requested_at,payload_json)
+      VALUES (${runId},${threadId},1,'codex','starting','2026-11-05','{"userMessageId":"message:runtime-execution:revoked-attempt"}')`;
+      if (validProvenance) {
+        const authorization = {
+          projectId: "revoked-project",
+          sourceTaskId: "missing-source",
+          sourceRevision: 1,
+          targetTaskId: "target",
+          targetRevision: 1,
+          attemptId: "revoked-attempt",
+          threadId,
+          requestKey: "cont:v1:r:root",
+          kind: "r",
+        };
+        yield* sql`UPDATE project_runtime_execution_attempts SET payload_json = ${JSON.stringify({ continuationAuthorization: authorization })} WHERE attempt_id = 'revoked-attempt'`;
+      }
+      const layer = layerExecutorFor({
+        sql,
+        events,
+        threads: {
+          dispatch: () =>
+            Ref.update(events, (entries) => [...entries, "stop"]).pipe(
+              Effect.as({ sequence: 0, storedEvents: [] }),
+            ),
+        },
+      });
+      const timestamp = DateTime.formatIso(yield* DateTime.now);
+      yield* EffectWorker.OrchestrationEffectExecutorV2.use((executor) =>
+        executor.execute({
+          id: "revoked-effect",
+          commandId: CommandId.make("revoked-command"),
+          threadId,
+          request: { type: "provider-turn.start", runId },
+          status: "running",
+          attemptCount: 1,
+          availableAt: timestamp,
+          createdAt: timestamp,
+          updatedAt: timestamp,
+          leaseOwner: "fixture",
+          completedAt: null,
+          lastError: null,
+        }),
+      ).pipe(Effect.provide(layer));
+      assert.deepEqual(yield* Ref.get(events), ["stop"]);
+      const [attempt] = yield* sql<{
+        readonly status: string;
+      }>`SELECT status FROM project_runtime_execution_attempts WHERE attempt_id='revoked-attempt'`;
+      assert.equal(attempt?.status, "reconcile_required");
+    }).pipe(Effect.provide(SqlitePersistence.layerMemory.pipe(Layer.provide(NodeServices.layer)))),
 );

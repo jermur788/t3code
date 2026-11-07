@@ -1,4 +1,8 @@
 import * as WorktreeSetupTracker from "../project/WorktreeSetupTracker.ts";
+import * as SqlClient from "effect/sql/SqlClient";
+import { preparationGuard } from "../projectRuntime/ContinuationCommitGuard.ts";
+import { ContinuationGate } from "../projectRuntime/RuntimeTaskContinuationGate.ts";
+import { isCommitDenied } from "./EventSink.ts";
 import * as ProjectCloneTracker from "../project/ProjectCloneTracker.ts";
 import * as TerminalManager from "../terminal/Manager.ts";
 import { resolveProjectSettings } from "@t3tools/shared/projectSettings";
@@ -201,7 +205,18 @@ function failureDetail(error: unknown): string {
   return `Workspace preparation failed: ${error instanceof Error ? error.message : String(error)}`;
 }
 
+/** Release denials arrive as an `OrchestratorDispatchError` wrapping the sink's typed denial. */
+const isContinuationDenial = (error: unknown): boolean =>
+  isCommitDenied(error) ||
+  (typeof error === "object" &&
+    error !== null &&
+    isCommitDenied((error as { cause?: unknown }).cause));
+
 const make = Effect.gen(function* () {
+  const sql = yield* SqlClient.SqlClient;
+  // Missing gate disables continuation authority; ordinary runs need no continuation grant.
+  const continuationGate = yield* Effect.serviceOption(ContinuationGate);
+  const continuationEnabled = Option.isSome(continuationGate) && continuationGate.value.enabled;
   const projects = yield* ProjectService.ProjectService;
   const setupTracker = yield* WorktreeSetupTracker.WorktreeSetupTracker;
   const cloneTracker = yield* ProjectCloneTracker.ProjectCloneTracker;
@@ -314,6 +329,7 @@ const make = Effect.gen(function* () {
     let setupTerminalId: string | null = null;
     let workspaceRecorded = false;
     let runReleased = false;
+    let continuationDenied = false;
     // Stop background renames before forgetting worktrees; completed renames record them again.
     let branchRename: Fiber.Fiber<unknown> | null = null;
     if (input.workspaceStrategy.type === "worktree") {
@@ -333,6 +349,52 @@ const make = Effect.gen(function* () {
         fiber: yield* Effect.fiber,
       });
     }
+    const release = (target: RunId) =>
+      threads
+        .dispatch({
+          type: "prepared-run.release",
+          commandId: CommandId.make(`${input.commandId}:release`),
+          threadId,
+          runId: target,
+        })
+        .pipe(
+          Effect.tapError((error) =>
+            Effect.sync(() => {
+              if (isContinuationDenial(error)) continuationDenied = true;
+            }),
+          ),
+          Effect.mapError(mapError(input, "release-run", threadId)),
+          Effect.tap(() =>
+            Effect.sync(() => {
+              runReleased = true;
+            }),
+          ),
+          Effect.uninterruptible,
+        );
+    // Worktree creation and setup scripts are side effects outside the commit fence, so a
+    // committed revocation must stop them before they start, not only at release.
+    const ensureAuthorized = Effect.fn("ThreadLaunchService.ensureContinuationAuthorized")(
+      function* () {
+        if (runId === null) return;
+        const denied = yield* sql
+          .withTransaction(preparationGuard(threadId, runId, continuationEnabled).check(sql))
+          .pipe(
+            Effect.as(false),
+            Effect.catchTags({ EventSinkCommitDenied: () => Effect.succeed(true) }),
+            Effect.mapError(mapError(input, "release-run", threadId)),
+          );
+        if (!denied) return;
+        // Denial is permanent for this run: the authorization pins the source revision and a
+        // pending/launched attempt, and neither can return. The release therefore fails, and the
+        // orchestrator's revoked-cancel compensation is the one place that cancels the run.
+        yield* release(runId);
+        return yield* mapError(
+          input,
+          "release-run",
+          threadId,
+        )("Continuation authorization revoked before release.");
+      },
+    );
     yield* Effect.gen(function* () {
       const initialMessage = input.initialMessage;
       const generateBranchNameFor = Effect.fn("ThreadLaunchService.generateBranchNameFor")(
@@ -434,6 +496,7 @@ const make = Effect.gen(function* () {
         ) {
           branch = flattenTemporaryWorktreeBranchName(branch);
         }
+        yield* ensureAuthorized();
         yield* setupTracker.stageStatus(threadId, "checkout", "running");
         const worktree = yield* git
           .createWorktree(
@@ -581,6 +644,7 @@ const make = Effect.gen(function* () {
           })
           .pipe(Effect.mapError(mapError(input, "update-thread", threadId)));
       }
+      if (worktreePath !== null) yield* ensureAuthorized();
       yield* setupTracker.stageStatus(threadId, "setup-script", "running");
       const setup =
         worktreePath === null
@@ -652,24 +716,7 @@ const make = Effect.gen(function* () {
       }
       yield* setupTracker.markUncancellable(threadId);
       yield* setupTracker.stageStatus(threadId, "agent", "running");
-      if (runId !== null) {
-        yield* threads
-          .dispatch({
-            type: "prepared-run.release",
-            commandId: CommandId.make(`${input.commandId}:release`),
-            threadId,
-            runId,
-          })
-          .pipe(
-            Effect.mapError(mapError(input, "release-run", threadId)),
-            Effect.tap(() =>
-              Effect.sync(() => {
-                runReleased = true;
-              }),
-            ),
-            Effect.uninterruptible,
-          );
-      }
+      if (runId !== null) yield* release(runId);
       yield* setupTracker.stageStatus(threadId, "agent", "done");
       yield* awaitAsyncSetup;
       yield* setupTracker.finish(threadId, "done");
@@ -682,14 +729,15 @@ const make = Effect.gen(function* () {
             cancelled ? "cancelled" : "failed",
             cancelled ? null : failureDetail(Cause.squash(cause)),
           );
-          if (cancelled && setupTerminalId)
+          // A denied release removes the worktree below, so an async setup must stop first.
+          if ((cancelled || continuationDenied) && setupTerminalId)
             yield* terminals
               .close({ threadId, terminalId: setupTerminalId, deleteHistory: true })
               .pipe(Effect.ignore);
           if (
             tracked &&
             createdWorktreePath &&
-            ((cancelled && !runReleased) || !workspaceRecorded)
+            ((cancelled && !runReleased) || !workspaceRecorded || continuationDenied)
           ) {
             if (branchRename !== null) yield* Fiber.interrupt(branchRename);
             const removedPath = createdWorktreePath;

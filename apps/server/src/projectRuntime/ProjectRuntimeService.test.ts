@@ -23,6 +23,7 @@ import * as TestClock from "effect/testing/TestClock";
 
 import * as SqlitePersistence from "../persistence/Sqlite.ts";
 import * as ProjectRuntimeService from "./ProjectRuntimeService.ts";
+import * as ContinuationGate from "./RuntimeTaskContinuationGate.ts";
 
 const projectA = ProjectId.make("runtime-a");
 const projectB = ProjectId.make("runtime-b");
@@ -81,6 +82,7 @@ const setup = Effect.gen(function* () {
 });
 const layerTest = ProjectRuntimeService.layer.pipe(
   Layer.provideMerge(DevelopmentProfileService.layer),
+  Layer.provideMerge(ContinuationGate.layer(true)),
   Layer.provideMerge(SqlitePersistence.layerMemory),
   Layer.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
 );
@@ -1234,6 +1236,7 @@ it.effect("reopens the database with the same Runtime state and domain records",
       const serviceLayer = ProjectRuntimeService.layer.pipe(
         Layer.provide(DevelopmentProfileService.layer),
         Layer.provideMerge(database),
+        Layer.provide(ContinuationGate.layer(true)),
       );
       const records = yield* Effect.scoped(
         Effect.gen(function* () {
@@ -1567,5 +1570,65 @@ it.effect("keeps task routing under the normal task revision CAS", () =>
       actor,
     );
     assert.equal(cleared.routing, undefined);
+  }).pipe(Effect.provide(layerTest)),
+);
+
+it.effect("requires an operator to grant or change experimental continuation authority", () =>
+  Effect.gen(function* () {
+    const service = yield* setup;
+    const review = yield* service.createTask(
+      projectA,
+      { ...taskInput, title: "Independent review" },
+      actor,
+    );
+    const repair = yield* service.createTask(
+      projectA,
+      { ...taskInput, title: "Bounded repair" },
+      actor,
+    );
+    const policy = {
+      version: 1 as const,
+      mode: "synthetic" as const,
+      reviewTaskId: review.taskId,
+      repairTaskId: repair.taskId,
+      maxRepairCycles: 2,
+    };
+    const deniedCreate = yield* service
+      .createTask(
+        projectA,
+        { ...taskInput, continuation: policy },
+        { actor: "thread:untrusted-worker" },
+      )
+      .pipe(Effect.flip);
+    assert.instanceOf(deniedCreate, ProjectRuntimeInvalidTransitionError);
+    assert.equal(deniedCreate.violation, "continuation_requires_operator");
+
+    const source = yield* service.createTask(
+      projectA,
+      { ...taskInput, continuation: policy },
+      actor,
+    );
+    // The server stamps the target revisions the operator accepted.
+    const accepted = {
+      ...policy,
+      acceptedTargetRevisions: { review: review.revision, repair: repair.revision },
+    };
+    assert.deepEqual(source.continuation, accepted);
+    const deniedUpdate = yield* service
+      .updateTask(
+        projectA,
+        { taskId: source.taskId, expectedRevision: source.revision, continuation: null },
+        { actor: "mcp-client:untrusted" },
+      )
+      .pipe(Effect.flip);
+    assert.instanceOf(deniedUpdate, ProjectRuntimeInvalidTransitionError);
+    assert.deepEqual((yield* service.readTask(projectA, source.taskId)).continuation, accepted);
+
+    const cleared = yield* service.updateTask(
+      projectA,
+      { taskId: source.taskId, expectedRevision: source.revision, continuation: null },
+      actor,
+    );
+    assert.isUndefined(cleared.continuation);
   }).pipe(Effect.provide(layerTest)),
 );

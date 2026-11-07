@@ -462,6 +462,26 @@ export const ProjectRuntimeTaskBase = Schema.Struct({
 });
 export type ProjectRuntimeTaskBase = typeof ProjectRuntimeTaskBase.Type;
 
+/** Opt-in, operator-authorized policy for the 2026-11 synthetic continuation spike only. */
+export const ProjectRuntimeContinuationPolicy = Schema.Struct({
+  version: Schema.Literal(1),
+  mode: Schema.Literal("synthetic"),
+  reviewTaskId: ProjectRuntimeTaskId,
+  repairTaskId: Schema.optionalKey(ProjectRuntimeTaskId),
+  maxRepairCycles: NonNegativeInt.check(Schema.isLessThanOrEqualTo(2)),
+  /**
+   * Server-stamped when an operator saves the policy; any client value is replaced. An operator
+   * edit to a target after this point blocks its dispatch until the policy is saved again.
+   */
+  acceptedTargetRevisions: Schema.optionalKey(
+    Schema.Struct({
+      review: Schema.optionalKey(PositiveInt),
+      repair: Schema.optionalKey(PositiveInt),
+    }),
+  ),
+});
+export type ProjectRuntimeContinuationPolicy = typeof ProjectRuntimeContinuationPolicy.Type;
+
 export const ProjectRuntimeTask = Schema.Struct({
   taskId: ProjectRuntimeTaskId,
   projectId: ProjectId,
@@ -483,6 +503,8 @@ export const ProjectRuntimeTask = Schema.Struct({
   nextAction: Schema.optionalKey(TaskNextAction),
   /** Explicit worker role plus optional ordered candidates and layer fallback. */
   routing: Schema.optionalKey(RuntimeRoleRoute),
+  /** This is authority data, never inferred from a worker handoff or routing receipt. */
+  continuation: Schema.optionalKey(ProjectRuntimeContinuationPolicy),
   revision: PositiveInt,
   createdAt: IsoDateTime,
   updatedAt: IsoDateTime,
@@ -528,6 +550,7 @@ export const ProjectRuntimeTaskCreateInput = Schema.Struct({
   verification: Schema.optionalKey(ProjectRuntimeTaskVerification),
   nextAction: Schema.optionalKey(TaskNextAction),
   routing: Schema.optionalKey(RuntimeRoleRoute),
+  continuation: Schema.optionalKey(ProjectRuntimeContinuationPolicy),
 });
 export type ProjectRuntimeTaskCreateInput = typeof ProjectRuntimeTaskCreateInput.Type;
 
@@ -556,6 +579,8 @@ export const ProjectRuntimeTaskUpdateInput = Schema.Struct({
   nextAction: Schema.optionalKey(Schema.NullOr(TaskNextAction)),
   // Null clears task routing; an omitted key leaves the stored routing unchanged.
   routing: Schema.optionalKey(Schema.NullOr(RuntimeRoleRoute)),
+  // Only user: actors may change an existing authorization.
+  continuation: Schema.optionalKey(Schema.NullOr(ProjectRuntimeContinuationPolicy)),
 });
 export type ProjectRuntimeTaskUpdateInput = typeof ProjectRuntimeTaskUpdateInput.Type;
 
@@ -738,6 +763,8 @@ export const ProjectRuntimeTransitionViolation = Schema.Literals([
   "done_requires_result",
   "milestone_requires_passing_evidence",
   "verified_forbids_failing_evidence",
+  "continuation_requires_operator",
+  "continuation_disabled",
 ]);
 export type ProjectRuntimeTransitionViolation = typeof ProjectRuntimeTransitionViolation.Type;
 
