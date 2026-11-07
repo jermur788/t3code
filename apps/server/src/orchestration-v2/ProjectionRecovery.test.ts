@@ -1161,6 +1161,106 @@ it.effect("bounds runtime provider-thread reads by ownership and preserves recov
   }).pipe(Effect.provide(layerTest)),
 );
 
+it.effect("provider-thread reads stay inside the requested thread's project", () =>
+  Effect.gen(function* () {
+    const projections = yield* ProjectionStore.ProjectionStoreV2;
+    const now = yield* DateTime.now;
+    const seed = Effect.fn(function* (name: string, projectId: ProjectId, ownedByNode: boolean) {
+      const threadId = yield* createThread(name, { projectId });
+      const ownerNodeId = NodeId.make(`node:isolation:${name}`);
+      const providerThreadId = ProviderThreadId.make(`provider-thread:isolation:${name}`);
+      yield* projections.apply({
+        id: EventId.make(`event:isolation:${name}:node`),
+        type: "node.updated",
+        threadId,
+        nodeId: ownerNodeId,
+        driver,
+        occurredAt: now,
+        payload: {
+          id: ownerNodeId,
+          threadId,
+          runId: null,
+          parentNodeId: null,
+          rootNodeId: ownerNodeId,
+          kind: "root_turn",
+          status: "completed",
+          countsForRun: false,
+          providerThreadId: null,
+          providerTurnId: null,
+          nativeItemRef: null,
+          runtimeRequestId: null,
+          checkpointScopeId: null,
+          startedAt: now,
+          completedAt: now,
+        },
+      });
+      yield* projections.apply({
+        id: EventId.make(`event:isolation:${name}:provider-thread`),
+        type: "provider-thread.updated",
+        threadId,
+        driver,
+        providerInstanceId,
+        occurredAt: now,
+        payload: {
+          id: providerThreadId,
+          appThreadId: ownedByNode ? null : threadId,
+          ownerNodeId: ownedByNode ? ownerNodeId : null,
+          driver,
+          providerInstanceId,
+          providerSessionId: null,
+          nativeThreadRef: null,
+          nativeConversationHeadRef: null,
+          status: "active",
+          firstRunOrdinal: 1,
+          lastRunOrdinal: 1,
+          handoffIds: [],
+          forkedFrom: null,
+          createdAt: now,
+          updatedAt: now,
+          pendingBackgroundTasks: [],
+        },
+      });
+      return { threadId, ownerNodeId, providerThreadId };
+    });
+    const a = yield* seed("a", ProjectId.make("project:isolation:a"), false);
+    const b = yield* seed("b", ProjectId.make("project:isolation:b"), true);
+    // B's node points at A's provider thread; that reference must not pull A's row into B.
+    const crossNodeId = NodeId.make("node:isolation:b-cross");
+    yield* projections.apply({
+      id: EventId.make("event:isolation:b-cross"),
+      type: "node.updated",
+      threadId: b.threadId,
+      nodeId: crossNodeId,
+      driver,
+      occurredAt: now,
+      payload: {
+        id: crossNodeId,
+        threadId: b.threadId,
+        runId: null,
+        parentNodeId: b.ownerNodeId,
+        rootNodeId: b.ownerNodeId,
+        kind: "subagent",
+        status: "completed",
+        countsForRun: false,
+        providerThreadId: a.providerThreadId,
+        providerTurnId: null,
+        nativeItemRef: null,
+        runtimeRequestId: null,
+        checkpointScopeId: null,
+        startedAt: now,
+        completedAt: now,
+      },
+    });
+
+    const readIds = (threadId: ThreadId) =>
+      projections
+        .getRuntimeRecoveryProjection(threadId)
+        .pipe(Effect.map((projection) => projection.providerThreads.map((row) => row.id)));
+    assert.deepEqual(yield* readIds(a.threadId), [a.providerThreadId]);
+    assert.deepEqual(yield* readIds(b.threadId), [b.providerThreadId]);
+  }).pipe(Effect.provide(layerTest)),
+);
+
 it.effect("reads the run that owns a background roster, not a queued or resumed one", () =>
   Effect.gen(function* () {
     const projections = yield* ProjectionStore.ProjectionStoreV2;
