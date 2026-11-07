@@ -1,7 +1,7 @@
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, it } from "@effect/vitest";
-import { ProjectId } from "@t3tools/contracts";
+import { ProjectId, ProjectRuntimeTaskId } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
 import * as FileSystem from "effect/FileSystem";
@@ -61,7 +61,7 @@ it.effect.each(cases)(
                 invalid === "foreign-review"
                   ? foreign.taskId
                   : invalid === "missing-review"
-                    ? "task:never-existed"
+                    ? ProjectRuntimeTaskId.make("task:never-existed")
                     : review.taskId,
               ...(invalid === "foreign-repair" ? { repairTaskId: foreign.taskId } : {}),
               ...(invalid === "self-reference"
@@ -147,7 +147,7 @@ it.effect("missing and foreign continuation targets fail identically at write ti
             },
             { actor: "user:operator" },
           );
-          const outcomeOf = (reviewTaskId: string) =>
+          const outcomeOf = (reviewTaskId: ProjectRuntimeTaskId) =>
             runtime
               .updateTask(
                 projectId,
@@ -179,7 +179,7 @@ it.effect("missing and foreign continuation targets fail identically at write ti
                 }),
               );
           const foreignOutcome = yield* outcomeOf(foreign.taskId);
-          const missingOutcome = yield* outcomeOf("task:never-existed");
+          const missingOutcome = yield* outcomeOf(ProjectRuntimeTaskId.make("task:never-existed"));
           assert.deepEqual(
             { _tag: missingOutcome._tag, reason: missingOutcome.reason },
             { _tag: foreignOutcome._tag, reason: foreignOutcome.reason },
