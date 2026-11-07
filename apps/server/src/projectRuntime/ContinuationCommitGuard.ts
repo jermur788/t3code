@@ -162,24 +162,25 @@ export const queuedStartReconciliationGuard = (
 });
 
 // A queued start can fail before the preparation guard runs (for example, no registered adapter).
-// Holding the run and reconciling its attempt is only right when the continuation is no longer
-// authorized; otherwise the denial below rolls the hold back and the ordinary failure path runs.
-export const failedQueuedStartGuard = (
+// Recording that failure must not outrun a revocation: this guard revalidates authorization in the
+// transaction that writes the failure, and signals a revoked continuation with this reason so the
+// caller reconciles the attempt instead of failing the run.
+export const CONTINUATION_REVOKED_BEFORE_FAILURE =
+  "Continuation authorization revoked before the queued start failure was recorded.";
+
+export const queuedStartFailureGuard = (
   threadId: string,
   runId: string,
   enabled: boolean,
 ): CommandCommitGuard => ({
-  check: Effect.fn("ContinuationCommitGuard.failedQueuedStart")(function* (sql) {
-    const invalid = yield* preparationGuard(threadId, runId, enabled)
+  check: Effect.fn("ContinuationCommitGuard.queuedStartFailure")(function* (sql) {
+    yield* preparationGuard(threadId, runId, enabled)
       .check(sql)
       .pipe(
-        Effect.as(false),
-        Effect.catchTags({ EventSinkCommitDenied: () => Effect.succeed(true) }),
+        Effect.catchTags({
+          EventSinkCommitDenied: () =>
+            Effect.fail(new EventSinkCommitDenied({ reason: CONTINUATION_REVOKED_BEFORE_FAILURE })),
+        }),
       );
-    if (!invalid)
-      return yield* new EventSinkCommitDenied({
-        reason: "Continuation is still authorized; the queued start failed for another reason.",
-      });
-    yield* queuedStartReconciliationGuard(threadId, runId).check(sql);
   }),
 });

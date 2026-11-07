@@ -4,7 +4,8 @@ import {
   launchGuard,
   preparationGuard,
   queuedStartReconciliationGuard,
-  failedQueuedStartGuard,
+  queuedStartFailureGuard,
+  CONTINUATION_REVOKED_BEFORE_FAILURE,
   cancellationGuard,
   reconcilePreparation,
 } from "../projectRuntime/ContinuationCommitGuard.ts";
@@ -1634,28 +1635,6 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         ? nextQueuedRun(projection)
         : projection.runs.find((run) => run.id === queuedRunId && run.status === "queued");
     if (queuedRun === undefined) return;
-    // A revoked continuation must stay fenced and reconcile its attempt, not fail the run and
-    // leave a possibly started attempt `launched`.
-    if (queuedRun.userMessageId.startsWith("message:runtime-execution:")) {
-      const fenced = yield* writeSystemEvents(
-        [
-          {
-            type: "run.updated",
-            threadId,
-            runId: queuedRun.id,
-            providerInstanceId: queuedRun.providerInstanceId,
-            occurredAt: yield* DateTime.now,
-            payload: { ...queuedRun, queueHeld: true },
-          },
-        ],
-        [],
-        { commitGuard: failedQueuedStartGuard(threadId, queuedRun.id, continuationEnabled) },
-      ).pipe(
-        Effect.as(true),
-        Effect.catchTags({ EventSinkCommitDenied: () => Effect.succeed(false) }),
-      );
-      if (fenced) return;
-    }
     const now = yield* DateTime.now;
     const rootNode = projection.nodes.find((node) => node.id === queuedRun.rootNodeId);
     const attempt = projection.attempts.find((entry) => entry.id === queuedRun.activeAttemptId);
@@ -1680,7 +1659,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
       code: handoffUnsupported ? "context_handoff_unsupported" : "queued_start_failed",
       class: handoffUnsupported ? "validation_error" : "unknown",
     });
-    yield* writeSystemEvents([
+    const failureEvents = [
       ...(attempt !== undefined && rootNode !== undefined
         ? [
             {
@@ -1749,7 +1728,33 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         occurredAt: now,
         payload: { ...queuedRun, status: "failed", queuePosition: null, completedAt: now },
       },
-    ]);
+    ] satisfies ReadonlyArray<Omit<OrchestrationV2DomainEvent, "id">>;
+    // A revoked continuation must stay fenced and reconcile its attempt, not fail the run and leave
+    // a possibly started attempt `launched`. Authorization is revalidated in this very commit.
+    const failureOptions = queuedRun.userMessageId.startsWith("message:runtime-execution:")
+      ? { commitGuard: queuedStartFailureGuard(threadId, queuedRun.id, continuationEnabled) }
+      : {};
+    yield* writeSystemEvents(failureEvents, [], failureOptions).pipe(
+      Effect.catchTags({
+        EventSinkCommitDenied: (denied) =>
+          denied.reason === CONTINUATION_REVOKED_BEFORE_FAILURE
+            ? writeSystemEvents(
+                [
+                  {
+                    type: "run.updated",
+                    threadId,
+                    runId: queuedRun.id,
+                    providerInstanceId: queuedRun.providerInstanceId,
+                    occurredAt: now,
+                    payload: { ...queuedRun, queueHeld: true },
+                  },
+                ],
+                [],
+                { commitGuard: queuedStartReconciliationGuard(threadId, queuedRun.id) },
+              )
+            : Effect.fail(denied),
+      }),
+    );
   });
 
   const startNextQueuedRun = Effect.fn("Orchestrator.startNextQueuedRun")(
