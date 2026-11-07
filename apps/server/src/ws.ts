@@ -3555,7 +3555,14 @@ export const layer = Layer.unwrap(
         const reportProfiles = yield* serverBrowser.profileReporter;
         const rpcWebSocketHttpEffect = yield* Effect.gen(function* () {
           const { protocol, httpEffect } = yield* RpcServer.makeProtocolWithHttpEffectWebsocket;
-          yield* RpcServer.make(ServerWsRpcGroup, WS_RPC_SERVER_OPTIONS).pipe(
+          yield* RpcServer.make(
+            ServerWsRpcGroup.add(
+              ...ProjectRuntimeRpc.serverTaskWriteRpcs.map((rpc) =>
+                rpc.middleware(RpcInstrumentation),
+              ),
+            ),
+            WS_RPC_SERVER_OPTIONS,
+          ).pipe(
             Effect.provideService(RpcServer.Protocol, withOutputWindow(protocol)),
             Effect.provide(
               Layer.merge(
