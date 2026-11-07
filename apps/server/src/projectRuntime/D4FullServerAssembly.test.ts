@@ -455,21 +455,6 @@ const continuationRows = (a: Effect.Success<ReturnType<typeof assemble>>) =>
   }>`SELECT attempt_id, thread_id, status, request_key, json_extract(payload_json, '$.failure') AS failure FROM project_runtime_execution_attempts
     WHERE task_id = ${reviewId}`;
 
-// Diagnostic only (D4 day-2 campaign): reads state, never writes. Lines are timestamped by the driver.
-const d4Trace = (a: Effect.Success<ReturnType<typeof assemble>>, label: string) =>
-  Effect.gen(function* () {
-    const attempts = yield* continuationRows(a);
-    const runs =
-      yield* a.sql`SELECT run_id, status, json_extract(payload_json, '$.queueHeld') AS held, json_extract(payload_json, '$.userMessageId') AS message FROM orchestration_v2_projection_runs`;
-    const tasks =
-      yield* a.sql`SELECT task_id, status, revision, json_extract(payload_json, '$.continuation') AS continuation FROM project_runtime_tasks`;
-    const effects = yield* a.effects;
-    const receipts = yield* a.receipts;
-    process.stdout.write(
-      `D4TRACE ${label} ${JSON.stringify({ attempts, runs, tasks, effects, receipts: receipts.map((r) => ({ id: (r as { command_id?: string }).command_id, status: (r as { status?: string }).status })), counts: yield* a.counts, adapterCalls: a.adapterCalls() })}\n`,
-    );
-  });
-
 const provide = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
   effect.pipe(
     Effect.scoped,
@@ -1125,13 +1110,10 @@ it.effect.each(["queued-run.start", "queue.resume", "normal"] as const)(
           "disabled provider must hold promotion before revocation",
         );
         const historical = yield* a.receipts;
-        yield* d4Trace(a, `${entry} T1-before-revoke`);
         yield* a.revoke;
-        yield* d4Trace(a, `${entry} T2-after-revoke`);
         yield* setEnabled(true);
         const before = yield* a.counts;
         const result = yield* a.dispatch(command);
-        yield* d4Trace(a, `${entry} T3-after-replay`);
         const after = yield* a.counts;
         process.stdout.write(
           `queue-replay-red entry=${entry} startsBefore=${before[1]} startsAfter=${after[1]} replayed=${result.replayed === true}\n`,
@@ -1153,7 +1135,6 @@ it.effect.each(["queued-run.start", "queue.resume", "normal"] as const)(
           });
           assert.equal((yield* a.counts)[1], before[1]);
         }
-        yield* d4Trace(a, `${entry} T4-pre-assertion`);
         const reconciled = (yield* continuationRows(a))[0]!;
         assert.equal(reconciled.status, "reconcile_required");
         assert.equal(
@@ -1300,6 +1281,98 @@ it.effect.each(["queued-run.start", "queue.resume"] as const)(
         yield* a.dispatch(command(`failed-start-after:${entry}`));
         assert.deepEqual((yield* continuationRows(a))[0], reconciled);
         assert.deepEqual(yield* heldQueuedRun(a, review.thread_id), fenced);
+        yield* a.drainWorker;
+        assert.deepEqual((yield* a.counts).slice(0, 2), before);
+        assert.equal(a.adapterCalls(), 0);
+      }),
+    ),
+);
+
+// Barrier: revocation commits right after a failure-path transaction rolled back because the
+// continuation was still authorized. A revocation seen before the outcome is recorded must never be
+// overwritten by an ordinary failure. Ordered by the transaction call itself, so no timers.
+const failedStartAfterDecisionBarrier = Effect.fn("D4FullServerAssembly.failedStartBarrier")(
+  function* (a: Effect.Success<ReturnType<typeof assemble>>) {
+    const worker = yield* settleSourceWorker(a);
+    yield* a.execution.reconcileAttempt(projectId, worker.attemptId);
+    yield* Queue.take(a.released);
+    const review = (yield* continuationRows(a))[0]!;
+    yield* a.recovery.reconcile("startup");
+    const run = yield* heldQueuedRun(a, review.thread_id);
+    assert.deepEqual([run.status, run.held], ["queued", 1]);
+    const settings = yield* a.settings.getSettings;
+    const instanceId = ProviderInstanceId.make("claudeAgent");
+    yield* a.settings.updateSettings({
+      providerInstances: {
+        [instanceId]: {
+          ...settings.providerInstances[instanceId],
+          driver: ProviderDriverKind.make("claudeAgent"),
+          enabled: true,
+        },
+      },
+    });
+    // Authorization is still valid when the start is attempted.
+    assert.isDefined((yield* a.runtime.readTask(projectId, sourceId)).continuation);
+    const revokedOnce = yield* Deferred.make<void>();
+    const state = { armed: false };
+    const withTransaction = a.sql.withTransaction;
+    const spies = [
+      vi.spyOn(a.instances, "getInstance").mockImplementation(() => {
+        state.armed = true;
+        return Effect.undefined;
+      }),
+      vi
+        .spyOn(a.sql, "withTransaction")
+        .mockImplementation(((body: Effect.Effect<void>) =>
+          state.armed
+            ? withTransaction(body as Effect.Effect<void>).pipe(
+                Effect.tapError((error) =>
+                  (error as { _tag?: string })._tag === "EventSinkCommitDenied"
+                    ? Deferred.succeed(revokedOnce, undefined).pipe(
+                        Effect.flatMap((first) => (first ? a.revoke : Effect.void)),
+                      )
+                    : Effect.void,
+                ),
+              )
+            : withTransaction(body as Effect.Effect<void>)) as never),
+    ];
+    const before = (yield* a.counts).slice(0, 2);
+    yield* a.dispatch({
+      type: "queue.resume" as const,
+      threadId: ThreadId.make(review.thread_id),
+      commandId: CommandId.make("failed-start:barrier"),
+    });
+    for (const spy of spies) spy.mockRestore();
+    return { review, before, revoked: yield* Deferred.isDone(revokedOnce) };
+  },
+);
+
+it.effect(
+  "production root: revocation between an authorized decision and the failure record is never overwritten",
+  () =>
+    provide(
+      Effect.gen(function* () {
+        const a = yield* assemble("queue-failed-start-barrier");
+        const { review, before, revoked } = yield* failedStartAfterDecisionBarrier(a);
+        const attempt = (yield* continuationRows(a))[0]!;
+        const fenced = yield* heldQueuedRun(a, review.thread_id);
+        process.stdout.write(
+          `barrier revoked=${revoked} attempt=${attempt.status} run=${fenced.status}/${fenced.held}\n`,
+        );
+        if (revoked) {
+          assert.equal(attempt.status, "reconcile_required");
+          assert.equal(
+            attempt.failure,
+            "Continuation authorization invalid; queued start blocked. Retained start history does not certify cancellation.",
+          );
+          assert.deepEqual([fenced.status, fenced.held], ["queued", 1]);
+        } else {
+          // No window opened: the decision and its record were one transaction, so the outcome is
+          // the ordinary failure under a continuation that was still authorized at commit.
+          assert.isDefined((yield* a.runtime.readTask(projectId, sourceId)).continuation);
+          assert.equal(fenced.status, "failed");
+        }
+        assert.deepEqual((yield* a.counts).slice(0, 2), before);
         yield* a.drainWorker;
         assert.deepEqual((yield* a.counts).slice(0, 2), before);
         assert.equal(a.adapterCalls(), 0);

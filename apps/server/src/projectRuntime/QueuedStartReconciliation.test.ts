@@ -1,4 +1,5 @@
 import * as Effect from "effect/Effect";
+import * as Cause from "effect/Cause";
 import * as Exit from "effect/Exit";
 import * as DateTime from "effect/DateTime";
 import * as Layer from "effect/Layer";
@@ -150,13 +151,35 @@ it.effect("matching launched continuation attempt becomes reconcile_required", (
   }).pipe(Effect.provide(layer)),
 );
 
-it.effect("benign zero-row: an already reconcile_required or cancelled attempt is left alone", () =>
-  Effect.gen(function* () {
-    yield* seed({ runMessageId: matchingMessage, attemptStatus: "reconcile_required" });
-    const exit = yield* holdUnderReconcileGuard(matchingMessage);
-    assert.isTrue(Exit.isSuccess(exit));
-    assert.deepEqual(yield* attemptRow, { status: "reconcile_required", revision: 1 });
-  }).pipe(Effect.provide(layer)),
+it.effect.each(["reconcile_required", "cancelled"] as const)(
+  "benign zero-row: an already %s attempt is left alone",
+  (attemptStatus) =>
+    Effect.gen(function* () {
+      yield* seed({ runMessageId: matchingMessage, attemptStatus });
+      const exit = yield* holdUnderReconcileGuard(matchingMessage);
+      assert.isTrue(Exit.isSuccess(exit));
+      assert.deepEqual(yield* attemptRow, { status: attemptStatus, revision: 1 });
+    }).pipe(Effect.provide(layer)),
+);
+
+it.effect(
+  "a run that is no longer queued is denied with a typed reason and nothing is reconciled",
+  () =>
+    Effect.gen(function* () {
+      yield* seed({
+        runMessageId: matchingMessage,
+        runStatus: "starting",
+        attemptStatus: "launched",
+      });
+      const exit = yield* holdUnderReconcileGuard(matchingMessage);
+      assert.isTrue(Exit.isFailure(exit));
+      if (Exit.isFailure(exit))
+        assert.deepInclude(Cause.squash(exit.cause) as object, {
+          _tag: "EventSinkCommitDenied",
+          reason: "Queued run changed before reconciliation.",
+        });
+      assert.deepEqual(yield* attemptRow, { status: "launched", revision: 1 });
+    }).pipe(Effect.provide(layer)),
 );
 
 it.effect(
@@ -169,11 +192,9 @@ it.effect(
       });
       const exit = yield* holdUnderReconcileGuard("message:runtime-execution:some-other-attempt");
       const attempt = yield* attemptRow;
-      // Fail closed: either the commit is denied (typed) or the attempt is marked reconcile_required.
-      assert.isTrue(
-        Exit.isFailure(exit) || attempt.status === "reconcile_required",
-        `commit ${Exit.isSuccess(exit) ? "SUCCEEDED" : "failed"} but attempt stayed ${attempt.status}`,
-      );
+      // Fail closed: the attempt becomes reconcile_required; a silent success is the defect.
+      assert.isTrue(Exit.isSuccess(exit));
+      assert.equal(attempt.status, "reconcile_required");
     }).pipe(Effect.provide(layer)),
 );
 
@@ -184,10 +205,8 @@ it.effect(
       yield* seed({ runMessageId: "message:ordinary", attemptStatus: "pending" });
       const exit = yield* holdUnderReconcileGuard("message:ordinary");
       const attempt = yield* attemptRow;
-      assert.isTrue(
-        Exit.isFailure(exit) || attempt.status === "reconcile_required",
-        `commit ${Exit.isSuccess(exit) ? "SUCCEEDED" : "failed"} but attempt stayed ${attempt.status}`,
-      );
+      assert.isTrue(Exit.isSuccess(exit));
+      assert.equal(attempt.status, "reconcile_required");
     }).pipe(Effect.provide(layer)),
 );
 
