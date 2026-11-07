@@ -1410,6 +1410,15 @@ it.effect(
         );
         const after = yield* heldQueuedRun(a, threadId);
         assert.equal(after.status, "failed");
+        assert.equal(after.held ?? 0, 0);
+        assert.equal(
+          (yield* a.sql<{ code: string | null }>`
+            SELECT json_extract(payload_json, '$.failure.code') AS code
+            FROM orchestration_v2_projection_turn_items
+            WHERE thread_id = ${threadId} AND json_extract(payload_json, '$.type') = 'error'`)[0]
+            ?.code,
+          "queued_start_failed",
+        );
         // Ordinary behavior is unchanged: the run fails and the non-continuation attempt is not reconciled.
         assert.deepEqual(
           yield* a.sql<{
