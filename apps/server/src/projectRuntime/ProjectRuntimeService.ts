@@ -15,6 +15,7 @@ import {
   ProjectRuntimeInstructionsSaveInput,
   ProjectRuntimeInvalidTransitionError,
   ProjectRuntimeNotFoundError,
+  ProjectRuntimeRequestError,
   ProjectRuntimeSetEnabledInput,
   ProjectRuntimeSource,
   ProjectRuntimeSourceCreateInput,
@@ -25,7 +26,7 @@ import {
   ProjectRuntimeSourceUpdateInput,
   type ProjectRuntimeStatus,
   ProjectRuntimeTask,
-  type ProjectRuntimeContinuationPolicy,
+  ProjectRuntimeContinuationPolicy,
   type ProjectRuntimeTaskBlockerInput,
   ProjectRuntimeTaskCreateInput,
   ProjectRuntimeTaskId,
@@ -72,6 +73,7 @@ class ProjectRuntimeIdGenerationError extends Schema.TaggedError<ProjectRuntimeI
 }
 type RuntimeError =
   | ProjectRuntimeError
+  | ProjectRuntimeRequestError
   | ProjectNotFoundError
   | PersistenceSqlError
   | Schema.SchemaError
@@ -173,6 +175,13 @@ const decodeSourceUpdateInput = Schema.decodeUnknownEffect(ProjectRuntimeSourceU
 const decodeSourceRemoveInput = Schema.decodeUnknownEffect(ProjectRuntimeSourceRemoveInput);
 const decodeSourceListInput = Schema.decodeUnknownEffect(ProjectRuntimeSourceListInput);
 const decodeSource = Schema.decodeUnknownEffect(SourceJson);
+const decodeContinuationPolicyInput = Schema.decodeUnknownEffect(ProjectRuntimeContinuationPolicy);
+const decodeContinuationPolicy = Effect.fn("ProjectRuntimeService.decodeContinuationPolicy")(
+  (input: unknown) =>
+    decodeContinuationPolicyInput(input).pipe(
+      Effect.mapError(() => new ProjectRuntimeRequestError({ reason: "invalid_request" })),
+    ),
+);
 const decodeTaskCreateInput = Schema.decodeUnknownEffect(ProjectRuntimeTaskCreateInput);
 const decodeTaskId = Schema.decodeUnknownEffect(ProjectRuntimeTaskId);
 const decodeTaskUpdateInput = Schema.decodeUnknownEffect(ProjectRuntimeTaskUpdateInput);
@@ -333,11 +342,7 @@ const validateTask = Effect.fn("ProjectRuntimeService.validateTask")(function* (
       task.continuation.repairTaskId === task.taskId ||
       task.continuation.repairTaskId === task.continuation.reviewTaskId)
   ) {
-    return yield* new ProjectRuntimeInvalidTransitionError({
-      projectId,
-      taskId: task.taskId,
-      violation: "continuation_requires_operator",
-    });
+    return yield* new ProjectRuntimeRequestError({ reason: "invalid_request" });
   }
   if (task.status === "blocked" && task.blocker === null) {
     return yield* new ProjectRuntimeInvalidTransitionError({
@@ -607,6 +612,7 @@ const make = Effect.gen(function* () {
     "ProjectRuntimeService.createTask",
   )(
     function* (projectId, input, context) {
+      if (input?.continuation !== undefined) yield* decodeContinuationPolicy(input.continuation);
       const data = yield* decodeTaskCreateInput(input);
       const { actor } = yield* decodeWriteContext(context);
       yield* requireEnabled(projectId);
@@ -681,7 +687,14 @@ const make = Effect.gen(function* () {
       rows.find((row) => row.task_id === taskId)?.revision;
     const review = revisionOf(policy.reviewTaskId);
     const repair = revisionOf(policy.repairTaskId);
-    // A target missing here was never accepted; a later operator-created target stays unstamped.
+    // Missing and foreign-project IDs have the same outcome; never inspect another project's policy.
+    if (review === undefined || (policy.repairTaskId !== undefined && repair === undefined)) {
+      return yield* new ProjectRuntimeNotFoundError({
+        projectId,
+        entity: "task",
+        entityId: review === undefined ? policy.reviewTaskId : policy.repairTaskId!,
+      });
+    }
     return {
       ...rest,
       acceptedTargetRevisions: {
@@ -729,6 +742,9 @@ const make = Effect.gen(function* () {
     "ProjectRuntimeService.updateTask",
   )(
     function* (projectId, input, context) {
+      if (input?.continuation !== undefined && input.continuation !== null) {
+        yield* decodeContinuationPolicy(input.continuation);
+      }
       const { taskId, expectedRevision, ...patch } = yield* decodeTaskUpdateInput(input);
       const { actor } = yield* decodeWriteContext(context);
       // Explicit removal (`continuation: null`) and unrelated edits stay

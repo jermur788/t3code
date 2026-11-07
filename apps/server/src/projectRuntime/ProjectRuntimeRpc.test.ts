@@ -14,6 +14,10 @@ import {
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
+import * as Queue from "effect/Queue";
+import * as Schema from "effect/Schema";
+import * as RpcServer from "effect/rpc/RpcServer";
+import type { FromServerEncoded } from "effect/rpc/RpcMessage";
 import * as SqlClient from "effect/sql/SqlClient";
 import { RpcGroup, RpcTest } from "effect/rpc";
 import * as RpcAuthorization from "../auth/RpcAuthorization.ts";
@@ -37,7 +41,7 @@ import {
   ProviderInstanceId,
   type ServerProvider,
 } from "@t3tools/contracts";
-import { makeHandlers } from "./ProjectRuntimeRpc.ts";
+import { makeHandlers, serverTaskWriteRpcs } from "./ProjectRuntimeRpc.ts";
 
 const group = RpcGroup.make(...PROJECT_RUNTIME_RPCS).middleware(RpcScopeAuthorization);
 const workspace = WorkspaceFileSystem.layer.pipe(
@@ -477,4 +481,82 @@ it.effect("round-trips project routing and resolves it without launching work", 
     assert.equal(reset.revision, 2);
     assert.isNull(reset.routing);
   }).pipe(Effect.provide(layer)),
+);
+
+it.effect.each([M.createTask, M.updateTask])(
+  "returns typed invalid_request for malformed continuation over serialized %s",
+  (method) =>
+    Effect.gen(function* () {
+      const { handlers, runtime } = yield* setup;
+      yield* runtime.setEnabled(a, { enabled: true });
+      const task = yield* runtime.createTask(
+        a,
+        { title: "Ordinary", scope: "Scope", acceptanceCriteria: [] },
+        { actor: "user:maintainer" },
+      );
+      const responses = yield* Queue.unbounded<FromServerEncoded>();
+      const disconnects = yield* Queue.unbounded<number>();
+      const protocol = yield* RpcServer.Protocol.make((write) =>
+        Effect.gen(function* () {
+          yield* write(0, {
+            _tag: "Request",
+            id: "1",
+            tag: method,
+            headers: [],
+            payload: {
+              projectId: a,
+              title: "Rejected",
+              scope: "Private scope",
+              acceptanceCriteria: [],
+              taskId: task.taskId,
+              expectedRevision: task.revision,
+              continuation: {
+                version: 1,
+                mode: "synthetic",
+                reviewTaskId: task.taskId,
+                maxRepairCycles: 3,
+              },
+            },
+          });
+          return {
+            disconnects,
+            send: (_id, response) => Queue.offer(responses, response).pipe(Effect.asVoid),
+            end: () => Effect.void,
+            clientIds: Effect.succeed(new Set([0])),
+            initialMessage: Effect.succeedNone,
+            supportsAck: false,
+            supportsTransferables: false,
+            supportsSpanPropagation: false,
+            supportsNotifications: false,
+            codecFor: Schema.toCodecJson,
+          };
+        }),
+      );
+      yield* RpcServer.make(group.add(...serverTaskWriteRpcs), { disableFatalDefects: true }).pipe(
+        Effect.provide(
+          Layer.mergeAll(
+            group.toLayer(handlers),
+            RpcAuthorization.layer([AuthOrchestrationReadScope, AuthOrchestrationOperateScope]),
+          ),
+        ),
+        Effect.provideService(RpcServer.Protocol, protocol),
+        Effect.forkScoped,
+      );
+      const response = yield* Queue.take(responses);
+      assert.deepEqual(response, {
+        _tag: "Exit",
+        requestId: "1",
+        exit: {
+          _tag: "Failure",
+          cause: [
+            {
+              _tag: "Fail",
+              error: { _tag: "ProjectRuntimeRequestError", reason: "invalid_request" },
+            },
+          ],
+        },
+      });
+      assert.deepEqual(yield* runtime.readTask(a, task.taskId), task);
+      assert.equal((yield* runtime.listTasks(a, {})).tasks.length, 1);
+    }).pipe(Effect.provide(layer)),
 );
