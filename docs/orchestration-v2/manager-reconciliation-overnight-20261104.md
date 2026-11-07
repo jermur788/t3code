@@ -1,0 +1,124 @@
+> **CANONICAL STATE MOVED — 2026-11-04:** This accumulated dated manager note is retained as **historical evidence**. The single current manager entrypoints are [01_CURRENT_STATE.md](../../01_CURRENT_STATE.md) and [OVERALL_MANAGER_HANDOFF.md](../../OVERALL_MANAGER_HANDOFF.md). The existing dated sections below may describe prior stages as open after they were completed; newer canonical state overrides them.
+
+# CURRENT MANAGER STATE — fork-only reconciliation draft PR opened (2026-11-04)
+
+**This section is current and supersedes prior “PR not approved/opened” language below.**
+
+**NEW AUTHORIZED ACTION COMPLETE:** User expressly approved a **fork-only draft PR** to review the accepted v0.1.7 reconciliation candidate, and the manager created [draft PR #21 — Reconcile T3 fork main with upstream v0.1.7](https://github.com/jermur788/t3code/pull/21). Source branch: `integration/fork-upstream-reconciliation-trial-20261104`; target: fork `main`. GitHub returned and subsequent independent fetch verified: **open, draft, not merged**, source and base at reviewed heads, `mergeable_state: clean`, fork main unchanged. No upstream PR or public posting beyond this fork PR. **No permission to merge**, mark ready for review, enable continuation, or deploy.
+
+**PR size warning:** GitHub reports approximately **28,984 changed files**, reflecting historical upstream/fork divergence and merge ancestry; this count is not the seven manually reconciled files. Review needs focus on conflict-resolution source, migration/adapter/permission changes and tests, not an assumption that the entire change set was independently inspected. No GitHub-hosted checks/check-runs are present on the PR head at this check; no CI PASS claim.
+
+**Current verification gate:** [Separate local verification packet](task-verify-reconciled-v017-before-main-20261104.md) still pending for rendered route UI, restart and cross-project isolation, and Evidence V0 after pruning. Existing local test and independent review evidence support **STATIC/RUNTIME PASS and scoped REVIEW PASS**, not production VERIFIED. Current candidate is pinned to upstream v0.1.7; check later upstream changes before promotion.
+
+**Separate experiment:** [Default-off continuation gate](https://github.com/jermur788/t3code/tree/experiment/continuation-default-off-gate-20261104) is NOT included in PR #21. Public shipping exclusion D2 and strict production revocation D4 remain unimplemented release gates. Preserve separate code lanes, routing ledger and no destructive Git operations.
+
+**Next authorized action:** continue bounded local verification only. Reconcile evidence, then ask user separately for merge/production actions. Maintain fork main unchanged until that approval.
+
+---
+# CURRENT MANAGER STATE — fork/upstream v0.1.7 trial accepted, not integrated (2026-11-04 ~08:17 Dublin)
+
+**Supersedes earlier “eight conflicts blocked” status below.** The isolated fork/upstream reconciliation trial has now **resolved seven actual conflicts** against pinned upstream v0.1.7. The historical eighth did not recur. All conflicts were resolved in [isolated branch](https://github.com/jermur788/t3code/tree/integration/fork-upstream-reconciliation-trial-20261104), which is a **clean descendant of fork main** and contains the true two-parent upstream merge. Fork main still unchanged. The gate experiment is **not** part of this branch.
+
+**Evidence:** user-provided worker handoff and committed [routing/verification ledger](https://github.com/jermur788/t3code/blob/integration/fork-upstream-reconciliation-trial-20261104/docs/orchestration-v2/fork-upstream-reconciliation-routing-ledger-20261104.md). Local worker reports 40-package typecheck, web build, 81 files/2072 tests in check:changed and context-budget snapshot 58519 bytes, all final PASS; independent Codex reviewer returned CLEAN. Manager inspected core MCP and capacity merges, test-layer union and branch ancestry; **did not rerun tests**. No GitHub-hosted branch checks found; don't invent CI PASS. [Detailed manager acceptance](manager-fork-upstream-reconciliation-acceptance-20261104.md).
+
+**Decision:** isolated reconciliation candidate **REVIEW PASS / ACCEPTED FOR NEXT INTEGRATION GATE**, **NOT INTEGRATED into fork main**, **NOT production VERIFIED**. Still need rendered UI route inspection, restart/cross-project isolation with new recovery internals, Evidence V0 after upstream pruning, and final main-promotion review. [Bounded read-only/isolated verification handoff](task-verify-reconciled-v017-before-main-20261104.md) prepared; no worker dispatched by browser manager.
+
+**Latest upstream:** current main was one additional commit ahead of pinned v0.1.7 at browser check. Maintain pinned release baseline for this candidate; do not mislabel as fresh upstream main. Newer changes need separate future sync if adopted.
+
+**Product authority:** User explicitly approved default-off experimental gate D1, best-effort only in isolated experiments D3, shipping exclusion D2 and strict production revocation D4. User has **not** approved a new fork-main PR or direct main update. **Recommended next user choice: fork-only draft PR against main** (review and CI surface, not merge) vs direct fast-forward. Manager recommends draft PR due extensive upstream changes and missing UI/restart qualification. No PR has been created.
+
+**Status:** IMPLEMENTED (reconciled branch) / STATIC+RUNTIME PASS (local worker reports) / REVIEW PASS (narrow independent source) / INTEGRATED NO / PRODUCTION VERIFIED NO. Separate continuation gate branch remains reviewed but isolated.
+
+---
+# CURRENT MANAGER STATE — 2026-11-04 after default-off gate review
+
+**This section is current and supersedes older T0–T5 “ready” or decision-pending language below.** User-approved D1/D3 work was implemented and reviewed in the isolated gate branch; D2/D4 remain binding release requirements.
+
+**ACCEPTED IMPLEMENTATION:** [Default-off experimental continuation gate](https://github.com/jermur788/t3code/tree/experiment/continuation-default-off-gate-20261104), **IMPLEMENTED / worker-local RUNTIME PASS / independent T2 and T5 worker REVIEW PASS / independent manager SOURCE REVIEW PASS** limited to experimental default-off surfaces. Never mark main INTEGRATED/VERIFIED: fork main unchanged. 13 Project Runtime files, 192 tests passed per local host evidence; 39-package typecheck and `check:changed` also reported passing. Manager independently fetched source diff and tests, not raw local logs/host runtime. [Detailed manager gate review](manager-gate-branch-review-20261104.md).
+
+**BLOCKED FOR INTEGRATION:** new fork/upstream combined tree not validated. Prior local trial produced 8 pre-existing fork-vs-upstream conflicts outside candidate continuation files. Manager checked newer upstream changes after trial, including Orchestrator and adapter modifications; reconnection required. Root local filesystem was reportedly 100% full; use external-volume worktree after fresh disk preflight, no unapproved cleanup.
+
+**NEXT AUTHORIZED TASK:** Separate [bounded fork-upstream reconciliation packet](task-fork-upstream-reconciliation-20261104.md) on [manager-prepared isolated trial branch](https://github.com/jermur788/t3code/tree/integration/fork-upstream-reconciliation-trial-20261104), **not dispatched by browser manager**. The trial branch now has a [routing/conflict ledger seed](https://github.com/jermur788/t3code/blob/integration/fork-upstream-reconciliation-trial-20261104/docs/orchestration-v2/fork-upstream-reconciliation-routing-ledger-20261104.md), and no local code/conflict resolution is claimed. DeepSeek coordinator on real T3 host, with separate code ownership and independent Codex/Claude review for sensitive conflicts. Authorized only on isolated branch; no main merge/upstream push/PR/production provider enablement.
+
+**D2** remains accepted shipping exclusion: public release cannot contain the experimental agent-facing continuation surface or its +646-byte tool-budget increase. **D4** remains accepted strict post-revocation release requirement, but the architecture defining the linearization boundary and authority source is **PRODUCT DECISION / DESIGN REVIEW REQUIRED**. T4 memo suggests atomic durable run-creation guard against existing task revisions and defense-in-depth provider turn-start cancellation. No upstream engine change/new authority store is authorized yet.
+
+**Routing/state:** T3 local worker ledger reported DeepSeek writing; independent Claude Opus 5.5 reviewed and Codex GPT-6.1 Sol accepted after the first reviewer route was rate-limited. These are host-reported actual routes with limited browser validation. New reconciliation ledger is seed-only and must be updated with real dispatch, rejected candidates, retries and results.
+
+**Stop/decision policy:** Continue bounded upstream reconciliation safely; do not decide release semantics or provider execution engine by assumption. User approval is required for material changes to upstream command/effect core, new authority table/epoch, public merge/release and significant infrastructure cost.
+
+---
+## Accepted staged product decisions — 2026-11-04 01:09 Europe/Dublin (CURRENT)
+
+**This section supersedes the earlier “product choices pending” language below.** The user explicitly **approved both recommended staged directions**. They are now **ACCEPTED DECISIONS**, not research or proposals.
+
+- **D1:** Implement default-off server-side gating NOW for the isolated synthetic continuation experiment, across new policy writes, automatic reconciliation and pending-receipt launch/replay. A server operator may explicitly enable testing; agent/task data cannot enable the global gate.
+- **D2:** Before any public shipping release, exclude experimental continuation and its agent-facing tool-schema overhead. The experimental +646-byte MCP budget increment is tolerated **only on the isolated, unmerged experiment branch**. It is **not** a public release budget acceptance.
+- **D3:** Existing best-effort authorization recheck + cancel/reconcile is accepted for isolated stub-only experimentation; known final-check/external-launch window remains a documented limitation.
+- **D4:** Production requires strict no-new-run-after-committed-revocation. This is a **release requirement** and separate design/verification gate, not authorization to change upstream execution internals now.
+- **D5:** Fork main merge, production enablement, upstream post/PR and real-provider usage remain NOT AUTHORIZED by this approval.
+
+**New governing source:** [Staged continuation safety spec](continuation-staged-safety-governing-spec-20261104.md).  
+**Active bounded T3 task:** [Default-off implementation, independent review, safe upstream reconciliation, strict revocation research](task-handoff-staged-continuation-safety-20261104.md).  
+**Writable task branch:** [Dedicated default-off gate experiment](https://github.com/jermur788/t3code/tree/experiment/continuation-default-off-gate-20261104), created by manager from published overnight branch; **no implementation written yet** at this checkpoint. Worktree ownership/repo status must be inspected by local worker before writes.
+
+**New upstream reconnaissance snapshot:** upstream main advanced 14 commits beyond the prior trial base at manager check 2026-11-04 01:10 UTC; changes include mobile/UI and Claude-provider code. This does **not** establish merge compatibility, override the 8 historical fork conflicts or authorize a rebase. Fetch again before local trial. [Current upstream main](https://github.com/pingdotgg/t3code/tree/main).
+
+**Manager routing/continuation:** browser manager completed source inspection, decisions/spec/task and branch creation; cannot run a local T3 Code worktree or local TypeScript test suite from this browser/GitHub connection. Code and tests are therefore assigned to isolated local T3 Code. Route actual worker and independent reviewer through T3 host; log each decision/route/attempt in Runtime if exposed, otherwise branch-local ledger. No live background task is started by the browser.
+
+**Next exact action:** T3 Code starts the complete accepted task packet on the already-created gate branch, then returns verified evidence for manager reconciliation. No further product choice is needed for T0–T5 while operating under these constraints.
+
+# Overall Manager reconciliation — DeepSeek overnight queue
+
+**Date:** 2026-11-04 (Europe/Dublin)  
+**Decision authority:** user.  
+**Source of implementation truth:** published GitHub branch, inspected code changes and test source; local test logs and subagent receipts remain in T3 host / local files, not mounted in this browser session.  
+**Overall status:** **IMPLEMENTED; local RUNTIME PASS (worker-executed, documented); independent local reviewer REPAIRS PASS; manager SOURCE SPOT-REVIEW PASS for narrow overnight fix; NOT INTEGRATED; NOT PRODUCTION ENABLED; PRODUCT DECISIONS PENDING**.
+
+## Evidence fetched and reconciled
+
+- [Overnight published branch](https://github.com/jermur788/t3code/tree/overnight/deepseek-continuation-20261104), fetched through the GitHub connector. At review the branch head matched the user's handoff and fork main was unchanged.
+- [Authoritative overnight completion handoff](https://github.com/jermur788/t3code/blob/overnight/deepseek-continuation-20261104/docs/orchestration-v2/overnight-morning-handoff-20261104.md).
+- [Routing and child supervision ledger](https://github.com/jermur788/t3code/blob/overnight/deepseek-continuation-20261104/docs/orchestration-v2/overnight-deepseek-routing-ledger-20261104.md). Entries 0001–0011 include chosen provider/model, alternatives rejected, reasons, dispatch, completion and reviewed remediation; the initial static stage registry in the same append-only document is superseded by completion events and final handoff. No active agents remained according to the terminal worker record; browser manager cannot inspect the host session's live status.
+- [Upstream compatibility report](https://github.com/jermur788/t3code/blob/overnight/deepseek-continuation-20261104/docs/orchestration-v2/overnight-upstream-compatibility-20261104.md), [F4 decision memo](https://github.com/jermur788/t3code/blob/overnight/deepseek-continuation-20261104/docs/orchestration-v2/overnight-f4-gate-decision-memo-20261104.md) and [operator checklist](https://github.com/jermur788/t3code/blob/overnight/deepseek-continuation-20261104/docs/orchestration-v2/overnight-operator-checklist-20261104.md).
+- Inspected the actual overnight code-fix GitHub diff. The public continuation request-key prefix guard is now case-insensitive; the repair budget's SQLite query now uses case-sensitive `GLOB`; dedicated case-variant regression tests are present. The bounded overlap test is correctly named as *re-entry after existing receipt*, not a full simultaneous-insert proof. Launch-time withdrawal is documented and tested as a **known failure mode**, not a security fix.
+
+## Stage verdicts
+
+- **O0 DONE:** isolated clean worktree and actual no-op child wake confirmed in reported host evidence. Project Runtime task store was not exposed to this T3 session; branch-local ledger is the authoritative fallback, NOT a Runtime task/receipt claim.
+- **O1 local RUNTIME PASS:** 39 focused tests, 179 Project Runtime tests and typecheck passed on the pristine candidate. An initial `check:changed` run raced O2 edits into the same worktree, violating intended serial gating; coordinator classified this self-inflicted failure, repaired format/lint, and reran complete final gates. Treat final rerun, not in-flight baseline check, as evidence.
+- **O2 bounded pass:** idempotent re-entry test and characterization of final-check/external-launch cancellation race. This **does not prove a truly simultaneous insert nor strict no-launch-after-revocation semantics**.
+- **O3 research:** upstream merge trial at the recorded upstream base found 8 pre-existing fork/upstream conflicts; no continuation-owned conflict observed in that trial. No merge or compatibility certification.
+- **O4 decision memo:** F4 default-off server gate vs build exclusion vs operator-only surface, context delta +646 bytes from previous snapshots, revocation alternatives. **Research not adoption.**
+- **O5 independent local review pass after repair:** host report identifies `claudeAgent` / Claude Sonnet 5.5 review + delta re-review, no code written by reviewer. One new case-variant budget defect and docs/test wording were corrected. Final worker reports 42/42 focused tests, 182/182 projectRuntime tests, typecheck 39/39 and `check:changed` exit 0. Independent reviewer ran a 25-test security file and context-budget 1/1; browser manager **has not independently executed local suites**.
+- **O6 partial read-only:** checklist and missing-test inventory; no public upstream PR action.
+
+## Routing reconciliation
+
+Coordinator chosen: local `opencode` DeepSeek V4.1 Flash, as requested. Independent review: `claudeAgent` Claude Sonnet 5.5, high effort; re-review by same reviewer allowed because reviewer did not edit code. Alternative routes and rejection reasons are in ledger. The one local format/lint correction did not require two *failing* attempts or a stronger solver; “two attempts before giving up” is a recovery rule, not a mandate to spend on solved problems. Token/cost total and quota were not measured; do not invent them. T3 host confirmed completion wake on a no-op child and both review tasks in local report, but no persistent Project Runtime task store was exposed.
+
+## Current open blockers and non-claims
+
+1. **PRODUCT DECISION F4:** `synthetic` label is not default-off; candidate remains unmerged. Option A: default-off server enforcement (reversible, leaves +646 model-facing tool-list bytes). Option B: exclude feature from shipping builds (removes model-facing cost but needs build/contracts work). Option C: operator-only / remove agent-facing exposure (potential partial savings, requires measuring). The O4 memo recommends A for in-tree experiments and B before any public release. Not yet user-approved.
+2. **PRODUCT DECISION REVOCATION:** best-effort final recheck + reconciliation (one turn may still start in race) vs strict atomic no-new-launch-after-withdrawal (likely requires upstream execution-core cooperation). Neither a new guarantee nor a product choice is adopted.
+3. **UPSTREAM COMPATIBILITY / INTEGRATION CONFLICT:** 8 conflicts at the trial base are unrelated to candidate continuation files. At manager check upstream had advanced beyond that base; a two-commit comparison immediately afterward changed web terminal/settings files only, but upstream continues moving. Always refetch before any trial merge and test the complete merged tree.
+4. **REVIEW REQUIRED:** live provider/model, UI/operator notification, true simultaneous insertion, cross-project isolation and legacy malformed receipts remain unqualified. “Blocked task” is not an outbound notification. Historical malformed rows are not retroactively scrubbed.
+5. **EVIDENCE LIMIT:** worker-executed local tests and reviewer claims are supported by committed handoff/ledger and source inspection; raw local logs and live T3 host state were not independently fetched or replayed in this manager session. Do not describe this as mainline VERIFIED or independently executed by browser.
+
+## Upstream PR #28777 — separate tracked contribution
+
+[Our posted test contribution](https://github.com/pingdotgg/t3code/pull/28777#issuecomment-6616620085) received [acknowledgement from the PR author](https://github.com/pingdotgg/t3code/pull/28777#issuecomment-6618573858) on 2026-11-03. The author merged latest upstream main into the PR branch, which remains open/unmerged at manager check. The PR changed-file list still does NOT include our `DelegatedCompletionDelivery.test.ts` patch. No further public comment authorized or needed now; monitor read-only until a request/meaningful change.
+
+## Next authorized manager actions
+
+**Can proceed without decisions:** read-only upstream delta inspection, prep a separate isolated fork-main/upstream reconciliation task, preserve conflict evidence, prepare acceptance/CI/test plan and reviewer checklist. Any actual repo merge, source-branch rebase, publishing a PR, production gate, agent budget acceptance or revocation contract implementation waits on the respective authority and safe owned lane. No reset/stash/force-push or cleanup of existing worktrees.
+
+**Need user choices (not yet made):**
+- F4 for experimentation and shipping: A now and B before release vs B immediately vs operator-only C; specifically whether temporary +646 bytes is acceptable on an *unmerged experimental branch*.
+- Revocation service contract: best-effort/reconcile as experiment-only vs strict no-post-revocation-launch as a production requirement; strict requires architecture feasibility review, not an automatic upstream core edit.
+- Later, whether to open a draft fork PR after compatibility work. Not needed now.
+
+**Suggested bounded next T3 handoff AFTER decisions:** one isolated integration/reconciliation owner, fresh fork/upstream bases, resolve the 8 pre-existing conflicts without touching main, check V2 execution semantics, apply chosen F4 gate in owned branch, rerun relevant projectRuntime/agent-context/typecheck/format/CI-equivalent tests on *merged tree*, obtain independent review, return detailed handoff. Maintain NOT INTEGRATED until user approves merge and accepted verification. Security-sensitive revocation changes must have their own governing spec and separate code lane if strict semantics chosen.
+
+## Final checkpoint
+
+**REVIEW PASS** on local bounded continuation experiment per reported independent review; **RUNTIME PASS** on test-only stub scenarios per local execution; **NOT INTEGRATED**, **NOT VERIFIED FOR REAL PROVIDERS OR PRODUCTION**, **product choice outstanding**. No active local monitoring/scheduled agent was started by the browser manager.
