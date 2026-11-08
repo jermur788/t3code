@@ -33,13 +33,16 @@ const insertTask = (sql: SqlClient.SqlClient, taskId: string, threadId: string |
   })}`;
 
 layer("080_ScheduledTaskThreadMode", (it) => {
-  it.effect("backfills continue only for tasks with a real thread reference", () =>
+  it.effect("backfills continue exactly for rows with a non-null thread_id", () =>
     Effect.gen(function* () {
       const sql = yield* SqlClient.SqlClient;
       yield* runMigrations({ toMigrationInclusive: 79 });
       yield* insertTask(sql, "no-thread", null);
       yield* insertTask(sql, "real-thread", "thread:recovery:real");
-      // An empty string is not a thread reference; it must not become "continue".
+      // A corrupt empty-string thread_id backfills to "continue" under the
+      // upstream-shipped rule; ThreadId cannot decode '' downstream, so the row
+      // is inert. Kept upstream-exact (RV-H 2026-11-08): any fail-safe
+      // normalization belongs in a new Fork migration, not an edit of 080.
       yield* insertTask(sql, "empty-thread", "");
       yield* runMigrations({ toMigrationInclusive: 80 });
 
@@ -47,7 +50,7 @@ layer("080_ScheduledTaskThreadMode", (it) => {
         SELECT task_id, thread_mode FROM scheduled_tasks ORDER BY task_id
       `;
       assert.deepEqual(rows, [
-        { task_id: "empty-thread", thread_mode: "new_thread" },
+        { task_id: "empty-thread", thread_mode: "continue" },
         { task_id: "no-thread", thread_mode: "new_thread" },
         { task_id: "real-thread", thread_mode: "continue" },
       ]);
