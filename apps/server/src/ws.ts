@@ -671,6 +671,11 @@ const PROVIDER_STATUS_DEBOUNCE_MS = 200;
 // Middleware added later wraps middleware added earlier, so instrumentation wraps authorization.
 const ServerWsRpcGroup = WsRpcGroup.middleware(RpcInstrumentation);
 
+export const makeServerWsRpcGroup = () =>
+  ServerWsRpcGroup.add(
+    ...ProjectRuntimeRpc.serverTaskWriteRpcs.map((rpc) => rpc.middleware(RpcInstrumentation)),
+  );
+
 // RpcGroup.toLayer derives each handler's requirements by scanning every RPC in
 // the group, so its type cost grows with handlers × RPCs. Near 200 methods that
 // crosses TypeScript's instantiation limit and the layer's requirements degrade to
@@ -3555,14 +3560,7 @@ export const layer = Layer.unwrap(
         const reportProfiles = yield* serverBrowser.profileReporter;
         const rpcWebSocketHttpEffect = yield* Effect.gen(function* () {
           const { protocol, httpEffect } = yield* RpcServer.makeProtocolWithHttpEffectWebsocket;
-          yield* RpcServer.make(
-            ServerWsRpcGroup.add(
-              ...ProjectRuntimeRpc.serverTaskWriteRpcs.map((rpc) =>
-                rpc.middleware(RpcInstrumentation),
-              ),
-            ),
-            WS_RPC_SERVER_OPTIONS,
-          ).pipe(
+          yield* RpcServer.make(makeServerWsRpcGroup(), WS_RPC_SERVER_OPTIONS).pipe(
             Effect.provideService(RpcServer.Protocol, withOutputWindow(protocol)),
             Effect.provide(
               Layer.merge(
