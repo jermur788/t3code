@@ -45,6 +45,7 @@ async function scenario(order: readonly string[], guarded = true) {
       runs: { status: string }[];
       attempts: { status: string }[];
       tasks: { revision: number }[];
+      provenanceOutcomes?: [string, string][];
     };
   } finally {
     await NodeFSP.rm(directory, { recursive: true, force: true });
@@ -134,6 +135,21 @@ it.live("cancellation cannot downgrade an existing uncertainty marker", () =>
   Effect.promise(async () => {
     const state = await scenario(["prepare", "reconcile-cancel"]);
     assert.equal(state.attempts[0]?.status, "reconcile_required");
+  }),
+);
+
+it.live("malformed and foreign preparation provenance fails closed with typed denials", () =>
+  Effect.promise(async () => {
+    const state = await scenario(["provenance"]);
+    assert.deepEqual(state.provenanceOutcomes, [
+      ["valid-auth", "allowed"],
+      ["malformed-json", "Missing or malformed continuation provenance."],
+      ["malformed-shape", "Missing or malformed continuation provenance."],
+      ["foreign-thread", "Foreign continuation provenance."],
+      ["foreign-request-key", "Foreign continuation provenance."],
+      ["revoked-source", "Continuation authorization revoked or superseded."],
+      ["missing-attempt", "Missing Runtime attempt provenance."],
+    ]);
   }),
 );
 
