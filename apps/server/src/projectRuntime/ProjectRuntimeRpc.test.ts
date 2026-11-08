@@ -483,9 +483,15 @@ it.effect("round-trips project routing and resolves it without launching work", 
   }).pipe(Effect.provide(layer)),
 );
 
-it.effect.each([M.createTask, M.updateTask])(
-  "returns typed invalid_request for malformed continuation over serialized %s",
-  (method) =>
+it.effect.each(
+  ([M.createTask, M.updateTask] as const).flatMap((method) =>
+    (["continuation", "title", "missing title", "acceptanceCriteria"] as const)
+      .filter((field) => method === M.createTask || field !== "missing title")
+      .map((field) => ({ method, field })),
+  ),
+)(
+  "returns typed invalid_request for malformed $field over serialized $method",
+  ({ method, field }) =>
     Effect.gen(function* () {
       const { handlers, runtime } = yield* setup;
       yield* runtime.setEnabled(a, { enabled: true });
@@ -505,17 +511,24 @@ it.effect.each([M.createTask, M.updateTask])(
             headers: [],
             payload: {
               projectId: a,
-              title: "Rejected",
-              scope: "Private scope",
-              acceptanceCriteria: [],
-              taskId: task.taskId,
-              expectedRevision: task.revision,
-              continuation: {
-                version: 1,
-                mode: "synthetic",
-                reviewTaskId: task.taskId,
-                maxRepairCycles: 3,
-              },
+              ...(field === "missing title" ? {} : { title: "Rejected" }),
+              scope: "d2",
+              acceptanceCriteria: [{ id: "ac1", text: "criterion" }],
+              ...(method === M.updateTask
+                ? { taskId: task.taskId, expectedRevision: task.revision }
+                : {}),
+              ...(field === "continuation"
+                ? {
+                    continuation: {
+                      version: 1,
+                      mode: "synthetic",
+                      reviewTaskId: task.taskId,
+                      maxRepairCycles: 3,
+                    },
+                  }
+                : field === "missing title"
+                  ? {}
+                  : { [field]: 42 }),
             },
           });
           return {
