@@ -12,6 +12,7 @@ import {
   ProjectRuntimeContext,
   ProjectRuntimeHandoff,
   ProjectRuntimeHandoffListResult,
+  ProjectRuntimeRequestError,
   ProjectRuntimeSourceListResult,
   ProjectRuntimeSourceReadResult,
   ProjectRuntimeSourceSearchResult,
@@ -32,6 +33,7 @@ import * as TestClock from "effect/testing/TestClock";
 import { McpSchema, McpServer, Tool } from "effect/ai";
 
 import * as ServerConfig from "../../../config.ts";
+import { runtimeFailure } from "./runtimeHandlers.ts";
 import * as ProjectStore from "../../../orchestration-v2/ProjectStore.ts";
 import * as ThreadLaunch from "../../../orchestration-v2/ThreadLaunchService.ts";
 import * as ThreadManagement from "../../../orchestration-v2/ThreadManagementService.ts";
@@ -1416,4 +1418,33 @@ it.effect(
         [],
       );
     }).pipe(Effect.provide(layerTest)),
+);
+
+it.effect("maps service-level request errors to ordinary invalid requests", () =>
+  Effect.sync(() => {
+    assert.deepEqual(
+      JSON.parse(
+        JSON.stringify(
+          runtimeFailure(new ProjectRuntimeRequestError({ reason: "invalid_request" })),
+        ),
+      ),
+      {
+        _tag: "OrchestratorMcpFailure",
+        code: "invalid_request",
+        message: "The input is not valid for Project Runtime.",
+      },
+    );
+    // Only caller-input failures read as invalid_request; a server-side request
+    // error keeps the generic outcome (RV-H).
+    assert.deepEqual(
+      JSON.parse(
+        JSON.stringify(runtimeFailure(new ProjectRuntimeRequestError({ reason: "server_error" }))),
+      ),
+      {
+        _tag: "OrchestratorMcpFailure",
+        code: "orchestration_error",
+        message: "The operation could not be completed.",
+      },
+    );
+  }),
 );

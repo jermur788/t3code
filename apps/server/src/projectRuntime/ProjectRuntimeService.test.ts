@@ -17,7 +17,6 @@ import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Result from "effect/Result";
-import * as Schema from "effect/Schema";
 import * as SqlClient from "effect/sql/SqlClient";
 import * as TestClock from "effect/testing/TestClock";
 
@@ -85,6 +84,79 @@ const layerTest = ProjectRuntimeService.layer.pipe(
   Layer.provideMerge(ContinuationGate.layer(true)),
   Layer.provideMerge(SqlitePersistence.layerMemory),
   Layer.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
+);
+
+it.effect.each([
+  "task create",
+  "task update",
+  "task id",
+  "task list",
+  "source create",
+  "source update",
+  "source remove",
+  "source id",
+  "source list",
+  "handoff append",
+  "handoff id",
+  "handoff list",
+  "project id",
+  "enabled",
+  "instructions",
+  "write context",
+  "handoff context",
+] as const)("returns typed invalid_request for malformed %s input", (operation) =>
+  Effect.gen(function* () {
+    const service = yield* setup;
+    const task = yield* service.createTask(projectA, taskInput, actor);
+    const before = yield* service.listTasks(projectA, {});
+    const requests = {
+      "task create": service.createTask(
+        projectA,
+        { title: 42, scope: "d2", acceptanceCriteria: [{ id: "ac1", text: "criterion" }] } as never,
+        actor,
+      ),
+      "task update": service.updateTask(
+        projectA,
+        { taskId: task.taskId, expectedRevision: task.revision, title: 42 as never },
+        actor,
+      ),
+      "task id": service.readTask(projectA, 42 as never),
+      "task list": service.listTasks(projectA, { limit: "invalid" as never }),
+      "source create": service.createSource(
+        projectA,
+        { ...sourceInput, title: 42 as never },
+        actor,
+      ),
+      "source update": service.updateSource(projectA, { sourceId: 42 as never }, actor),
+      "source remove": service.removeSource(projectA, { sourceId: 42 as never }),
+      "source id": service.readSource(projectA, 42 as never),
+      "source list": service.listSources(projectA, { limit: "invalid" as never }),
+      "handoff append": service.appendHandoff(projectA, {} as never, {} as never),
+      "handoff id": service.readHandoff(projectA, 42 as never),
+      "handoff list": service.listHandoffs(projectA, { limit: "invalid" as never }),
+      "project id": service.getStatus(42 as never),
+      enabled: service.setEnabled(projectA, { enabled: 42 as never }),
+      instructions: service.saveInstructions(projectA, { instructions: 42 as never }, actor),
+      "write context": service.createTask(projectA, taskInput, { actor: 42 as never }),
+      "handoff context": service.appendHandoff(
+        projectA,
+        {
+          taskId: task.taskId,
+          expectedTaskRevision: task.revision,
+          checkpoint: "invalid-context",
+          summary: "Rejected",
+        },
+        { actor: 42 as never },
+      ),
+    };
+    const failure = yield* requests[operation].pipe(Effect.asVoid, Effect.flip);
+    assert.equal(failure._tag, "ProjectRuntimeRequestError");
+    if (failure._tag === "ProjectRuntimeRequestError") {
+      assert.equal(failure.reason, "invalid_request");
+    }
+    assert.deepEqual(yield* service.listTasks(projectA, {}), before);
+    assert.deepEqual(yield* service.readTask(projectA, task.taskId), task);
+  }).pipe(Effect.provide(layerTest)),
 );
 
 it.effect("starts disabled at revision zero and rejects unknown or deleted projects", () =>
@@ -1172,7 +1244,12 @@ it.effect("rejects invalid and oversized contract data before changing persisten
     for (const operation of invalidInputs) {
       const result = yield* Effect.result(operation);
       assert.isTrue(Result.isFailure(result));
-      if (Result.isFailure(result)) assert.isTrue(Schema.isSchemaError(result.failure));
+      if (Result.isFailure(result)) {
+        assert.deepInclude(result.failure, {
+          _tag: "ProjectRuntimeRequestError",
+          reason: "invalid_request",
+        });
+      }
     }
     // Runtime validation must reject missing CAS even when JavaScript bypasses types.
     const missingRevision = service.updateTask(
@@ -1181,7 +1258,10 @@ it.effect("rejects invalid and oversized contract data before changing persisten
       { taskId: task.taskId, title: "No CAS" },
       actor,
     );
-    assert.isTrue(Schema.isSchemaError(yield* missingRevision.pipe(Effect.flip)));
+    assert.deepInclude(yield* missingRevision.pipe(Effect.flip), {
+      _tag: "ProjectRuntimeRequestError",
+      reason: "invalid_request",
+    });
     assert.deepEqual(yield* service.getStatus(projectA), before);
     assert.deepEqual((yield* service.listHandoffs(projectA, {})).handoffs, []);
     assert.deepEqual((yield* service.listSources(projectA, {})).sources, []);

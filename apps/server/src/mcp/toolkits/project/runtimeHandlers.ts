@@ -4,6 +4,7 @@ import {
   ProjectRuntimeError,
   type ProjectRuntimeActor,
   type ProjectRuntimeHandoff,
+  ProjectRuntimeRequestError,
 } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 import * as Predicate from "effect/Predicate";
@@ -15,18 +16,26 @@ import { type Caller, readCaller, resolveProjectId, unavailable } from "../../th
 
 const isRuntimeError = Schema.is(ProjectRuntimeError);
 const isMcpFailure = Schema.is(OrchestratorMcpFailure);
+const isRequestError = Schema.is(ProjectRuntimeRequestError);
 
 /**
  * Domain errors reach the agent as the tagged error itself. A project that is missing or input
  * the contracts reject become ordinary invalid requests; everything else (SQL, search index,
  * filesystem) is reported generically so no internal path, query, or cause leaks.
  */
-const runtimeFailure = (error: unknown): ProjectRuntimeError | OrchestratorMcpFailure => {
+export const runtimeFailure = (error: unknown): ProjectRuntimeError | OrchestratorMcpFailure => {
   if (isRuntimeError(error) || isMcpFailure(error)) return error;
   if (Predicate.isTagged(error, "ProjectNotFoundError"))
     return new OrchestratorMcpFailure({
       code: "invalid_request",
       message: "The project was not found.",
+    });
+  // Only the caller-input failure is an invalid request; other reasons keep
+  // the generic outcome (RV-H: a server_error must not read as caller error).
+  if (isRequestError(error) && error.reason === "invalid_request")
+    return new OrchestratorMcpFailure({
+      code: "invalid_request",
+      message: "The input is not valid for Project Runtime.",
     });
   if (Schema.isSchemaError(error))
     return new OrchestratorMcpFailure({

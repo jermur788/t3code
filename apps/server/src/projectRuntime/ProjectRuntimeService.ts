@@ -164,16 +164,24 @@ const InstructionsJson = Schema.fromJsonString(ProjectRuntimeInstructions);
 const SourceJson = Schema.fromJsonString(ProjectRuntimeSource);
 const TaskJson = Schema.fromJsonString(ProjectRuntimeTask);
 const HandoffJson = Schema.fromJsonString(ProjectRuntimeHandoff);
-const decodeProjectId = Schema.decodeUnknownEffect(ProjectId);
-const decodeSetEnabledInput = Schema.decodeUnknownEffect(ProjectRuntimeSetEnabledInput);
+const decodeRequestInput = <Input extends Schema.Top>(schema: Input) => {
+  const decode = Schema.decodeUnknownEffect(schema);
+  return Effect.fn("ProjectRuntimeService.decodeRequestInput")((input: unknown) =>
+    decode(input).pipe(
+      Effect.mapError(() => new ProjectRuntimeRequestError({ reason: "invalid_request" })),
+    ),
+  );
+};
+const decodeProjectId = decodeRequestInput(ProjectId);
+const decodeSetEnabledInput = decodeRequestInput(ProjectRuntimeSetEnabledInput);
 const decodeInstructions = Schema.decodeUnknownEffect(InstructionsJson);
-const decodeInstructionsSaveInput = Schema.decodeUnknownEffect(ProjectRuntimeInstructionsSaveInput);
-const decodeWriteContext = Schema.decodeUnknownEffect(WriteContext);
-const decodeSourceCreateInput = Schema.decodeUnknownEffect(ProjectRuntimeSourceCreateInput);
-const decodeSourceId = Schema.decodeUnknownEffect(ProjectRuntimeSourceId);
-const decodeSourceUpdateInput = Schema.decodeUnknownEffect(ProjectRuntimeSourceUpdateInput);
-const decodeSourceRemoveInput = Schema.decodeUnknownEffect(ProjectRuntimeSourceRemoveInput);
-const decodeSourceListInput = Schema.decodeUnknownEffect(ProjectRuntimeSourceListInput);
+const decodeInstructionsSaveInput = decodeRequestInput(ProjectRuntimeInstructionsSaveInput);
+const decodeWriteContext = decodeRequestInput(WriteContext);
+const decodeSourceCreateInput = decodeRequestInput(ProjectRuntimeSourceCreateInput);
+const decodeSourceId = decodeRequestInput(ProjectRuntimeSourceId);
+const decodeSourceUpdateInput = decodeRequestInput(ProjectRuntimeSourceUpdateInput);
+const decodeSourceRemoveInput = decodeRequestInput(ProjectRuntimeSourceRemoveInput);
+const decodeSourceListInput = decodeRequestInput(ProjectRuntimeSourceListInput);
 const decodeSource = Schema.decodeUnknownEffect(SourceJson);
 const decodeContinuationPolicyInput = Schema.decodeUnknownEffect(ProjectRuntimeContinuationPolicy);
 const decodeContinuationPolicy = Effect.fn("ProjectRuntimeService.decodeContinuationPolicy")(
@@ -182,15 +190,15 @@ const decodeContinuationPolicy = Effect.fn("ProjectRuntimeService.decodeContinua
       Effect.mapError(() => new ProjectRuntimeRequestError({ reason: "invalid_request" })),
     ),
 );
-const decodeTaskCreateInput = Schema.decodeUnknownEffect(ProjectRuntimeTaskCreateInput);
-const decodeTaskId = Schema.decodeUnknownEffect(ProjectRuntimeTaskId);
-const decodeTaskUpdateInput = Schema.decodeUnknownEffect(ProjectRuntimeTaskUpdateInput);
-const decodeTaskListInput = Schema.decodeUnknownEffect(ProjectRuntimeTaskListInput);
+const decodeTaskCreateInput = decodeRequestInput(ProjectRuntimeTaskCreateInput);
+const decodeTaskId = decodeRequestInput(ProjectRuntimeTaskId);
+const decodeTaskUpdateInput = decodeRequestInput(ProjectRuntimeTaskUpdateInput);
+const decodeTaskListInput = decodeRequestInput(ProjectRuntimeTaskListInput);
 const decodeTask = Schema.decodeUnknownEffect(TaskJson);
-const decodeHandoffAppendInput = Schema.decodeUnknownEffect(ProjectRuntimeHandoffAppendInput);
-const decodeHandoffContext = Schema.decodeUnknownEffect(HandoffContext);
-const decodeHandoffId = Schema.decodeUnknownEffect(ProjectRuntimeHandoffId);
-const decodeHandoffListInput = Schema.decodeUnknownEffect(ProjectRuntimeHandoffListInput);
+const decodeHandoffAppendInput = decodeRequestInput(ProjectRuntimeHandoffAppendInput);
+const decodeHandoffContext = decodeRequestInput(HandoffContext);
+const decodeHandoffId = decodeRequestInput(ProjectRuntimeHandoffId);
+const decodeHandoffListInput = decodeRequestInput(ProjectRuntimeHandoffListInput);
 const decodeHandoff = Schema.decodeUnknownEffect(HandoffJson);
 const encodeInstructions = Schema.encodeEffect(InstructionsJson);
 const encodeSource = Schema.encodeEffect(SourceJson);
