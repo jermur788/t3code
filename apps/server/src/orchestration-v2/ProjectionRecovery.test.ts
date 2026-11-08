@@ -1271,7 +1271,11 @@ it.effect("subagent-referenced provider threads stay inside the requesting threa
       const threadId = yield* createThread(name, { projectId });
       return threadId;
     });
-    const seedProviderThread = Effect.fn(function* (name: string, appThreadId: ThreadId | null) {
+    const seedProviderThread = Effect.fn(function* (
+      name: string,
+      appThreadId: ThreadId | null,
+      ownerNodeId: NodeId | null = null,
+    ) {
       const providerThreadId = ProviderThreadId.make(`provider-thread:subagent-leg:${name}`);
       yield* projections.apply({
         id: EventId.make(`event:subagent-leg:${name}:provider-thread`),
@@ -1283,7 +1287,7 @@ it.effect("subagent-referenced provider threads stay inside the requesting threa
         payload: {
           id: providerThreadId,
           appThreadId,
-          ownerNodeId: null,
+          ownerNodeId,
           driver,
           providerInstanceId,
           providerSessionId: null,
@@ -1349,6 +1353,38 @@ it.effect("subagent-referenced provider threads stay inside the requesting threa
     // B references A's provider threads; those references must not pull A's rows into B.
     yield* seedSubagent("b-forged-child", threadB, threadB, providerC);
     yield* seedSubagent("b-forged-own", threadB, threadB, providerA);
+    // providerD is claimed by a node in A (owner-node claim), then forged from B.
+    const ownerNodeA = NodeId.make("node:subagent-leg:owner-a");
+    yield* projections.apply({
+      id: EventId.make("event:subagent-leg:owner-a:node"),
+      type: "node.updated",
+      threadId: threadA,
+      nodeId: ownerNodeA,
+      driver,
+      occurredAt: now,
+      payload: {
+        id: ownerNodeA,
+        threadId: threadA,
+        runId: null,
+        parentNodeId: null,
+        rootNodeId: ownerNodeA,
+        kind: "root_turn",
+        status: "completed",
+        countsForRun: false,
+        providerThreadId: null,
+        providerTurnId: null,
+        nativeItemRef: null,
+        runtimeRequestId: null,
+        checkpointScopeId: null,
+        startedAt: now,
+        completedAt: now,
+      },
+    });
+    const providerD = yield* seedProviderThread("owned-a", null, ownerNodeA);
+    yield* seedSubagent("b-forged-owner", threadB, threadB, providerD);
+    // providerU is unclaimed by any thread; it follows the referencing thread.
+    const providerU = yield* seedProviderThread("unclaimed", null);
+    yield* seedSubagent("b-unclaimed", threadB, threadB, providerU);
 
     const readIds = (threadId: ThreadId) =>
       projections.getRuntimeRecoveryProjection(threadId).pipe(
@@ -1359,8 +1395,12 @@ it.effect("subagent-referenced provider threads stay inside the requesting threa
             .sort(),
         ),
       );
-    assert.deepEqual(yield* readIds(threadA), [String(providerA), String(providerC)]);
-    assert.deepEqual(yield* readIds(threadB), [String(providerB)]);
+    assert.deepEqual(yield* readIds(threadA), [
+      String(providerA),
+      String(providerC),
+      String(providerD),
+    ]);
+    assert.deepEqual(yield* readIds(threadB), [String(providerB), String(providerU)]);
     // The general thread projection read shares the subagent leg and the same
     // cross-project containment.
     const projectionIds = (threadId: ThreadId) =>
@@ -1372,8 +1412,24 @@ it.effect("subagent-referenced provider threads stay inside the requesting threa
             .sort(),
         ),
       );
-    assert.deepEqual(yield* projectionIds(threadA), [String(providerA), String(providerC)]);
-    assert.deepEqual(yield* projectionIds(threadB), [String(providerB)]);
+    assert.deepEqual(yield* projectionIds(threadA), [
+      String(providerA),
+      String(providerC),
+      String(providerD),
+    ]);
+    assert.deepEqual(yield* projectionIds(threadB), [String(providerB), String(providerU)]);
+    // The provider-control read shares the containment (one of the RV-H probe
+    // sites); the checkpoint-rollback read uses the identical clause.
+    const controlTarget = {
+      providerThreadId: providerA,
+      providerTurnId: ProviderTurnId.make("provider-turn:subagent-leg:control"),
+    };
+    assert.isDefined(
+      (yield* projections.getProviderControlContext(threadA, controlTarget)).providerThread,
+    );
+    assert.isUndefined(
+      (yield* projections.getProviderControlContext(threadB, controlTarget)).providerThread,
+    );
   }).pipe(Effect.provide(layerTest)),
 );
 
