@@ -696,17 +696,24 @@ const make = Effect.gen(function* () {
     const review = revisionOf(policy.reviewTaskId);
     const repair = revisionOf(policy.repairTaskId);
     // Missing and foreign-project IDs have the same outcome; never inspect another project's policy.
-    if (review === undefined || (policy.repairTaskId !== undefined && repair === undefined)) {
+    if (review === undefined) {
       return yield* new ProjectRuntimeNotFoundError({
         projectId,
         entity: "task",
-        entityId: review === undefined ? policy.reviewTaskId : policy.repairTaskId!,
+        entityId: policy.reviewTaskId,
+      });
+    }
+    if (policy.repairTaskId !== undefined && repair === undefined) {
+      return yield* new ProjectRuntimeNotFoundError({
+        projectId,
+        entity: "task",
+        entityId: policy.repairTaskId,
       });
     }
     return {
       ...rest,
       acceptedTargetRevisions: {
-        ...(review === undefined ? {} : { review }),
+        review,
         ...(repair === undefined ? {} : { repair }),
       },
     };

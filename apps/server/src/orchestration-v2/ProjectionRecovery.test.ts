@@ -1224,7 +1224,9 @@ it.effect("provider-thread reads stay inside the requested thread's project", ()
     });
     const a = yield* seed("a", ProjectId.make("project:isolation:a"), false);
     const b = yield* seed("b", ProjectId.make("project:isolation:b"), true);
-    // B's node points at A's provider thread; that reference must not pull A's row into B.
+    // B's node carries A's provider-thread id. Nothing reads node.provider_thread_id
+    // today; this guards a hypothetical/future node-reference lookup from pulling
+    // A's row into B.
     const crossNodeId = NodeId.make("node:isolation:b-cross");
     yield* projections.apply({
       id: EventId.make("event:isolation:b-cross"),
@@ -1258,6 +1260,176 @@ it.effect("provider-thread reads stay inside the requested thread's project", ()
         .pipe(Effect.map((projection) => projection.providerThreads.map((row) => row.id)));
     assert.deepEqual(yield* readIds(a.threadId), [a.providerThreadId]);
     assert.deepEqual(yield* readIds(b.threadId), [b.providerThreadId]);
+  }).pipe(Effect.provide(layerTest)),
+);
+
+it.effect("subagent-referenced provider threads stay inside the requesting thread's project", () =>
+  Effect.gen(function* () {
+    const projections = yield* ProjectionStore.ProjectionStoreV2;
+    const now = yield* DateTime.now;
+    const seedThread = Effect.fn(function* (name: string, projectId: ProjectId) {
+      const threadId = yield* createThread(name, { projectId });
+      return threadId;
+    });
+    const seedProviderThread = Effect.fn(function* (
+      name: string,
+      appThreadId: ThreadId | null,
+      ownerNodeId: NodeId | null = null,
+    ) {
+      const providerThreadId = ProviderThreadId.make(`provider-thread:subagent-leg:${name}`);
+      yield* projections.apply({
+        id: EventId.make(`event:subagent-leg:${name}:provider-thread`),
+        type: "provider-thread.updated",
+        threadId: appThreadId ?? ThreadId.make(`thread:recovery:subagent-leg:${name}`),
+        driver,
+        providerInstanceId,
+        occurredAt: now,
+        payload: {
+          id: providerThreadId,
+          appThreadId,
+          ownerNodeId,
+          driver,
+          providerInstanceId,
+          providerSessionId: null,
+          nativeThreadRef: null,
+          nativeConversationHeadRef: null,
+          status: "active",
+          firstRunOrdinal: 1,
+          lastRunOrdinal: 1,
+          handoffIds: [],
+          forkedFrom: null,
+          createdAt: now,
+          updatedAt: now,
+          pendingBackgroundTasks: [],
+        },
+      });
+      return providerThreadId;
+    });
+    const seedSubagent = Effect.fn(function* (
+      name: string,
+      parentThreadId: ThreadId,
+      childThreadId: ThreadId,
+      providerThreadId: ProviderThreadId,
+    ) {
+      const subagentId = NodeId.make(`node:subagent-leg:${name}`);
+      yield* projections.apply({
+        id: EventId.make(`event:subagent-leg:${name}:subagent`),
+        type: "subagent.updated",
+        threadId: parentThreadId,
+        occurredAt: now,
+        payload: {
+          id: subagentId,
+          threadId: parentThreadId,
+          runId: null,
+          parentNodeId: NodeId.make(`node:subagent-leg:${name}:parent`),
+          origin: "provider_native",
+          createdBy: "agent",
+          driver,
+          providerInstanceId,
+          providerThreadId,
+          childThreadId,
+          nativeTaskRef: null,
+          title: null,
+          model: null,
+          prompt: "subagent-leg",
+          status: "running",
+          result: null,
+          startedAt: now,
+          completedAt: null,
+          updatedAt: now,
+        },
+      });
+    });
+    const projectA = ProjectId.make("project:subagent-leg:a");
+    const projectB = ProjectId.make("project:subagent-leg:b");
+    const threadA = yield* seedThread("a", projectA);
+    const threadB = yield* seedThread("b", projectB);
+    const childA = yield* seedThread("child-a", projectA);
+    const providerA = yield* seedProviderThread("a", threadA);
+    const providerB = yield* seedProviderThread("b", threadB);
+    // A's native subagent child owns providerC; only A's read may reach it.
+    const providerC = yield* seedProviderThread("child-a", childA);
+    yield* seedSubagent("a-child", threadA, childA, providerC);
+    // B references A's provider threads; those references must not pull A's rows into B.
+    yield* seedSubagent("b-forged-child", threadB, threadB, providerC);
+    yield* seedSubagent("b-forged-own", threadB, threadB, providerA);
+    // providerD is claimed by a node in A (owner-node claim), then forged from B.
+    const ownerNodeA = NodeId.make("node:subagent-leg:owner-a");
+    yield* projections.apply({
+      id: EventId.make("event:subagent-leg:owner-a:node"),
+      type: "node.updated",
+      threadId: threadA,
+      nodeId: ownerNodeA,
+      driver,
+      occurredAt: now,
+      payload: {
+        id: ownerNodeA,
+        threadId: threadA,
+        runId: null,
+        parentNodeId: null,
+        rootNodeId: ownerNodeA,
+        kind: "root_turn",
+        status: "completed",
+        countsForRun: false,
+        providerThreadId: null,
+        providerTurnId: null,
+        nativeItemRef: null,
+        runtimeRequestId: null,
+        checkpointScopeId: null,
+        startedAt: now,
+        completedAt: now,
+      },
+    });
+    const providerD = yield* seedProviderThread("owned-a", null, ownerNodeA);
+    yield* seedSubagent("b-forged-owner", threadB, threadB, providerD);
+    // providerU is unclaimed by any thread; it follows the referencing thread.
+    const providerU = yield* seedProviderThread("unclaimed", null);
+    yield* seedSubagent("b-unclaimed", threadB, threadB, providerU);
+
+    const readIds = (threadId: ThreadId) =>
+      projections.getRuntimeRecoveryProjection(threadId).pipe(
+        Effect.map((projection) =>
+          projection.providerThreads
+            .map((row) => row.id)
+            .map(String)
+            .sort(),
+        ),
+      );
+    assert.deepEqual(yield* readIds(threadA), [
+      String(providerA),
+      String(providerC),
+      String(providerD),
+    ]);
+    assert.deepEqual(yield* readIds(threadB), [String(providerB), String(providerU)]);
+    // The general thread projection read shares the subagent leg and the same
+    // cross-project containment.
+    const projectionIds = (threadId: ThreadId) =>
+      projections.getThreadProjection(threadId).pipe(
+        Effect.map((projection) =>
+          projection.providerThreads
+            .map((row) => row.id)
+            .map(String)
+            .sort(),
+        ),
+      );
+    assert.deepEqual(yield* projectionIds(threadA), [
+      String(providerA),
+      String(providerC),
+      String(providerD),
+    ]);
+    assert.deepEqual(yield* projectionIds(threadB), [String(providerB), String(providerU)]);
+    // The provider-control read shares the containment (one of the RV-H probe
+    // sites); the checkpoint-rollback read uses the identical clause.
+    const controlTarget = {
+      providerThreadId: providerA,
+      providerTurnId: ProviderTurnId.make("provider-turn:subagent-leg:control"),
+    };
+    assert.isDefined(
+      (yield* projections.getProviderControlContext(threadA, controlTarget)).providerThread,
+    );
+    assert.isUndefined(
+      (yield* projections.getProviderControlContext(threadB, controlTarget)).providerThread,
+    );
   }).pipe(Effect.provide(layerTest)),
 );
 

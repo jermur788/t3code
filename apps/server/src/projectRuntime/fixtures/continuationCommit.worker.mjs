@@ -27,6 +27,7 @@ const layers = L.mergeAll(
   PR.layer.pipe(L.provide(DP.layer), L.provide(Gate.layer(true))),
 ).pipe(L.provideMerge(db), L.provide(L.mergeAll(NS.layer, NC.layer)));
 const now = D.makeUnsafe("2026-11-05T00:00:00.000Z");
+let provenanceOutcomes;
 const projectId = "a2-project",
   threadId = "a2-thread",
   commandId = "a2-command",
@@ -273,6 +274,61 @@ await E.runPromise(
       );
       if (runtimeDisabled._tag !== "Failure") throw new Error("Disabled project runtime accepted");
     }
+    if (mode === "provenance") {
+      // Seed the preparing run row the guard reads; without it the guard's
+      // run-existence early return would allow every probe vacuously.
+      yield* sink.commitCommand({
+        ...input,
+        events: [
+          { ...input.events[0], payload: { ...input.events[0].payload, status: "preparing" } },
+        ],
+        effects: [],
+      });
+      const [row] =
+        yield* sql`SELECT task_id, json_extract(payload_json, '$.continuationAuthorization') AS auth FROM project_runtime_execution_attempts`;
+      const originalAuth = JSON.parse(row.auth);
+      const outcomes = [];
+      const setAuthorization = (value) =>
+        sql`UPDATE project_runtime_execution_attempts SET payload_json = ${JSON.stringify({
+          continuationAuthorization: value,
+        })} WHERE attempt_id = 'runtime-attempt'`;
+      const probe = (label, expected) =>
+        E.gen(function* () {
+          const result = yield* E.exit(
+            sql.withTransaction(G.preparationGuard(threadId, runId, true).check(sql)),
+          );
+          if (expected === "allowed") {
+            if (result._tag !== "Success") throw new Error(`${label} provenance was denied`);
+            outcomes.push([label, "allowed"]);
+            return;
+          }
+          if (result._tag !== "Failure") throw new Error(`${label} provenance was accepted`);
+          const error =
+            result.cause?.error ??
+            result.cause?.failures?.[0] ??
+            result.cause?.reasons?.[0]?.error ??
+            result.cause?.defect;
+          const reason = error?.reason ?? error?._tag ?? "failure";
+          if (reason !== expected)
+            throw new Error(`${label} denied for ${reason}, not ${expected}`);
+          outcomes.push([label, reason]);
+        });
+      yield* probe("valid-auth", "allowed");
+      yield* setAuthorization("not-json");
+      yield* probe("malformed-json", "Missing or malformed continuation provenance.");
+      yield* setAuthorization({ version: 1, kind: "x" });
+      yield* probe("malformed-shape", "Missing or malformed continuation provenance.");
+      yield* setAuthorization({ ...originalAuth, threadId: "thread:foreign" });
+      yield* probe("foreign-thread", "Foreign continuation provenance.");
+      yield* setAuthorization({ ...originalAuth, requestKey: "cont:v1:r:foreign" });
+      yield* probe("foreign-request-key", "Foreign continuation provenance.");
+      yield* setAuthorization(originalAuth);
+      yield* sql`UPDATE project_runtime_tasks SET status = 'done' WHERE task_id = ${originalAuth.sourceTaskId}`;
+      yield* probe("revoked-source", "Continuation authorization revoked or superseded.");
+      yield* sql`DELETE FROM project_runtime_execution_attempts`;
+      yield* probe("missing-attempt", "Missing Runtime attempt provenance.");
+      provenanceOutcomes = outcomes;
+    }
     console.log(
       "DB_IDENTITY",
       JSON.stringify({
@@ -292,6 +348,7 @@ await E.runPromise(
         effects: yield* sql`SELECT * FROM orchestration_v2_effect_outbox`,
         runs: yield* sql`SELECT status FROM orchestration_v2_projection_runs`,
         attempts: yield* sql`SELECT status FROM project_runtime_execution_attempts`,
+        provenanceOutcomes,
       }),
     );
     if (process.send) process.send("done");
