@@ -21,12 +21,17 @@ const isMcpFailure = Schema.is(OrchestratorMcpFailure);
  * the contracts reject become ordinary invalid requests; everything else (SQL, search index,
  * filesystem) is reported generically so no internal path, query, or cause leaks.
  */
-const runtimeFailure = (error: unknown): ProjectRuntimeError | OrchestratorMcpFailure => {
+export const runtimeFailure = (error: unknown): ProjectRuntimeError | OrchestratorMcpFailure => {
   if (isRuntimeError(error) || isMcpFailure(error)) return error;
   if (Predicate.isTagged(error, "ProjectNotFoundError"))
     return new OrchestratorMcpFailure({
       code: "invalid_request",
       message: "The project was not found.",
+    });
+  if (Predicate.isTagged(error, "ProjectRuntimeRequestError"))
+    return new OrchestratorMcpFailure({
+      code: "invalid_request",
+      message: "The input is not valid for Project Runtime.",
     });
   if (Schema.isSchemaError(error))
     return new OrchestratorMcpFailure({
