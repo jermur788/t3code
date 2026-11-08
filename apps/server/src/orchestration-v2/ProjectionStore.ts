@@ -1989,6 +1989,45 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
       WHERE owned.owner_node_id IS NOT NULL AND owner.thread_id = ${threadId}
     `;
 
+    // A subagent row's provider-thread reference must not pull a row claimed by
+    // a thread in another project into this thread's reads (cross-project
+    // isolation, matching the owner-node containment above).
+    const subagentReferencedProviderThreadIds = (threadId: ThreadId) => sql`
+      SELECT sub.provider_thread_id
+      FROM orchestration_v2_projection_subagents AS sub
+      WHERE sub.thread_id = ${threadId}
+        AND sub.provider_thread_id IS NOT NULL
+        AND NOT EXISTS (
+          SELECT 1
+          FROM orchestration_v2_projection_provider_threads AS claimed
+          WHERE claimed.provider_thread_id = sub.provider_thread_id
+            AND (
+              EXISTS (
+                SELECT 1
+                FROM orchestration_v2_projection_threads AS claim_thread
+                WHERE claim_thread.thread_id = claimed.thread_id
+                  AND claim_thread.project_id IS NOT NULL
+                  AND claim_thread.project_id <> (
+                    SELECT project_id FROM orchestration_v2_projection_threads
+                    WHERE thread_id = ${threadId}
+                  )
+              )
+              OR EXISTS (
+                SELECT 1
+                FROM orchestration_v2_projection_nodes AS claim_node
+                  JOIN orchestration_v2_projection_threads AS claim_thread
+                    ON claim_thread.thread_id = claim_node.thread_id
+                WHERE claim_node.node_id = claimed.owner_node_id
+                  AND claim_thread.project_id IS NOT NULL
+                  AND claim_thread.project_id <> (
+                    SELECT project_id FROM orchestration_v2_projection_threads
+                    WHERE thread_id = ${threadId}
+                  )
+              )
+            )
+        )
+    `;
+
     const keepRecordedRunField = (payload: Statement.Fragment, path: string) => sql`
       CASE
         WHEN json_type(excluded.payload_json, ${path}) IS NULL
@@ -3512,10 +3551,7 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
             WHERE (thread_id = ${threadId}
                OR owner_node_id IN (${nodesOwningProviderThreads(threadId)})
                OR provider_thread_id IN (
-                 SELECT provider_thread_id
-                 FROM orchestration_v2_projection_subagents
-                 WHERE thread_id = ${threadId}
-                   AND provider_thread_id IS NOT NULL
+                 ${subagentReferencedProviderThreadIds(threadId)}
                ))
               ${filter?.providerThreadIds === undefined ? sql`` : sql`AND provider_thread_id IN (SELECT value FROM json_each(${encodeIdList(filter.providerThreadIds)}))`}
             ORDER BY COALESCE(first_run_ordinal, 0), provider_thread_id ASC
@@ -4779,8 +4815,7 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
                     ON owner.node_id = owned.owner_node_id
                   WHERE owned.owner_node_id IS NOT NULL AND owner.thread_id = ${threadId}
                   UNION
-                  SELECT provider_thread_id FROM orchestration_v2_projection_subagents
-                  WHERE thread_id = ${threadId} AND provider_thread_id IS NOT NULL
+                  ${subagentReferencedProviderThreadIds(threadId)}
                 )
                 AND (
                   provider_thread.status = 'active'
