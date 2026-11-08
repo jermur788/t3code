@@ -1421,7 +1421,7 @@ it.effect(
 );
 
 it.effect("maps service-level request errors to ordinary invalid requests", () =>
-  Effect.gen(function* () {
+  Effect.sync(() => {
     assert.deepEqual(
       JSON.parse(
         JSON.stringify(
@@ -1432,6 +1432,18 @@ it.effect("maps service-level request errors to ordinary invalid requests", () =
         _tag: "OrchestratorMcpFailure",
         code: "invalid_request",
         message: "The input is not valid for Project Runtime.",
+      },
+    );
+    // Only caller-input failures read as invalid_request; a server-side request
+    // error keeps the generic outcome (RV-H).
+    assert.deepEqual(
+      JSON.parse(
+        JSON.stringify(runtimeFailure(new ProjectRuntimeRequestError({ reason: "server_error" }))),
+      ),
+      {
+        _tag: "OrchestratorMcpFailure",
+        code: "orchestration_error",
+        message: "The operation could not be completed.",
       },
     );
   }),
