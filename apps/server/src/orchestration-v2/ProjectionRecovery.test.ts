@@ -1224,7 +1224,9 @@ it.effect("provider-thread reads stay inside the requested thread's project", ()
     });
     const a = yield* seed("a", ProjectId.make("project:isolation:a"), false);
     const b = yield* seed("b", ProjectId.make("project:isolation:b"), true);
-    // B's node points at A's provider thread; that reference must not pull A's row into B.
+    // B's node carries A's provider-thread id. Nothing reads node.provider_thread_id
+    // today; this guards a hypothetical/future node-reference lookup from pulling
+    // A's row into B.
     const crossNodeId = NodeId.make("node:isolation:b-cross");
     yield* projections.apply({
       id: EventId.make("event:isolation:b-cross"),
