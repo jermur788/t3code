@@ -1,3 +1,13 @@
+## T3 Fork — Overall Manager current state
+
+- [Canonical Current State / Roadmap](../01_CURRENT_STATE.md) — current branch, active PR, accepted decisions and next authorized task.
+- [Overall Manager Handoff](../OVERALL_MANAGER_HANDOFF.md) — continuation entrypoint for a new manager/worker.
+- [Coordination and Handoff Protocol](../02_COORDINATION_HANDOFF_PROTOCOL.md) — stable authority, evidence, routing and safety process.
+
+These shared coordination documents are maintained on the planning branch; verify live repo/PR truth before acting. They are **not** a production merge or release instruction.
+
+---
+
 # T3 Code docs
 
 ## T3 Fork
