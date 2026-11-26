@@ -683,6 +683,34 @@ export const layer: Layer.Layer<
           });
         },
       );
+      const confirmation = yield* OwnerConfirmation;
+      const binding = yield* Effect.result(
+        confirmation.wasBound?.(input.threadId) ?? Effect.succeed(false),
+      );
+      if (binding._tag === "Failure" || (binding.success && confirmation.service === undefined)) {
+        yield* settleStartFailure({
+          signal: "owner-confirmation-denied",
+          title: "Owner confirmation could not authorize this provider start",
+          error: new Error("The grant is unavailable for this provider start."),
+        });
+        return;
+      }
+      const grant = binding.success ? confirmation.service : undefined;
+      if (
+        grant !== undefined &&
+        (providerThread.nativeThreadRef !== null ||
+          manualResume ||
+          nativeForkTransfer !== undefined)
+      ) {
+        yield* settleStartFailure({
+          signal: "owner-confirmation-denied",
+          title: "Owner confirmation only authorizes a fresh Replay turn",
+          error: new OwnerConfirmationDenied({
+            message: "Native session recovery is unavailable for this grant.",
+          }),
+        });
+        return;
+      }
       if (
         expandAssistantCitationsForProvider(providerMessage.text).length >
         PROVIDER_SEND_TURN_MAX_INPUT_CHARS
@@ -709,6 +737,7 @@ export const layer: Layer.Layer<
         return;
       }
       if (
+        grant === undefined &&
         providerMessage.attachments.length === 0 &&
         providerMessage.text.trimStart().startsWith("/")
       ) {
@@ -809,7 +838,10 @@ export const layer: Layer.Layer<
           return;
         }
       }
-      const recreateResult = yield* Effect.result(restoreMissingWorktree(projection.thread));
+      // A grant is tied to the directory identity shown on the card. Never recreate it.
+      const recreateResult = yield* Effect.result(
+        grant === undefined ? restoreMissingWorktree(projection.thread) : Effect.void,
+      );
       if (recreateResult._tag === "Failure") {
         if (input.willRetry === true) return yield* recreateResult.failure;
         yield* settleStartFailure({
@@ -873,34 +905,6 @@ export const layer: Layer.Layer<
         return;
       }
       const resolvedRuntimePolicy = resolvedPolicy.success;
-      const confirmation = yield* OwnerConfirmation;
-      const binding = yield* Effect.result(
-        confirmation.wasBound?.(input.threadId) ?? Effect.succeed(false),
-      );
-      if (binding._tag === "Failure" || (binding.success && confirmation.service === undefined)) {
-        yield* settleStartFailure({
-          signal: "owner-confirmation-denied",
-          title: "Owner confirmation could not authorize this provider start",
-          error: new Error("The grant is unavailable for this provider start."),
-        });
-        return;
-      }
-      const grant = binding.success ? confirmation.service : undefined;
-      if (
-        grant !== undefined &&
-        (providerThread.nativeThreadRef !== null ||
-          manualResume ||
-          nativeForkTransfer !== undefined)
-      ) {
-        yield* settleStartFailure({
-          signal: "owner-confirmation-denied",
-          title: "Owner confirmation only authorizes a fresh Replay turn",
-          error: new OwnerConfirmationDenied({
-            message: "Native session recovery is unavailable for this grant.",
-          }),
-        });
-        return;
-      }
       const runtimeAccess = <A, E>(
         phase: "prepare" | "deliver",
         operation: Effect.Effect<A, E>,
@@ -926,6 +930,17 @@ export const layer: Layer.Layer<
           );
         });
       };
+      if (grant !== undefined) {
+        const preflight = yield* Effect.result(runtimeAccess("prepare", Effect.void));
+        if (preflight._tag === "Failure") {
+          yield* settleStartFailure({
+            signal: "owner-confirmation-denied",
+            title: "Owner confirmation no longer covers this run",
+            error: preflight.failure,
+          });
+          return;
+        }
+      }
       if (!(yield* isCurrentAttemptInStatus("starting"))) return;
       const existingSessionProjection = projection.providerSessions.find(
         (candidate) => candidate.id === providerSessionId,
