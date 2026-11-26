@@ -15928,9 +15928,15 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
     const { service: confirmation } = yield* OwnerGrant.OwnerConfirmation;
     const approval =
       confirmation !== undefined && command.type === "delegated_task.request"
-        ? yield* OwnerGrant.requestAuthority(command).pipe(mapDispatchError(command))
+        ? yield* OwnerGrant.requestAuthority(command).pipe(
+            Effect.tapError(() =>
+              confirmation.recordDenial("unconfirmed_dispatch").pipe(Effect.ignore),
+            ),
+            mapDispatchError(command),
+          )
         : undefined;
     if (confirmation !== undefined && command.type === "delegated_task.remote.request") {
+      yield* confirmation.recordDenial("linked_dispatch").pipe(Effect.ignore);
       return yield* new OrchestratorDispatchError({
         commandId: command.commandId,
         commandType: command.type,

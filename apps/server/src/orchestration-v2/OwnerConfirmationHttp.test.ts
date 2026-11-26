@@ -107,13 +107,17 @@ it.live(
                 runId: childRunId,
               }),
             );
-            yield* confirmation.permitStart({
-              threadId: childThreadId,
-              runId: childRunId,
-              cwd: root,
-              providerInstanceId: "devReplay",
-              runtimeMode: "approval-required",
-            });
+            yield* confirmation.withRuntimeAccess(
+              {
+                threadId: childThreadId,
+                runId: childRunId,
+                cwd: root,
+                providerInstanceId: "devReplay",
+                runtimeMode: "approval-required",
+              },
+              "deliver",
+              Effect.void,
+            );
             // Deliberately synthetic, with no provider, shell, or external files.
             yield* fs.writeFileString(outputPath, yield* fs.readFileString(inputPath));
             return { sequence: 1, storedEvents: [] };
@@ -203,13 +207,17 @@ it.live(
       assert.equal(yield* submit("revoke", origin, session.cookie), 303);
       assert.equal(
         (yield* Effect.flip(
-          confirmation.permitStart({
-            threadId: childThreadId,
-            runId: childRunId,
-            cwd: root,
-            providerInstanceId: "devReplay",
-            runtimeMode: "approval-required",
-          }),
+          confirmation.withRuntimeAccess(
+            {
+              threadId: childThreadId,
+              runId: childRunId,
+              cwd: root,
+              providerInstanceId: "devReplay",
+              runtimeMode: "approval-required",
+            },
+            "deliver",
+            Effect.void,
+          ),
         ))._tag,
         "OwnerConfirmationDenied",
       );

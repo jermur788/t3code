@@ -2797,252 +2797,266 @@ const make = Effect.gen(function* () {
         },
       };
     }),
-    delegateTask: Effect.fn("OrchestratorMcpService.delegateTask")(function* (callerScope, input) {
-      const { service: confirmation } = yield* OwnerGrant.OwnerConfirmation;
-      const environmentId =
-        input.target === undefined
-          ? undefined
-          : PeerForwarding.remoteTarget(callerScope, input.target.environmentId);
-      if (input.target !== undefined && environmentId !== undefined) {
-        if (confirmation !== undefined) {
-          return yield* failure(
-            "invalid_request",
-            "Linked delegation is disabled in this prototype.",
-          );
+    delegateTask: Effect.fn("OrchestratorMcpService.delegateTask")(
+      function* (callerScope, input) {
+        const { service: confirmation } = yield* OwnerGrant.OwnerConfirmation;
+        const environmentId =
+          input.target === undefined
+            ? undefined
+            : PeerForwarding.remoteTarget(callerScope, input.target.environmentId);
+        if (input.target !== undefined && environmentId !== undefined) {
+          if (confirmation !== undefined) {
+            return yield* failure(
+              "invalid_request",
+              "Linked delegation is disabled in this prototype.",
+            );
+          }
+          yield* requireCapability(callerScope);
+          const scope = yield* requireThreadScope(callerScope, "delegate_task");
+          // The task's child runs as an ordinary thread there; this thread keeps the task.
+          const { taskId } = yield* remoteDelegation.delegate(scope, {
+            ...input,
+            target: { ...input.target, environmentId },
+          });
+          return yield* input.mode === "wait"
+            ? awaitTask(scope, taskId, taskId, input.timeoutMs)
+            : readTask(scope, taskId, false, true);
         }
-        yield* requireCapability(callerScope);
-        const scope = yield* requireThreadScope(callerScope, "delegate_task");
-        // The task's child runs as an ordinary thread there; this thread keeps the task.
-        const { taskId } = yield* remoteDelegation.delegate(scope, {
-          ...input,
-          target: { ...input.target, environmentId },
-        });
-        return yield* input.mode === "wait"
-          ? awaitTask(scope, taskId, taskId, input.timeoutMs)
-          : readTask(scope, taskId, false, true);
-      }
-      const { scope, parent } = yield* loadThreadCaller(callerScope, "delegate_task");
-      if (
-        input.target?.projectId !== undefined &&
-        input.target.projectId !== parent.thread.projectId
-      ) {
-        return yield* failure(
-          "invalid_request",
-          "A local task runs in this thread's project. Omit target.projectId, or pass target.environmentId to run it in that environment's project.",
-        );
-      }
-      const parentRun =
-        ThreadManagementService.latestActiveRun(parent) ??
-        (yield* backgroundSubagentRun(scope, parent.thread.id));
-      if (
-        parentRun === undefined ||
-        parentRun.rootNodeId === null ||
-        parentRun.providerInstanceId !== scope.thread.providerInstanceId
-      ) {
-        return yield* failure(
-          "parent_not_active",
-          "Delegated tasks require an active run owned by this MCP provider session.",
-        );
-      }
-      if (
-        confirmation !== undefined &&
-        (scope.client !== undefined || parent.thread.linkOrigin !== undefined)
-      ) {
-        return yield* failure(
-          "invalid_request",
-          "Only local thread requests can enter the owner confirmation queue.",
-        );
-      }
-      if (confirmation !== undefined) {
-        if (input.isolation === "worktree") {
-          return yield* failure(
-            "invalid_request",
-            "The prototype requires the shared scratch workspace.",
-          );
-        }
-        const records = yield* threadManagement
-          .getThreadRecords(parent.thread.id, ["messages"], {
-            messageIds: [parentRun.userMessageId],
-          })
-          .pipe(Effect.mapError(threadManagementFailure));
-        const origin = records.messages[0];
+        const { scope, parent } = yield* loadThreadCaller(callerScope, "delegate_task");
         if (
-          origin?.scheduledTaskId !== undefined ||
-          origin?.linkedSender !== undefined ||
-          origin === undefined
+          input.target?.projectId !== undefined &&
+          input.target.projectId !== parent.thread.projectId
         ) {
           return yield* failure(
             "invalid_request",
-            "Scheduled and linked runs cannot request prototype owner confirmation.",
+            "A local task runs in this thread's project. Omit target.projectId, or pass target.environmentId to run it in that environment's project.",
           );
         }
-      }
-      const providers = yield* loadProviders;
-      const key = yield* requestKey(input.clientRequestId);
-      const commandId = stableCommandId({
-        scope,
-        requestKey: key,
-        operation: "delegate-task",
-      });
-      const isRetryOfAcceptedDelegation = yield* threadManagement.hasReceipt(commandId);
-      const target = yield* resolveTargetRechecking({
-        parent,
-        target: input.target,
-        providers,
-        cwd: yield* parentWorkspaceCwd(parent),
-        skipProjectEnablementFilter: isRetryOfAcceptedDelegation,
-      });
-      const runtimeMode = yield* resolveRuntimeMode(
-        parent.thread.runtimeMode,
-        input.runtimeMode,
-        target,
-      );
-      const interactionMode = yield* resolveInteractionMode(
-        parent.thread.interactionMode,
-        input.interactionMode,
-      );
-      let workspaceStrategy: OrchestrationV2ThreadLaunchWorkspaceStrategy | undefined;
-      if (input.isolation === "worktree" && !isRetryOfAcceptedDelegation) {
-        const project = yield* requireProject(parent.thread.projectId);
-        const base = yield* gitDriver
-          .resolveCommit({
-            cwd: parent.thread.worktreePath ?? project.workspaceRoot,
-            revision: "HEAD",
-          })
-          .pipe(
-            Effect.mapError(() =>
-              failure("invalid_request", "Unable to resolve the parent checkout commit."),
-            ),
+        const parentRun =
+          ThreadManagementService.latestActiveRun(parent) ??
+          (yield* backgroundSubagentRun(scope, parent.thread.id));
+        if (
+          parentRun === undefined ||
+          parentRun.rootNodeId === null ||
+          parentRun.providerInstanceId !== scope.thread.providerInstanceId
+        ) {
+          return yield* failure(
+            "parent_not_active",
+            "Delegated tasks require an active run owned by this MCP provider session.",
           );
-        // Launch preparation creates the worktree from the project root, so a
-        // parent checkout in another repository (such as a Git folder inside
-        // Scratch) would hand it a commit it cannot find.
-        if (parent.thread.worktreePath !== null) {
-          yield* gitDriver
-            .resolveCommit({ cwd: project.workspaceRoot, revision: base.commitSha })
+        }
+        if (
+          confirmation !== undefined &&
+          (scope.client !== undefined || parent.thread.linkOrigin !== undefined)
+        ) {
+          return yield* failure(
+            "invalid_request",
+            "Only local thread requests can enter the owner confirmation queue.",
+          );
+        }
+        if (confirmation !== undefined) {
+          if (input.isolation === "worktree") {
+            return yield* failure(
+              "invalid_request",
+              "The prototype requires the shared scratch workspace.",
+            );
+          }
+          const records = yield* threadManagement
+            .getThreadRecords(parent.thread.id, ["messages"], {
+              messageIds: [parentRun.userMessageId],
+            })
+            .pipe(Effect.mapError(threadManagementFailure));
+          const origin = records.messages[0];
+          if (
+            origin?.scheduledTaskId !== undefined ||
+            origin?.linkedSender !== undefined ||
+            origin === undefined
+          ) {
+            return yield* failure(
+              "invalid_request",
+              "Scheduled and linked runs cannot request prototype owner confirmation.",
+            );
+          }
+        }
+        const providers = yield* loadProviders;
+        const key = yield* requestKey(input.clientRequestId);
+        const commandId = stableCommandId({
+          scope,
+          requestKey: key,
+          operation: "delegate-task",
+        });
+        const isRetryOfAcceptedDelegation = yield* threadManagement.hasReceipt(commandId);
+        const target = yield* resolveTargetRechecking({
+          parent,
+          target: input.target,
+          providers,
+          cwd: yield* parentWorkspaceCwd(parent),
+          skipProjectEnablementFilter: isRetryOfAcceptedDelegation,
+        });
+        const runtimeMode = yield* resolveRuntimeMode(
+          parent.thread.runtimeMode,
+          input.runtimeMode,
+          target,
+        );
+        const interactionMode = yield* resolveInteractionMode(
+          parent.thread.interactionMode,
+          input.interactionMode,
+        );
+        let workspaceStrategy: OrchestrationV2ThreadLaunchWorkspaceStrategy | undefined;
+        if (input.isolation === "worktree" && !isRetryOfAcceptedDelegation) {
+          const project = yield* requireProject(parent.thread.projectId);
+          const base = yield* gitDriver
+            .resolveCommit({
+              cwd: parent.thread.worktreePath ?? project.workspaceRoot,
+              revision: "HEAD",
+            })
             .pipe(
               Effect.mapError(() =>
+                failure("invalid_request", "Unable to resolve the parent checkout commit."),
+              ),
+            );
+          // Launch preparation creates the worktree from the project root, so a
+          // parent checkout in another repository (such as a Git folder inside
+          // Scratch) would hand it a commit it cannot find.
+          if (parent.thread.worktreePath !== null) {
+            yield* gitDriver
+              .resolveCommit({ cwd: project.workspaceRoot, revision: base.commitSha })
+              .pipe(
+                Effect.mapError(() =>
+                  failure(
+                    "invalid_request",
+                    `Isolation "worktree" creates the child checkout in project "${project.title}" (${project.workspaceRoot}), which does not contain the parent checkout's commit. Use isolation "shared" to work in the parent's checkout.`,
+                  ),
+                ),
+              );
+          }
+          workspaceStrategy = { type: "worktree", baseRef: base.commitSha, startFromOrigin: false };
+        }
+        const parentNodeId = parentRun.rootNodeId;
+        const command = {
+          type: "delegated_task.request",
+          createdBy: "agent",
+          creationSource: "mcp",
+          commandId,
+          parentThreadId: scope.thread.threadId,
+          parentRunId: parentRun.id,
+          parentNodeId,
+          task: taskPrompt(input),
+          ...(input.title === undefined ? {} : { title: input.title }),
+          modelSelection: target.modelSelection,
+          runtimeMode,
+          interactionMode,
+          ...(workspaceStrategy === undefined ? {} : { workspaceStrategy }),
+          // The owner confirms out of band. No caller waits on the pending request.
+          completionWake:
+            confirmation !== undefined || input.mode !== "wait" ? "always" : "settled_only",
+        } as const;
+        if (confirmation !== undefined) {
+          const settings = yield* serverSettings.getSettings.pipe(
+            Effect.mapError(() =>
+              failure("orchestration_error", "Unable to read server settings."),
+            ),
+          );
+          if (!OwnerGrant.isBundledReplay(settings)) {
+            return yield* failure(
+              "provider_unavailable",
+              "The isolated Replay provider configuration is unavailable.",
+            );
+          }
+          if (isRetryOfAcceptedDelegation) {
+            return yield* failure(
+              "invalid_request",
+              "The prototype requires a new delegation in the shared scratch workspace.",
+            );
+          }
+          const requestId = yield* confirmation
+            .submit({
+              command,
+              cwd: yield* parentWorkspaceCwd(parent),
+              roots: input.targetRoots,
+              operations: input.operations,
+            })
+            .pipe(
+              Effect.mapError((error) =>
                 failure(
                   "invalid_request",
-                  `Isolation "worktree" creates the child checkout in project "${project.title}" (${project.workspaceRoot}), which does not contain the parent checkout's commit. Use isolation "shared" to work in the parent's checkout.`,
+                  error._tag === "OwnerConfirmationDenied"
+                    ? error.message
+                    : "Owner confirmation request could not be recorded.",
                 ),
               ),
             );
+          return yield* new OrchestratorMcpFailure({
+            code: "owner_confirmation_required",
+            message: "A local owner confirmation is required. No child exists yet.",
+            requestId,
+            confirmationPath: OwnerGrant.cardPath,
+          });
         }
-        workspaceStrategy = { type: "worktree", baseRef: base.commitSha, startFromOrigin: false };
-      }
-      const parentNodeId = parentRun.rootNodeId;
-      const command = {
-        type: "delegated_task.request",
-        createdBy: "agent",
-        creationSource: "mcp",
-        commandId,
-        parentThreadId: scope.thread.threadId,
-        parentRunId: parentRun.id,
-        parentNodeId,
-        task: taskPrompt(input),
-        ...(input.title === undefined ? {} : { title: input.title }),
-        modelSelection: target.modelSelection,
-        runtimeMode,
-        interactionMode,
-        ...(workspaceStrategy === undefined ? {} : { workspaceStrategy }),
-        // The owner confirms out of band. No caller waits on the pending request.
-        completionWake:
-          confirmation !== undefined || input.mode !== "wait" ? "always" : "settled_only",
-      } as const;
-      if (confirmation !== undefined) {
-        const settings = yield* serverSettings.getSettings.pipe(
-          Effect.mapError(() => failure("orchestration_error", "Unable to read server settings.")),
+        // The command commits the child's preparing run, which only this call
+        // prepares, so a caller that goes away must not stop it in between.
+        return yield* Effect.uninterruptibleMask((restore) =>
+          Effect.gen(function* () {
+            // ThreadManagementService.dispatch is the chokepoint for this command
+            // type's own enablement check, using the same command id and its
+            // receipt-replay exemption, so no separate assert runs here.
+            const result = yield* threadManagement
+              .dispatch(command)
+              .pipe(
+                Effect.mapError((error) =>
+                  error._tag === "ThreadManagementProviderInstanceDisabledError"
+                    ? threadManagementFailure(error)
+                    : failure(
+                        "orchestration_error",
+                        `Unable to create delegated task: ${userFacingDispatchErrorMessage(error) ?? errorMessage(error)}`,
+                      ),
+                ),
+              );
+            const taskEvent = result.storedEvents.find(
+              (stored) =>
+                stored.event.type === "subagent.updated" &&
+                stored.event.payload.origin === "app_owned",
+            );
+            if (taskEvent?.event.type !== "subagent.updated") {
+              return yield* failure(
+                "orchestration_error",
+                "Delegated task command did not produce a task projection.",
+              );
+            }
+            const taskId = taskEvent.event.payload.id;
+            const childThreadId = taskEvent.event.payload.childThreadId;
+            const childRunEvent = result.storedEvents.find(
+              (stored) =>
+                stored.event.type === "run.created" && stored.event.threadId === childThreadId,
+            );
+            if (
+              childThreadId !== null &&
+              childRunEvent?.event.type === "run.created" &&
+              childRunEvent.event.payload.workspacePreparation !== undefined
+            ) {
+              yield* threadLaunch.prepareRun({
+                commandId,
+                threadId: childThreadId,
+                runId: childRunEvent.event.payload.id,
+              });
+            }
+            return yield* input.mode === "wait"
+              ? awaitTask(scope, taskId, key, input.timeoutMs, restore)
+              : restore(readTask(scope, taskId, false, true));
+          }),
         );
-        if (!OwnerGrant.isBundledReplay(settings)) {
-          return yield* failure(
-            "provider_unavailable",
-            "The isolated Replay provider configuration is unavailable.",
-          );
-        }
-        if (isRetryOfAcceptedDelegation) {
-          return yield* failure(
-            "invalid_request",
-            "The prototype requires a new delegation in the shared scratch workspace.",
-          );
-        }
-        const requestId = yield* confirmation
-          .submit({
-            command,
-            cwd: yield* parentWorkspaceCwd(parent),
-            roots: input.targetRoots,
-            operations: input.operations,
-          })
-          .pipe(
-            Effect.mapError((error) =>
-              failure(
-                "invalid_request",
-                error._tag === "OwnerConfirmationDenied"
-                  ? error.message
-                  : "Owner confirmation request could not be recorded.",
+      },
+      Effect.tapError((error) =>
+        error.code === "owner_confirmation_required"
+          ? Effect.void
+          : OwnerGrant.OwnerConfirmation.pipe(
+              Effect.flatMap(
+                ({ service }) =>
+                  service?.recordDenial("request_rejected").pipe(Effect.ignore) ?? Effect.void,
               ),
             ),
-          );
-        return yield* new OrchestratorMcpFailure({
-          code: "owner_confirmation_required",
-          message: "A local owner confirmation is required. No child exists yet.",
-          requestId,
-          confirmationPath: OwnerGrant.cardPath,
-        });
-      }
-      // The command commits the child's preparing run, which only this call
-      // prepares, so a caller that goes away must not stop it in between.
-      return yield* Effect.uninterruptibleMask((restore) =>
-        Effect.gen(function* () {
-          // ThreadManagementService.dispatch is the chokepoint for this command
-          // type's own enablement check, using the same command id and its
-          // receipt-replay exemption, so no separate assert runs here.
-          const result = yield* threadManagement
-            .dispatch(command)
-            .pipe(
-              Effect.mapError((error) =>
-                error._tag === "ThreadManagementProviderInstanceDisabledError"
-                  ? threadManagementFailure(error)
-                  : failure(
-                      "orchestration_error",
-                      `Unable to create delegated task: ${userFacingDispatchErrorMessage(error) ?? errorMessage(error)}`,
-                    ),
-              ),
-            );
-          const taskEvent = result.storedEvents.find(
-            (stored) =>
-              stored.event.type === "subagent.updated" &&
-              stored.event.payload.origin === "app_owned",
-          );
-          if (taskEvent?.event.type !== "subagent.updated") {
-            return yield* failure(
-              "orchestration_error",
-              "Delegated task command did not produce a task projection.",
-            );
-          }
-          const taskId = taskEvent.event.payload.id;
-          const childThreadId = taskEvent.event.payload.childThreadId;
-          const childRunEvent = result.storedEvents.find(
-            (stored) =>
-              stored.event.type === "run.created" && stored.event.threadId === childThreadId,
-          );
-          if (
-            childThreadId !== null &&
-            childRunEvent?.event.type === "run.created" &&
-            childRunEvent.event.payload.workspacePreparation !== undefined
-          ) {
-            yield* threadLaunch.prepareRun({
-              commandId,
-              threadId: childThreadId,
-              runId: childRunEvent.event.payload.id,
-            });
-          }
-          return yield* input.mode === "wait"
-            ? awaitTask(scope, taskId, key, input.timeoutMs, restore)
-            : restore(readTask(scope, taskId, false, true));
-        }),
-      );
-    }),
+      ),
+    ),
     taskStatus: Effect.fn("OrchestratorMcpService.taskStatus")(function* (callerScope, taskId) {
       const scope = yield* requireThreadScope(callerScope, "task_status");
       return yield* readTask(scope, taskId, false, true);

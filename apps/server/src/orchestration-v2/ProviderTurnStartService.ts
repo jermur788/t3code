@@ -874,29 +874,10 @@ export const layer: Layer.Layer<
       }
       const resolvedRuntimePolicy = resolvedPolicy.success;
       const confirmation = yield* OwnerConfirmation;
-      const authorization = yield* Effect.result(
-        Effect.gen(function* () {
-          if (
-            confirmation.wasBound === undefined ||
-            !(yield* confirmation.wasBound(input.threadId))
-          )
-            return;
-          const settings = yield* serverSettings.getSettings;
-          if (confirmation.service === undefined || !isBundledReplay(settings)) {
-            return yield* new OwnerConfirmationDenied({
-              message: "The configured Replay provider is unavailable.",
-            });
-          }
-          yield* confirmation.service.permitStart({
-            threadId: input.threadId,
-            runId,
-            cwd: resolvedRuntimePolicy.cwd,
-            providerInstanceId: run.providerInstanceId,
-            runtimeMode: resolvedRuntimePolicy.runtimeMode,
-          });
-        }),
+      const binding = yield* Effect.result(
+        confirmation.wasBound?.(input.threadId) ?? Effect.succeed(false),
       );
-      if (authorization._tag === "Failure") {
+      if (binding._tag === "Failure" || (binding.success && confirmation.service === undefined)) {
         yield* settleStartFailure({
           signal: "owner-confirmation-denied",
           title: "Owner confirmation could not authorize this provider start",
@@ -904,6 +885,32 @@ export const layer: Layer.Layer<
         });
         return;
       }
+      const grant = binding.success ? confirmation.service : undefined;
+      const runtimeAccess = <A, E>(
+        phase: "prepare" | "deliver",
+        operation: Effect.Effect<A, E>,
+      ) => {
+        if (grant === undefined) return operation;
+        return Effect.gen(function* () {
+          const settings = yield* serverSettings.getSettings;
+          if (!isBundledReplay(settings)) {
+            return yield* new OwnerConfirmationDenied({
+              message: "The configured Replay provider is unavailable.",
+            });
+          }
+          return yield* grant.withRuntimeAccess(
+            {
+              threadId: input.threadId,
+              runId,
+              cwd: resolvedRuntimePolicy.cwd,
+              providerInstanceId: run.providerInstanceId,
+              runtimeMode: resolvedRuntimePolicy.runtimeMode,
+            },
+            phase,
+            operation,
+          );
+        });
+      };
       if (!(yield* isCurrentAttemptInStatus("starting"))) return;
       const existingSessionProjection = projection.providerSessions.find(
         (candidate) => candidate.id === providerSessionId,
@@ -973,24 +980,27 @@ export const layer: Layer.Layer<
         providerThread.nativeThreadRef !== null &&
         !(yield* providerSessions.isLive(providerSessionId));
       const sessionResult = yield* Effect.result(
-        providerSessions.open({
-          threadId: projection.thread.id,
-          providerSessionId,
-          modelSelection: run.modelSelection,
-          runtimePolicy: resolvedRuntimePolicy,
-          ...(existingSessionProjection === undefined
-            ? {}
-            : { resumeFromSession: existingSessionProjection }),
-          ...(providerThread.nativeThreadRef?.nativeId == null || brokenNativeThread
-            ? {}
-            : { initialNativeThreadId: providerThread.nativeThreadRef.nativeId }),
-          ...(providerThread.nativeMetadata?.itemIdentityVersion === undefined
-            ? {}
-            : {
-                initialProviderItemIdentityVersion:
-                  providerThread.nativeMetadata.itemIdentityVersion,
-              }),
-        }),
+        runtimeAccess(
+          "prepare",
+          providerSessions.open({
+            threadId: projection.thread.id,
+            providerSessionId,
+            modelSelection: run.modelSelection,
+            runtimePolicy: resolvedRuntimePolicy,
+            ...(existingSessionProjection === undefined
+              ? {}
+              : { resumeFromSession: existingSessionProjection }),
+            ...(providerThread.nativeThreadRef?.nativeId == null || brokenNativeThread
+              ? {}
+              : { initialNativeThreadId: providerThread.nativeThreadRef.nativeId }),
+            ...(providerThread.nativeMetadata?.itemIdentityVersion === undefined
+              ? {}
+              : {
+                  initialProviderItemIdentityVersion:
+                    providerThread.nativeMetadata.itemIdentityVersion,
+                }),
+          }),
+        ),
       );
       if (sessionResult._tag === "Failure") {
         const failure = sessionResult.failure;
@@ -1006,7 +1016,52 @@ export const layer: Layer.Layer<
         });
         return;
       }
-      const session = sessionResult.success;
+      const rawSession = sessionResult.success;
+      const deliver = (operation: ReturnType<typeof rawSession.startTurn>) =>
+        runtimeAccess("deliver", operation).pipe(
+          Effect.mapError((cause) =>
+            cause._tag === "ProviderAdapterTurnStartError"
+              ? cause
+              : new ProviderAdapter.ProviderAdapterTurnStartError({
+                  driver: rawSession.driver,
+                  threadId: input.threadId,
+                  providerThreadId: providerThread.id,
+                  runId,
+                  cause,
+                }),
+          ),
+        );
+      if (grant !== undefined && rawSession.driver !== "acpRegistry") {
+        yield* settleStartFailure({
+          signal: "owner-confirmation-denied",
+          title: "Replay driver changed before provider delivery",
+          error: new OwnerConfirmationDenied({
+            message: "The admitted provider is not local Replay.",
+          }),
+        });
+        return;
+      }
+      const session =
+        grant === undefined
+          ? rawSession
+          : {
+              ...rawSession,
+              startTurn: (input: Parameters<typeof rawSession.startTurn>[0]) =>
+                deliver(Effect.suspend(() => rawSession.startTurn(input))),
+              ...(rawSession.resumeTurn === undefined
+                ? {}
+                : {
+                    resumeTurn: (input: ProviderAdapter.ProviderAdapterV2ResumeTurnInput) =>
+                      deliver(Effect.suspend(() => rawSession.resumeTurn!(input))),
+                  }),
+              ...(rawSession.compactThread === undefined
+                ? {}
+                : {
+                    compactThread: (input: Parameters<typeof rawSession.startTurn>[0]) =>
+                      deliver(Effect.suspend(() => rawSession.compactThread!(input))),
+                  }),
+            };
+
       if (!(yield* isCurrentAttemptInStatus("starting"))) return;
       const loadFromProvider = Effect.fn("ProviderTurnStartService.loadFromProvider")(function* (
         load: Effect.Effect<OrchestrationV2ProviderThread, ProviderAdapter.ProviderAdapterV2Error>,

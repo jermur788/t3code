@@ -17,6 +17,7 @@ import * as SecureRandom from "effect/crypto/SecureRandom";
 import type { SqlError } from "effect/sql/SqlError";
 import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
+import * as Semaphore from "effect/Semaphore";
 import * as SqlClient from "effect/sql/SqlClient";
 import {
   INTERNAL_ADMINISTRATIVE_BOOTSTRAP_SUBJECT,
@@ -122,6 +123,7 @@ export const isBundledReplay = (settings: ServerSettings) => {
   const instance = settings.providerInstances[replayInstanceId];
   if (
     instance?.driver !== "acpRegistry" ||
+    (instance.environment?.length ?? 0) !== 0 ||
     typeof instance.config !== "object" ||
     instance.config === null
   )
@@ -134,7 +136,10 @@ export const isBundledReplay = (settings: ServerSettings) => {
     config.commandPath === process.execPath &&
     Array.isArray(args) &&
     args.length === 1 &&
-    args[0] === decodeURIComponent(script.pathname)
+    args[0] === decodeURIComponent(script.pathname) &&
+    Object.keys(config).every(
+      (key) => key === "source" || key === "commandPath" || key === "commandArgs",
+    )
   );
 };
 
@@ -159,6 +164,7 @@ export const make = Effect.fn("OwnerConfirmationGrant.make")(function* (scratchR
   const instance = SecureRandom.uuidV4Unsafe();
   const ownerRecord = SecureRandom.uuidV4Unsafe();
   const commands = new Map<string, Request>();
+  const runtimeAccess = yield* Semaphore.make(1);
   let owner: string | undefined;
   yield* sql`
     CREATE TABLE IF NOT EXISTS prototype_owner_confirmation (
@@ -335,7 +341,7 @@ export const make = Effect.fn("OwnerConfirmationGrant.make")(function* (scratchR
     if (!validateOwner(principal) || request?.owner !== principal || request.nonce !== nonce) {
       return yield* refuse("Unknown owner request or invalid confirmation.", request?.id);
     }
-    const accepted = yield* sql.withTransaction(
+    const decideInTransaction = sql.withTransaction(
       Effect.gen(function* () {
         const decidedAt = yield* Clock.currentTimeMillis;
         const changed =
@@ -355,6 +361,9 @@ export const make = Effect.fn("OwnerConfirmationGrant.make")(function* (scratchR
         return true;
       }),
     );
+    const accepted = yield* action === "revoke"
+      ? runtimeAccess.withPermit(decideInTransaction)
+      : decideInTransaction;
     if (!accepted)
       return yield* refuse("The confirmation request was already used, revoked or expired.", id);
     if (action === "revoke") {
@@ -413,42 +422,60 @@ export const make = Effect.fn("OwnerConfirmationGrant.make")(function* (scratchR
       Effect.map((rows) => rows.length > 0),
     );
 
-  const permitStart = Effect.fn("OwnerConfirmationGrant.permitStart")(function* (input: {
+  type ProviderAccess = {
     readonly threadId: ThreadId;
     readonly runId: RunId;
     readonly cwd: string | null;
     readonly providerInstanceId: string;
     readonly runtimeMode: string;
-  }) {
-    if (!(yield* isBound(input.threadId))) return;
-    const now = yield* Clock.currentTimeMillis;
-    yield* expire(now);
-    if (
-      input.cwd !== scratchRoot ||
-      input.providerInstanceId !== replayInstanceId ||
-      input.runtimeMode !== "approval-required" ||
-      (yield* identity(input.cwd)) !== rootIdentity
-    ) {
-      return yield* refuse("Provider start no longer matches the confirmed prototype scope.");
-    }
-    const allowed = yield* sql.withTransaction(
-      Effect.gen(function* () {
-        const startedAt = yield* Clock.currentTimeMillis;
-        const started = yield* sql<{ id: string }>`
-        UPDATE prototype_owner_confirmation SET started_at = ${startedAt}
-        WHERE instance = ${instance} AND child_thread_id = ${input.threadId} AND run_id = ${input.runId}
-          AND state = 'consumed' AND expires_at > ${startedAt} AND started_at IS NULL RETURNING id
-      `;
-        const row = started[0];
-        if (row === undefined) return false;
-        yield* audit("provider_start_authorized", row.id, startedAt);
-        return true;
-      }),
-    );
-    if (!allowed) return yield* refuse("A consumed grant cannot authorize this provider start.");
-  });
+  };
 
-  return { submit, cards, decision, consume, permitStart, isBound };
+  const authorizeRuntimeAccess = Effect.fn("OwnerConfirmationGrant.authorizeRuntimeAccess")(
+    function* (input: ProviderAccess, phase: "prepare" | "deliver") {
+      yield* expire(yield* Clock.currentTimeMillis);
+      if (
+        input.cwd !== scratchRoot ||
+        input.providerInstanceId !== replayInstanceId ||
+        input.runtimeMode !== "approval-required" ||
+        (yield* identity(input.cwd)) !== rootIdentity
+      ) {
+        return yield* refuse("Provider access no longer matches the confirmed prototype scope.");
+      }
+      const allowed = yield* sql.withTransaction(
+        Effect.gen(function* () {
+          const now = yield* Clock.currentTimeMillis;
+          const condition = sql`instance = ${instance} AND child_thread_id = ${input.threadId}
+          AND run_id = ${input.runId} AND state = 'consumed' AND expires_at > ${now} AND started_at IS NULL`;
+          if (phase === "prepare") {
+            const current =
+              yield* sql`SELECT 1 FROM prototype_owner_confirmation WHERE ${condition}`;
+            return current.length === 1;
+          }
+          const [started] = yield* sql<{ id: string }>`
+          UPDATE prototype_owner_confirmation SET started_at = ${now}
+          WHERE ${condition} RETURNING id
+        `;
+          if (started === undefined) return false;
+          yield* audit("provider_start_authorized", started.id, now);
+          return true;
+        }),
+      );
+      if (!allowed) return yield* refuse("The grant cannot authorize this provider access.");
+    },
+  );
+
+  // A successful revocation cannot interleave between the admitted check and invocation.
+  // A call that already crossed this lock can finish. The lock does not confine the process.
+  const withRuntimeAccess = <A, E, R>(
+    input: ProviderAccess,
+    phase: "prepare" | "deliver",
+    access: Effect.Effect<A, E, R>,
+  ) => runtimeAccess.withPermit(authorizeRuntimeAccess(input, phase).pipe(Effect.andThen(access)));
+
+  const recordDenial = (event: "unconfirmed_dispatch" | "linked_dispatch" | "request_rejected") =>
+    Clock.currentTimeMillis.pipe(Effect.flatMap((now) => audit(event, null, now)));
+
+  return { submit, cards, decision, consume, withRuntimeAccess, isBound, recordDenial };
 });
 
 export const OwnerConfirmation = Context.Reference<{

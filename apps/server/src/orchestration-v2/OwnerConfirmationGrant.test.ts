@@ -5,7 +5,9 @@ import {
   AuthSessionId,
   CommandId,
   NodeId,
+  ProviderDriverKind,
   ProviderInstanceId,
+  type ServerSettings,
   RunId,
   ThreadId,
   type OrchestrationV2Command,
@@ -97,13 +99,17 @@ it.effect(
       assert.equal(outcomes.filter((result) => result._tag === "Success").length, 1);
       assert.equal((yield* f.sql`SELECT * FROM demo_child`).length, 1);
       assert.equal((yield* f.card).childThreadId, binding.threadId);
-      const start = f.confirmation.permitStart({
-        threadId: binding.threadId,
-        runId: binding.runId,
-        runtimeMode: "approval-required",
-        providerInstanceId: "devReplay",
-        cwd: f.root,
-      });
+      const start = f.confirmation.withRuntimeAccess(
+        {
+          threadId: binding.threadId,
+          runId: binding.runId,
+          runtimeMode: "approval-required",
+          providerInstanceId: "devReplay",
+          cwd: f.root,
+        },
+        "deliver",
+        Effect.void,
+      );
       yield* start;
       assert.equal((yield* Effect.flip(start))._tag, "OwnerConfirmationDenied");
       const rows = yield* f.sql<{
@@ -213,6 +219,23 @@ it.effect("denies missing, changed, aliased or unsupported declarations", () =>
   }).pipe(Effect.provide(layer)),
 );
 
+it.effect("denies dispatch if the confirmed directory was replaced before consumption", () =>
+  Effect.gen(function* () {
+    const f = yield* fixture;
+    yield* f.request;
+    const card = yield* f.card;
+    yield* f.fs.rename(f.root, f.path.join(f.temp, "prior-root"));
+    yield* f.fs.makeDirectory(f.root);
+    assert.equal(
+      (yield* Effect.flip(
+        f.confirmation.decision(owner, card.id, card.nonce, "confirm", f.dispatch),
+      ))._tag,
+      "OwnerConfirmationDenied",
+    );
+    assert.equal((yield* f.sql`SELECT * FROM demo_child`).length, 0);
+  }).pipe(Effect.provide(layer)),
+);
+
 it.effect("denies an expired request and a concurrently revoked grant before commit", () =>
   Effect.gen(function* () {
     const f = yield* fixture;
@@ -259,15 +282,34 @@ it.effect("blocks a consumed grant from starting after revocation, even after ro
     yield* f.request;
     const card = yield* f.card;
     yield* f.confirmation.decision(owner, card.id, card.nonce, "confirm", f.dispatch);
-    yield* f.confirmation.decision(owner, card.id, card.nonce, "revoke", f.dispatch);
-    const start = f.confirmation.permitStart({
+    const access = {
       threadId: binding.threadId,
       runId: binding.runId,
       cwd: f.root,
       providerInstanceId: "devReplay",
       runtimeMode: "approval-required",
-    });
+    };
+    yield* f.confirmation.withRuntimeAccess(access, "prepare", Effect.void);
+    yield* f.confirmation.decision(owner, card.id, card.nonce, "revoke", f.dispatch);
+    const start = f.confirmation.withRuntimeAccess(
+      {
+        threadId: binding.threadId,
+        runId: binding.runId,
+        cwd: f.root,
+        providerInstanceId: "devReplay",
+        runtimeMode: "approval-required",
+      },
+      "deliver",
+      Effect.void,
+    );
     assert.equal((yield* Effect.flip(start))._tag, "OwnerConfirmationDenied");
+    const events = yield* f.sql<{
+      event: string;
+    }>`SELECT event FROM prototype_owner_confirmation_audit`;
+    assert.notInclude(
+      events.map((row) => row.event),
+      "provider_start_authorized",
+    );
 
     const disabled = yield* OwnerGrant.OwnerConfirmation.pipe(
       Effect.provide(
@@ -329,4 +371,39 @@ it("trusts only the server-authenticated startup browser principal", () => {
   ]) {
     assert.isUndefined(OwnerGrant.localOwnerPrincipal({ ...session, ...impostor }));
   }
+});
+
+it("requires the bundled Replay configuration without per-instance process overrides", () => {
+  const id = ProviderInstanceId.make("devReplay");
+  const instance = {
+    driver: ProviderDriverKind.make("acpRegistry"),
+    config: {
+      source: "local",
+      commandPath: process.execPath,
+      commandArgs: [
+        decodeURIComponent(new URL("../../scripts/dev-replay-agent.ts", import.meta.url).pathname),
+      ],
+    },
+  };
+  const settings = { providerInstances: { [id]: instance } } as ServerSettings;
+  assert.isTrue(OwnerGrant.isBundledReplay(settings));
+  assert.isFalse(
+    OwnerGrant.isBundledReplay({
+      ...settings,
+      providerInstances: {
+        [id]: {
+          ...instance,
+          environment: [{ name: "NODE_OPTIONS", value: "synthetic", sensitive: false }],
+        },
+      },
+    }),
+  );
+  assert.isFalse(
+    OwnerGrant.isBundledReplay({
+      ...settings,
+      providerInstances: {
+        [id]: { ...instance, config: { ...instance.config, commandArgs: ["other.ts"] } },
+      },
+    }),
+  );
 });

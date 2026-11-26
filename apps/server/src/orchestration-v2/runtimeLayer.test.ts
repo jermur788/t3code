@@ -1509,6 +1509,10 @@ it.layer(layerReplayTest)("prototype owner confirmation dispatch", (it) => {
           }),
         );
       assert.equal((yield* Effect.flip(dispatch(command)))._tag, "OrchestratorDispatchError");
+      assert.deepEqual(
+        yield* sql`SELECT event, request_id FROM prototype_owner_confirmation_audit`,
+        [{ event: "unconfirmed_dispatch", request_id: null }],
+      );
       yield* confirmation.cards(owner);
       yield* confirmation.submit({
         command,
