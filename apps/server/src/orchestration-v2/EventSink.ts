@@ -205,6 +205,7 @@ export interface EventSinkV2Shape {
     EventSinkV2Error
   >;
   readonly commitCommand: (input: {
+    readonly authorize?: Effect.Effect<void, unknown>;
     readonly commandId: CommandId;
     readonly threadId: ThreadId;
     readonly commandType: string;
@@ -804,6 +805,9 @@ const layerBase: Layer.Layer<
             const existing = yield* existingCommandResult(input.commandId);
             return { ...existing, committed: false as const, cancelledEffectIds: [] };
           }
+
+          // A failure here rolls back the receipt as well as the authorization consumption.
+          if (input.authorize !== undefined) yield* input.authorize;
 
           // Planning does not lock the source. Once deletion commits, maintenance
           // can remove its checkpoints, so a new fork must not revive that history.

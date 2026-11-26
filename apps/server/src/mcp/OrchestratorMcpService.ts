@@ -1,3 +1,4 @@
+import * as OwnerGrant from "../orchestration-v2/OwnerConfirmationGrant.ts";
 import {
   CommandId,
   type RunId,
@@ -2797,11 +2798,18 @@ const make = Effect.gen(function* () {
       };
     }),
     delegateTask: Effect.fn("OrchestratorMcpService.delegateTask")(function* (callerScope, input) {
+      const { service: confirmation } = yield* OwnerGrant.OwnerConfirmation;
       const environmentId =
         input.target === undefined
           ? undefined
           : PeerForwarding.remoteTarget(callerScope, input.target.environmentId);
       if (input.target !== undefined && environmentId !== undefined) {
+        if (confirmation !== undefined) {
+          return yield* failure(
+            "invalid_request",
+            "Linked delegation is disabled in this prototype.",
+          );
+        }
         yield* requireCapability(callerScope);
         const scope = yield* requireThreadScope(callerScope, "delegate_task");
         // The task's child runs as an ordinary thread there; this thread keeps the task.
@@ -2835,6 +2843,39 @@ const make = Effect.gen(function* () {
           "parent_not_active",
           "Delegated tasks require an active run owned by this MCP provider session.",
         );
+      }
+      if (
+        confirmation !== undefined &&
+        (scope.client !== undefined || parent.thread.linkOrigin !== undefined)
+      ) {
+        return yield* failure(
+          "invalid_request",
+          "Only local thread requests can enter the owner confirmation queue.",
+        );
+      }
+      if (confirmation !== undefined) {
+        if (input.isolation === "worktree") {
+          return yield* failure(
+            "invalid_request",
+            "The prototype requires the shared scratch workspace.",
+          );
+        }
+        const records = yield* threadManagement
+          .getThreadRecords(parent.thread.id, ["messages"], {
+            messageIds: [parentRun.userMessageId],
+          })
+          .pipe(Effect.mapError(threadManagementFailure));
+        const origin = records.messages[0];
+        if (
+          origin?.scheduledTaskId !== undefined ||
+          origin?.linkedSender !== undefined ||
+          origin === undefined
+        ) {
+          return yield* failure(
+            "invalid_request",
+            "Scheduled and linked runs cannot request prototype owner confirmation.",
+          );
+        }
       }
       const providers = yield* loadProviders;
       const key = yield* requestKey(input.clientRequestId);
@@ -2891,6 +2932,64 @@ const make = Effect.gen(function* () {
         workspaceStrategy = { type: "worktree", baseRef: base.commitSha, startFromOrigin: false };
       }
       const parentNodeId = parentRun.rootNodeId;
+      const command = {
+        type: "delegated_task.request",
+        createdBy: "agent",
+        creationSource: "mcp",
+        commandId,
+        parentThreadId: scope.thread.threadId,
+        parentRunId: parentRun.id,
+        parentNodeId,
+        task: taskPrompt(input),
+        ...(input.title === undefined ? {} : { title: input.title }),
+        modelSelection: target.modelSelection,
+        runtimeMode,
+        interactionMode,
+        ...(workspaceStrategy === undefined ? {} : { workspaceStrategy }),
+        // The owner confirms out of band. No caller waits on the pending request.
+        completionWake:
+          confirmation !== undefined || input.mode !== "wait" ? "always" : "settled_only",
+      } as const;
+      if (confirmation !== undefined) {
+        const settings = yield* serverSettings.getSettings.pipe(
+          Effect.mapError(() => failure("orchestration_error", "Unable to read server settings.")),
+        );
+        if (!OwnerGrant.isBundledReplay(settings)) {
+          return yield* failure(
+            "provider_unavailable",
+            "The isolated Replay provider configuration is unavailable.",
+          );
+        }
+        if (isRetryOfAcceptedDelegation) {
+          return yield* failure(
+            "invalid_request",
+            "The prototype requires a new delegation in the shared scratch workspace.",
+          );
+        }
+        const requestId = yield* confirmation
+          .submit({
+            command,
+            cwd: yield* parentWorkspaceCwd(parent),
+            roots: input.targetRoots,
+            operations: input.operations,
+          })
+          .pipe(
+            Effect.mapError((error) =>
+              failure(
+                "invalid_request",
+                error._tag === "OwnerConfirmationDenied"
+                  ? error.message
+                  : "Owner confirmation request could not be recorded.",
+              ),
+            ),
+          );
+        return yield* new OrchestratorMcpFailure({
+          code: "owner_confirmation_required",
+          message: "A local owner confirmation is required. No child exists yet.",
+          requestId,
+          confirmationPath: OwnerGrant.cardPath,
+        });
+      }
       // The command commits the child's preparing run, which only this call
       // prepares, so a caller that goes away must not stop it in between.
       return yield* Effect.uninterruptibleMask((restore) =>
@@ -2899,25 +2998,7 @@ const make = Effect.gen(function* () {
           // type's own enablement check, using the same command id and its
           // receipt-replay exemption, so no separate assert runs here.
           const result = yield* threadManagement
-            .dispatch({
-              type: "delegated_task.request",
-              createdBy: "agent",
-              creationSource: "mcp",
-              commandId,
-              parentThreadId: scope.thread.threadId,
-              parentRunId: parentRun.id,
-              parentNodeId,
-              task: taskPrompt(input),
-              ...(input.title === undefined ? {} : { title: input.title }),
-              modelSelection: target.modelSelection,
-              runtimeMode,
-              interactionMode,
-              ...(workspaceStrategy === undefined ? {} : { workspaceStrategy }),
-              // Async delegations wake the parent on every child terminal; wait
-              // delegations deliver through the blocking tool call until `awaitTask`
-              // gives up the wait (timeout, cancelled call) and upgrades the wake.
-              completionWake: input.mode === "wait" ? "settled_only" : "always",
-            })
+            .dispatch(command)
             .pipe(
               Effect.mapError((error) =>
                 error._tag === "ThreadManagementProviderInstanceDisabledError"

@@ -1,3 +1,5 @@
+import * as OwnerGrant from "./orchestration-v2/OwnerConfirmationGrant.ts";
+import * as OwnerConfirmationHttp from "./orchestration-v2/OwnerConfirmationHttp.ts";
 import * as ProviderEventLoggers from "@t3tools/provider-core/server/ProviderEventLoggers";
 import type { RelayManagedEndpointRuntimeConfig } from "@t3tools/contracts/relay";
 import * as Random from "effect/Random";
@@ -858,6 +860,7 @@ const layerMakeRoutes = Layer.mergeAll(
     ServerHttp.layerAssetRoute,
     ServerHttp.layerAttachmentUploadRoute,
     GuestHttp.layer,
+    OwnerConfirmationHttp.layer,
     DeviceHubProxy.layer,
     ServerBrowserStream.routeLayer,
     PreviewTunnel.routeLayer,
@@ -1365,6 +1368,7 @@ const layerMakeServer = Layer.unwrap(
     return layerServerApplication.pipe(
       Layer.provide(CloudLink.layer.pipe(Layer.provideMerge(ConnectReachability.layer))),
       Layer.provideMerge(layerRuntimeServices),
+      Layer.provide(OwnerGrant.layer.pipe(Layer.provide(layerPersistence))),
       Layer.provideMerge(
         McpSessionRegistry.layer.pipe(
           Layer.provide(ServerEnvironment.layer.pipe(Layer.provide(ServerSecretStore.layer))),

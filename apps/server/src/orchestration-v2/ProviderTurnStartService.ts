@@ -1,3 +1,8 @@
+import {
+  isBundledReplay,
+  OwnerConfirmation,
+  OwnerConfirmationDenied,
+} from "./OwnerConfirmationGrant.ts";
 import { modelSelectionsEqual } from "@t3tools/shared/model";
 import { projectComposerContextForProvider } from "@t3tools/shared/composerContextReferences";
 import { expandAssistantCitationsForProvider } from "@t3tools/shared/assistantCitations";
@@ -283,6 +288,7 @@ export const layer: Layer.Layer<
     const providerSessions = yield* ProviderSessionManager.ProviderSessionManagerV2;
     const runExecution = yield* RunExecutionService.RunExecutionServiceV2;
     const runtimePolicy = yield* RuntimePolicy.RuntimePolicyV2;
+    const serverSettings = yield* ServerSettings.ServerSettingsService;
     const restoreMissingWorktree = yield* makeRestoreMissingWorktree;
     const turnItemPositions = yield* TurnItemPositionStore.TurnItemPositionStoreV2;
 
@@ -867,6 +873,37 @@ export const layer: Layer.Layer<
         return;
       }
       const resolvedRuntimePolicy = resolvedPolicy.success;
+      const confirmation = yield* OwnerConfirmation;
+      const authorization = yield* Effect.result(
+        Effect.gen(function* () {
+          if (
+            confirmation.wasBound === undefined ||
+            !(yield* confirmation.wasBound(input.threadId))
+          )
+            return;
+          const settings = yield* serverSettings.getSettings;
+          if (confirmation.service === undefined || !isBundledReplay(settings)) {
+            return yield* new OwnerConfirmationDenied({
+              message: "The configured Replay provider is unavailable.",
+            });
+          }
+          yield* confirmation.service.permitStart({
+            threadId: input.threadId,
+            runId,
+            cwd: resolvedRuntimePolicy.cwd,
+            providerInstanceId: run.providerInstanceId,
+            runtimeMode: resolvedRuntimePolicy.runtimeMode,
+          });
+        }),
+      );
+      if (authorization._tag === "Failure") {
+        yield* settleStartFailure({
+          signal: "owner-confirmation-denied",
+          title: "Owner confirmation could not authorize this provider start",
+          error: new Error("The grant is unavailable for this provider start."),
+        });
+        return;
+      }
       if (!(yield* isCurrentAttemptInStatus("starting"))) return;
       const existingSessionProjection = projection.providerSessions.find(
         (candidate) => candidate.id === providerSessionId,

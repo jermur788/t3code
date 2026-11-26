@@ -22,6 +22,8 @@ import {
   RuntimeRequestId,
   TurnItemId,
   type ModelSelection,
+  type OrchestrationV2Command,
+  withMessageSenderNote,
   type OrchestrationV2DomainEvent,
   type OrchestrationV2Run,
   type OrchestrationV2ShellSnapshot,
@@ -74,6 +76,7 @@ import * as VcsProcess from "../vcs/VcsProcess.ts";
 import * as WorkspacePaths from "../workspace/WorkspacePaths.ts";
 import * as LegacyV1ThreadImporter from "./legacy/LegacyV1ThreadImporter.ts";
 import * as Orchestrator from "./Orchestrator.ts";
+import * as OwnerGrant from "./OwnerConfirmationGrant.ts";
 import { ROLLBACK_FAILED_MESSAGE } from "./CheckpointRollbackService.ts";
 import * as EffectWorker from "./EffectWorker.ts";
 import * as EffectOutbox from "./EffectOutbox.ts";
@@ -346,26 +349,32 @@ const layerProjectionReplayTest = ProjectionReplay.layer.pipe(
   ),
 );
 
-const layerTest = Layer.mergeAll(
-  RuntimeLayer.layer,
-  layerProjectionReplayTest,
-  RuntimeLayer.layerEventSink,
-  ProjectStore.layer,
-  ProjectionStore.layer,
-  EffectOutbox.layer,
-  ThreadCommandExecutor.layer,
-).pipe(
-  Layer.provide(McpSessionRegistryTestkit.layer),
-  Layer.provide(McpProviderSessions.layer),
-  Layer.provide(SqlitePersistence.layerMemory),
-  Layer.provide(layerCheckpointStoreTest),
-  Layer.provide(layerServerConfig),
-  Layer.provide(ServerSettings.layerTest()),
-  Layer.provide(layerTestProviderInstanceRegistry),
-  Layer.provide(layerGitWorkflowTest),
-  Layer.provide(layerProjectServiceTest),
-  Layer.provide(layerPlatformTest),
-);
+const layerTestWithProviders = (
+  settings = ServerSettings.layerTest(),
+  providers = layerTestProviderInstanceRegistry,
+) =>
+  Layer.mergeAll(
+    RuntimeLayer.layer,
+    layerProjectionReplayTest,
+    RuntimeLayer.layerEventSink,
+    ProjectStore.layer,
+    ProjectionStore.layer,
+    EffectOutbox.layer,
+    ThreadCommandExecutor.layer,
+  ).pipe(
+    Layer.provide(McpSessionRegistryTestkit.layer),
+    Layer.provide(McpProviderSessions.layer),
+    Layer.provideMerge(SqlitePersistence.layerMemory),
+    Layer.provide(layerCheckpointStoreTest),
+    Layer.provide(layerServerConfig),
+    Layer.provide(settings),
+    Layer.provide(providers),
+    Layer.provide(layerGitWorkflowTest),
+    Layer.provide(layerProjectServiceTest),
+    Layer.provideMerge(layerPlatformTest),
+  );
+
+const layerTest = layerTestWithProviders();
 
 const layerLegacyImportTest = Layer.merge(RuntimeLayer.layer, layerProjectionReplayTest).pipe(
   Layer.provide(McpSessionRegistryTestkit.layer),
@@ -1386,6 +1395,151 @@ const layerSharedApplicationDataPlaneTest = Layer.mergeAll(
   Layer.provide(layerGitWorkflowTest),
   Layer.provide(layerPlatformTest),
 );
+
+const replaySelection = {
+  instanceId: ProviderInstanceId.make("devReplay"),
+  model: "synthetic-replay",
+};
+const replayDriver = ProviderDriverKind.make("acpRegistry");
+const replayInstance = {
+  ...providerInstance,
+  instanceId: replaySelection.instanceId,
+  driverKind: replayDriver,
+  continuationIdentity: { driverKind: replayDriver, continuationKey: "replay:synthetic" },
+  orchestrationAdapter: {
+    ...orchestrationAdapter,
+    instanceId: replaySelection.instanceId,
+    driver: replayDriver,
+  },
+} satisfies ProviderInstance;
+
+const layerReplayTest = layerTestWithProviders(
+  ServerSettings.layerTest({
+    providerInstances: {
+      [replaySelection.instanceId]: {
+        driver: replayDriver,
+        config: {
+          source: "local",
+          commandPath: process.execPath,
+          commandArgs: [
+            decodeURIComponent(
+              new URL("../../scripts/dev-replay-agent.ts", import.meta.url).pathname,
+            ),
+          ],
+        },
+      },
+    },
+  }),
+  Layer.merge(
+    ModelManifest.layerTest,
+    Layer.succeed(ProviderInstanceRegistry.ProviderInstanceRegistry, {
+      getInstance: (id) =>
+        Effect.succeed(id === replaySelection.instanceId ? replayInstance : undefined),
+      listInstances: Effect.succeed([replayInstance]),
+      listUnavailable: Effect.succeed([]),
+      streamChanges: Stream.empty,
+      subscribeChanges: Effect.never,
+    }),
+  ),
+);
+
+it.layer(layerReplayTest)("prototype owner confirmation dispatch", (it) => {
+  it.effect("commits the grant and one agent-authored T3 child together", () =>
+    Effect.gen(function* () {
+      const orchestrator = yield* Orchestrator.OrchestratorV2;
+      const sql = yield* SqlClient.SqlClient;
+      const fs = yield* FileSystem.FileSystem;
+      const root = yield* fs.realPath(yield* fs.makeTempDirectoryScoped());
+      const confirmation = yield* OwnerGrant.make(root);
+      const owner = "synthetic-runtime-owner";
+      const parentThreadId = ThreadId.make("owner-confirmation-parent");
+      const parentMessageId = MessageId.make("owner-confirmation-direct");
+      yield* orchestrator.dispatch({
+        type: "thread.create",
+        createdBy: "user",
+        creationSource: "web",
+        commandId: CommandId.make("owner-confirmation-create"),
+        threadId: parentThreadId,
+        projectId: ProjectId.make("owner-confirmation-project"),
+        title: "Synthetic parent",
+        modelSelection: replaySelection,
+        runtimeMode: "approval-required",
+        interactionMode: "default",
+        branch: null,
+        worktreePath: root,
+      });
+      yield* orchestrator.dispatch({
+        type: "message.dispatch",
+        createdBy: "user",
+        creationSource: "web",
+        commandId: CommandId.make("owner-confirmation-direct"),
+        threadId: parentThreadId,
+        messageId: parentMessageId,
+        text: "Request a synthetic delegation.",
+        attachments: [],
+        dispatchMode: { type: "start_immediately" },
+      });
+      const parent = yield* orchestrator.getThreadProjection(parentThreadId);
+      const direct = parent.messages.find((message) => message.id === parentMessageId);
+      assert.isDefined(direct);
+      assert.equal(withMessageSenderNote(direct, direct.text), direct.text);
+      const [run] = parent.runs;
+      assert.isDefined(run);
+      assert.isNotNull(run.rootNodeId);
+      const command = {
+        type: "delegated_task.request",
+        createdBy: "agent",
+        creationSource: "mcp",
+        commandId: CommandId.make("owner-confirmation-delegate"),
+        parentThreadId,
+        parentRunId: run.id,
+        parentNodeId: run.rootNodeId,
+        task: "Copy synthetic input.",
+        modelSelection: replaySelection,
+        runtimeMode: "approval-required",
+        interactionMode: "default",
+      } as const;
+      const dispatch = (
+        candidate: Extract<OrchestrationV2Command, { type: "delegated_task.request" }>,
+      ) =>
+        orchestrator.dispatch(candidate).pipe(
+          Effect.provideService(OwnerGrant.OwnerConfirmation, {
+            enabled: true,
+            service: confirmation,
+          }),
+        );
+      assert.equal((yield* Effect.flip(dispatch(command)))._tag, "OrchestratorDispatchError");
+      yield* confirmation.cards(owner);
+      yield* confirmation.submit({
+        command,
+        cwd: root,
+        roots: [root],
+        operations: ["read", "write"],
+      });
+      assert.equal((yield* orchestrator.getThreadProjection(parentThreadId)).subagents.length, 0);
+      const [card] = yield* confirmation.cards(owner);
+      assert.isDefined(card);
+      yield* confirmation.decision(owner, card.id, card.nonce, "confirm", dispatch);
+      const [task] = (yield* orchestrator.getThreadProjection(parentThreadId)).subagents;
+      assert.isDefined(task);
+      assert.isNotNull(task.childThreadId);
+      const child = yield* orchestrator.getThreadProjection(task.childThreadId);
+      const message = child.messages.find((item) => item.role === "user");
+      assert.isDefined(message);
+      assert.equal(child.thread.runtimeMode, "approval-required");
+      assert.equal(message.createdBy, "agent");
+      assert.equal(message.creationSource, "mcp");
+      assert.include(
+        withMessageSenderNote(message, message.text),
+        "sent this message, not the user",
+      );
+      assert.deepEqual(
+        yield* sql`SELECT state, task_id, child_thread_id FROM prototype_owner_confirmation`,
+        [{ state: "consumed", task_id: task.id, child_thread_id: child.thread.id }],
+      );
+    }),
+  );
+});
 
 it.layer(layerTest)("OrchestrationV2LayerLive", (it) => {
   const seedFailingRollbackThread = (name: string) =>

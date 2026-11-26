@@ -1,3 +1,4 @@
+import { OwnerConfirmation } from "./OwnerConfirmationGrant.ts";
 import { projectComposerContextForProvider } from "@t3tools/shared/composerContextReferences";
 import {
   MessageId,
@@ -420,6 +421,16 @@ export const layer: Layer.Layer<
       ),
       steer: Effect.fn("ProviderTurnControlService.steer")(
         function* (input) {
+          const { wasBound } = yield* OwnerConfirmation;
+          if (wasBound !== undefined && (yield* wasBound(input.threadId))) {
+            return yield* new ProviderTurnControlError({
+              threadId: input.threadId,
+              operation: "steer",
+              providerTurnId: input.providerTurnId,
+              steerDeclined: true,
+              cause: "A single-use owner confirmation cannot authorize a new message.",
+            });
+          }
           const context = yield* projections.getProviderControlContext(input.threadId, input);
           const ownership = context.message?.delegatedCompletion;
           if (ownership !== undefined) {

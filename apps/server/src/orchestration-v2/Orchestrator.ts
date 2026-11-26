@@ -1,3 +1,4 @@
+import * as OwnerGrant from "./OwnerConfirmationGrant.ts";
 import type {
   OrchestrationV2ThreadLinkMetadata,
   GuestShareId,
@@ -15924,6 +15925,19 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
       "orchestration_v2.thread_id": commandThreadId(command),
     });
 
+    const { service: confirmation } = yield* OwnerGrant.OwnerConfirmation;
+    const approval =
+      confirmation !== undefined && command.type === "delegated_task.request"
+        ? yield* OwnerGrant.requestAuthority(command).pipe(mapDispatchError(command))
+        : undefined;
+    if (confirmation !== undefined && command.type === "delegated_task.remote.request") {
+      return yield* new OrchestratorDispatchError({
+        commandId: command.commandId,
+        commandType: command.type,
+        cause: "Linked delegation is disabled in this prototype.",
+      });
+    }
+
     const existingReceipt = yield* commandReceipts.getByCommandId(command.commandId).pipe(
       Effect.mapError(
         (cause) =>
@@ -16094,12 +16108,45 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
       } satisfies OrchestratorV2DispatchResult;
     }
     const acceptedAt = plan.events.at(-1)?.occurredAt ?? (yield* DateTime.now);
+    const authorize =
+      approval === undefined || confirmation === undefined
+        ? undefined
+        : Effect.gen(function* () {
+            const child = plan.events.find((event) => event.type === "thread.created");
+            const task = plan.events.find((event) => event.type === "subagent.updated");
+            const run = plan.events.find(
+              (event) => event.type === "run.created" && event.threadId === child?.threadId,
+            );
+            if (child === undefined || task === undefined || run?.type !== "run.created") {
+              return yield* new OwnerGrant.OwnerConfirmationDenied({
+                message: "Delegation did not plan one child.",
+              });
+            }
+            const policy = yield* runtimePolicy.resolve({
+              thread: child.payload,
+              modelSelection: child.payload.modelSelection,
+            });
+            if (
+              policy.runtimeMode !== "approval-required" ||
+              !OwnerGrant.isBundledReplay(yield* serverSettings.getSettings)
+            ) {
+              return yield* new OwnerGrant.OwnerConfirmationDenied({
+                message: "The configured Replay provider or runtime mode changed.",
+              });
+            }
+            yield* confirmation.consume(approval, policy.cwd, {
+              taskId: task.payload.id,
+              threadId: child.threadId,
+              runId: run.payload.id,
+            });
+          });
     const committed = yield* eventSink
       .commitCommand({
         commandId: command.commandId,
         threadId: commandThreadId(command),
         commandType: command.type,
         acceptedAt,
+        ...(authorize === undefined ? {} : { authorize }),
         events:
           cancelledTask === undefined
             ? plan.events

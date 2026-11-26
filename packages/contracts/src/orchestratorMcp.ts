@@ -170,6 +170,8 @@ export type OrchestratorMcpTerminalDelegatedTaskStatus =
 
 export const OrchestratorMcpDelegateTaskInput = Schema.Struct({
   task: OrchestratorMcpPrompt,
+  targetRoots: Schema.optional(Schema.Array(Schema.String)),
+  operations: Schema.optional(Schema.Array(Schema.Literals(["read", "write", "execute"]))),
   // Some providers send the whole target object as JSON text.
   target: Schema.optional(
     Schema.Union([OrchestratorMcpTarget, Schema.fromJsonString(OrchestratorMcpTarget)]),
@@ -946,6 +948,7 @@ export class OrchestratorMcpFailure extends Schema.TaggedError<OrchestratorMcpFa
     code: Schema.Literals([
       "capability_denied",
       "parent_not_active",
+      "owner_confirmation_required",
       "provider_unavailable",
       "model_unavailable",
       "runtime_mode_escalation_denied",
@@ -962,5 +965,7 @@ export class OrchestratorMcpFailure extends Schema.TaggedError<OrchestratorMcpFa
       "target_required",
     ]),
     message: Schema.String,
+    requestId: Schema.optional(Schema.String),
+    confirmationPath: Schema.optional(Schema.String),
   },
 ) {}
