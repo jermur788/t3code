@@ -1,6 +1,7 @@
 import {
   AuthAccessWriteScope,
   type OrchestrationV2Command,
+  type ProviderInstanceConfig,
   ProviderInstanceId,
   type RunId,
   type ServerSettings,
@@ -29,7 +30,7 @@ export const cardPath = "/api/owner-confirmation";
 export const ttlMs = 60 * 60 * 1000;
 const maxOpenRequests = 32;
 // Matches the synthetic instance seeded by ProviderInstanceRegistryHydration.
-const replayInstanceId = ProviderInstanceId.make("devReplay");
+export const replayInstanceId = ProviderInstanceId.make("devReplay");
 
 type Delegation = Extract<OrchestrationV2Command, { readonly type: "delegated_task.request" }>;
 type Operation = "read" | "write";
@@ -119,8 +120,7 @@ export const supportsReplay = (command: Delegation) =>
   command.creationSource === "mcp" &&
   !command.task.trimStart().startsWith("/");
 
-export const isBundledReplay = (settings: ServerSettings) => {
-  const instance = settings.providerInstances[replayInstanceId];
+export const isBundledReplayInstance = (instance: ProviderInstanceConfig | undefined) => {
   if (
     instance?.driver !== "acpRegistry" ||
     (instance.environment?.length ?? 0) !== 0 ||
@@ -142,6 +142,9 @@ export const isBundledReplay = (settings: ServerSettings) => {
     )
   );
 };
+
+export const isBundledReplay = (settings: ServerSettings) =>
+  isBundledReplayInstance(settings.providerInstances[replayInstanceId]);
 
 export const requestAuthority = (command: Delegation) =>
   authority.pipe(

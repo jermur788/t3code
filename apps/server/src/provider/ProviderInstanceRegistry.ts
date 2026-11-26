@@ -25,6 +25,11 @@ import * as Scope from "effect/Scope";
 import * as Semaphore from "effect/Semaphore";
 import * as Stream from "effect/Stream";
 
+import {
+  isBundledReplayInstance,
+  OwnerConfirmation,
+  replayInstanceId,
+} from "../orchestration-v2/OwnerConfirmationGrant.ts";
 import * as SecretResolver from "@t3tools/secret-provider-core/server/SecretResolver";
 
 import { buildUnavailableProviderSnapshot } from "./unavailableProviderSnapshot.ts";
@@ -204,6 +209,7 @@ const isEntryEnabled = Effect.fn("ProviderInstanceRegistry.isEntryEnabled")(func
 const buildEntry = Effect.fn("ProviderInstanceRegistry.buildEntry")(function* <R>(input: {
   readonly driversById: ReadonlyMap<ProviderDriverKind, AnyProviderDriver<R>>;
   readonly blockedReason: BlockedReason;
+  readonly ownerConfirmationEnabled: boolean;
   readonly parentScope: Scope.Scope;
   readonly instanceId: ProviderInstanceId;
   readonly rawInstanceId: string;
@@ -226,10 +232,16 @@ const buildEntry = Effect.fn("ProviderInstanceRegistry.buildEntry")(function* <R
     instanceId,
     rawInstanceId,
     entry,
+    ownerConfirmationEnabled,
     deferSecrets,
     carriedSecrets,
   } = input;
-  const blocked = input.blockedReason(entry.driver);
+  // Every hydrated Replay generation used by the prototype must satisfy the same recipe,
+  // even if the settings watcher and session opening observe different generations.
+  const blocked =
+    ownerConfirmationEnabled && instanceId === replayInstanceId && !isBundledReplayInstance(entry)
+      ? "The owner confirmation prototype admits only bundled Replay with no instance overrides."
+      : input.blockedReason(entry.driver);
   if (blocked !== undefined) {
     return {
       kind: "unavailable" as const,
@@ -365,6 +377,7 @@ const makeReconcile = <R>(input: {
   readonly state: RegistryState;
   readonly driversById: ReadonlyMap<ProviderDriverKind, AnyProviderDriver<R>>;
   readonly blockedReason: BlockedReason;
+  readonly ownerConfirmationEnabled: boolean;
   readonly parentScope: Scope.Scope;
 }): ((
   configMap: ProviderInstanceConfigMap,
@@ -372,7 +385,7 @@ const makeReconcile = <R>(input: {
   deferSecrets?: boolean,
   carried?: ReadonlyMap<ProviderInstanceId, InstanceSecrets>,
 ) => Effect.Effect<void, never, R | SecretResolver.SecretResolver>) => {
-  const { state, driversById, blockedReason, parentScope } = input;
+  const { state, driversById, blockedReason, ownerConfirmationEnabled, parentScope } = input;
   return (configMap, rebuild = new Set(), deferSecrets = false, carried = new Map()) =>
     Effect.gen(function* () {
       const previousEntries = yield* Ref.get(state.entries);
@@ -462,6 +475,7 @@ const makeReconcile = <R>(input: {
         const result = yield* buildEntry({
           driversById,
           blockedReason,
+          ownerConfirmationEnabled,
           parentScope,
           instanceId,
           rawInstanceId,
@@ -547,10 +561,12 @@ export const makeProviderInstanceRegistry = Effect.fn(
   yield* Effect.addFinalizer(() => PubSub.shutdown(changes));
 
   const state: RegistryState = { entries, unavailable, secretsUnreadable, changes };
+  const { enabled: ownerConfirmationEnabled } = yield* OwnerConfirmation;
   const reconcileWithR = makeReconcile({
     state,
     driversById,
     blockedReason: input.blockedReason ?? (() => undefined),
+    ownerConfirmationEnabled,
     parentScope,
   });
   const configMapRef = yield* Ref.make(input.configMap);

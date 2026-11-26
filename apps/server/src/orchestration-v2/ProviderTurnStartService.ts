@@ -886,6 +886,21 @@ export const layer: Layer.Layer<
         return;
       }
       const grant = binding.success ? confirmation.service : undefined;
+      if (
+        grant !== undefined &&
+        (providerThread.nativeThreadRef !== null ||
+          manualResume ||
+          nativeForkTransfer !== undefined)
+      ) {
+        yield* settleStartFailure({
+          signal: "owner-confirmation-denied",
+          title: "Owner confirmation only authorizes a fresh Replay turn",
+          error: new OwnerConfirmationDenied({
+            message: "Native session recovery is unavailable for this grant.",
+          }),
+        });
+        return;
+      }
       const runtimeAccess = <A, E>(
         phase: "prepare" | "deliver",
         operation: Effect.Effect<A, E>,
@@ -1046,6 +1061,52 @@ export const layer: Layer.Layer<
           ? rawSession
           : {
               ...rawSession,
+              ensureThread: (input: Parameters<typeof rawSession.ensureThread>[0]) => {
+                const denied = (cause: unknown) =>
+                  new ProviderAdapter.ProviderAdapterEnsureThreadError({
+                    driver: rawSession.driver,
+                    threadId: input.threadId,
+                    cause,
+                  });
+                if (input.forceNewNativeThread === true) {
+                  return Effect.fail(denied("A grant cannot create a replacement session."));
+                }
+                return runtimeAccess(
+                  "prepare",
+                  Effect.suspend(() => rawSession.ensureThread(input)),
+                ).pipe(Effect.mapError(denied));
+              },
+              resumeThread: (input: Parameters<typeof rawSession.resumeThread>[0]) =>
+                Effect.fail(
+                  new ProviderAdapter.ProviderAdapterResumeThreadError({
+                    driver: rawSession.driver,
+                    providerSessionId,
+                    providerThreadId: input.providerThread.id,
+                    cause: new OwnerConfirmationDenied({
+                      message: "A single-use grant cannot resume a native session.",
+                    }),
+                  }),
+                ),
+              ...(rawSession.injectHistory === undefined
+                ? {}
+                : {
+                    injectHistory: (
+                      input: Parameters<NonNullable<typeof rawSession.injectHistory>>[0],
+                    ) =>
+                      runtimeAccess(
+                        "prepare",
+                        Effect.suspend(() => rawSession.injectHistory!(input)),
+                      ).pipe(
+                        Effect.mapError(
+                          (cause) =>
+                            new ProviderAdapter.ProviderAdapterEnsureThreadError({
+                              driver: rawSession.driver,
+                              threadId: projection.thread.id,
+                              cause,
+                            }),
+                        ),
+                      ),
+                  }),
               startTurn: (input: Parameters<typeof rawSession.startTurn>[0]) =>
                 deliver(Effect.suspend(() => rawSession.startTurn(input))),
               ...(rawSession.resumeTurn === undefined

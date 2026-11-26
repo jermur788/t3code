@@ -24,6 +24,8 @@ import * as TestClock from "effect/testing/TestClock";
 import * as Layer from "effect/Layer";
 import { INTERNAL_ADMINISTRATIVE_BOOTSTRAP_SUBJECT } from "../auth/EnvironmentAuth.ts";
 import { ServerConfig } from "../config.ts";
+import * as SecretResolver from "@t3tools/secret-provider-core/server/SecretResolver";
+import { makeProviderInstanceRegistry } from "../provider/ProviderInstanceRegistry.ts";
 import * as SqlitePersistence from "../persistence/Sqlite.ts";
 import * as OwnerGrant from "./OwnerConfirmationGrant.ts";
 
@@ -346,9 +348,9 @@ it.effect(
           Layer.provide(
             ServerConfig.layerTest(process.cwd(), { prefix: "t3-owner-confirmation-flag-" }),
           ),
+          Layer.provideMerge(layer),
         ),
       ),
-      Effect.provide(layer),
       Effect.provideService(ConfigProvider.ConfigProvider, ConfigProvider.fromUnknown({})),
     ),
 );
@@ -407,3 +409,37 @@ it("requires the bundled Replay configuration without per-instance process overr
     }),
   );
 });
+
+it.effect(
+  "rejects changed Replay generations before driver creation in the hydrated registry",
+  () =>
+    Effect.gen(function* () {
+      const instanceId = ProviderInstanceId.make("devReplay");
+      const driverKind = ProviderDriverKind.make("acpRegistry");
+      const { registry, mutator } = yield* makeProviderInstanceRegistry({
+        configMap: {},
+        drivers: [
+          {
+            driverKind,
+            metadata: {
+              displayName: "Synthetic Replay",
+              supportsMultipleInstances: true,
+              hasDefaultInstance: false,
+            },
+            configSchema: Schema.Unknown,
+            defaultConfig: () => ({}),
+            create: () => Effect.die("a changed Replay adapter must never be instantiated"),
+          },
+        ],
+      }).pipe(Effect.provideService(OwnerGrant.OwnerConfirmation, { enabled: true }));
+      // Reconcile runs later, with no flag supplied by the caller.
+      yield* mutator.reconcile({
+        [instanceId]: {
+          driver: driverKind,
+          config: { source: "local", commandPath: "changed", commandArgs: [] },
+        },
+      });
+      assert.isUndefined(yield* registry.getInstance(instanceId));
+      assert.equal((yield* registry.listUnavailable)[0]?.instanceId, instanceId);
+    }).pipe(Effect.provide(Layer.mock(SecretResolver.SecretResolver)({}))),
+);

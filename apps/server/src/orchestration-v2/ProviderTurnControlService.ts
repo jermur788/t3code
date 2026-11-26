@@ -246,6 +246,12 @@ export const layer: Layer.Layer<
     return ProviderTurnControlServiceV2.of({
       applyModelSelection: Effect.fn("ProviderTurnControlService.applyModelSelection")(
         function* (input) {
+          const { wasBound } = yield* OwnerConfirmation;
+          if (
+            wasBound !== undefined &&
+            (yield* wasBound(input.threadId).pipe(Effect.orElseSucceed(() => true)))
+          )
+            return;
           const { providerThread, providerTurn } = yield* projections.getRunningTurnContext(
             input.threadId,
           );
